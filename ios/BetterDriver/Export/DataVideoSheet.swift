@@ -1,4 +1,5 @@
-import AVKit
+import AVFoundation
+import UIKit
 import BetterDriverCore
 import SwiftUI
 
@@ -235,16 +236,29 @@ struct DataVideoPlayback: Identifiable {
     let durations: [String: KotlinLong]
 }
 
-/// The video with data, full screen in landscape (the video's shape), with the system's player controls.
+/// The video with data, full screen in landscape (the video's shape), with Android's transport under it
+/// (WatchVideo.kt): Play/Pause, where it is of how long, and the seek bar (FBBD-428). AVKit's own
+/// controls are not used: in the iPad app on a Mac their bar did not seek and Close sat on AirPlay.
 struct DataVideoPlayerPage: View {
     let playback: DataVideoPlayback
     let onClose: () -> Void
 
-    @State private var player = AVPlayer()
+    @StateObject private var transport: DataVideoTransport
     /// Whether the page shows wider than tall, for the UI test.
     @State private var wide = false
+    /// The seek bar's place while a finger or the pointer holds it.
+    @State private var dragging: Double?
+    @Environment(\.scenePhase) private var phase
+
+    init(playback: DataVideoPlayback, onClose: @escaping () -> Void) {
+        self.playback = playback
+        self.onClose = onClose
+        _transport = StateObject(wrappedValue: DataVideoTransport(playback: playback))
+    }
 
     var body: some View {
+        let total = transport.totalMicros
+        let shown = dragging.map { Int64(($0 * Double(total)).rounded()) } ?? transport.micros
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
                 .background(GeometryReader { g in
@@ -252,11 +266,46 @@ struct DataVideoPlayerPage: View {
                         .onAppear { wide = g.size.width > g.size.height }
                         .onChange(of: g.size) { _, size in wide = size.width > size.height }
                 })
-            VideoPlayer(player: player)
-                .ignoresSafeArea(edges: .bottom)
-                // The video's own shape with its overlay, for the UI test: always landscape.
-                .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
-                .accessibilityIdentifier("dataVideoPlayer")
+            VStack(spacing: 4) {
+                DataVideoPicture(player: transport.player)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The video's own shape with its overlay, for the UI test: always landscape.
+                    .accessibilityElement()
+                    .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
+                    .accessibilityIdentifier("dataVideoPlayer")
+                HStack(spacing: 12) {
+                    Button(transport.playing ? "Pause" : "Play") { transport.playPause() }
+                        .buttonStyle(.bordered)
+                        .tint(Palette.accent)
+                        .frame(width: 104)
+                        .accessibilityIdentifier("dataVideoPlay")
+                    Text("\(TimeFormatKt.formatVideoClock(micros: shown)) / \(TimeFormatKt.formatVideoClock(micros: total))")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                        .accessibilityIdentifier("dataVideoClock")
+                    Spacer(minLength: 0)
+                }
+                Slider(
+                    value: Binding(
+                        get: { dragging ?? (total > 0 ? min(max(Double(transport.micros) / Double(total), 0), 1) : 0) },
+                        set: { v in
+                            dragging = v
+                            transport.seek(fraction: v, exact: false)
+                        }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        if !editing, let v = dragging {
+                            transport.seek(fraction: v, exact: true)
+                            dragging = nil
+                        }
+                    }
+                )
+                .tint(Palette.accent)
+                .accessibilityIdentifier("dataVideoSeek")
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
             Button { onClose() } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title)
@@ -268,14 +317,272 @@ struct DataVideoPlayerPage: View {
             .accessibilityValue(wide ? "landscape" : "portrait")
             .accessibilityIdentifier("dataVideoClose")
         }
-        .onAppear {
-            let item = AVPlayerItem(asset: playback.asset)
-            item.videoComposition = playback.overlay
-            player.replaceCurrentItem(with: item)
-            player.play()
-        }
-        .onDisappear { player.pause() }
+        // The exact seek after the bar was still: the bar follows the video again, also when the end of
+        // the drag never came (FBBD-435).
+        .onChange(of: transport.settled) { dragging = nil }
+        .onAppear { transport.start() }
+        .onDisappear { transport.stop() }
+        // Never plays unseen: home, the lock button or another app stops it, as on Android.
+        .onChange(of: phase) { _, p in if p != .active { transport.pause() } }
         .landscape()
+    }
+}
+
+/// The player of a [DataVideoPlayback], as Android's WatchPlayer: [micros] is where it is, followed while
+/// it plays and set on every seek. Seeks go one at a time, the newest waiting for the one under way, so a
+/// drag never piles them up: loose to the nearest key frame while dragging, exact when let go.
+@MainActor
+final class DataVideoTransport: ObservableObject {
+    let player = AVPlayer()
+    let totalMicros: Int64
+    /// It plays, or will as soon as it can: Play/Pause follows this.
+    @Published private(set) var playing = false
+    @Published private(set) var micros: Int64 = 0
+
+    private var seeking = false
+    /// Counts the seeks sent: a seek whose end has not come after a second is given up on, so one lost
+    /// completion never holds the clock and every later seek (FBBD-435).
+    private var seekNumber = 0
+    /// The exact seek after a loose one, once the bar is still.
+    private var settle: Task<Void, Never>?
+    /// Counts the exact seeks made by [settle]: the page lets go of its drag place on each.
+    @Published private(set) var settled = 0
+    private var queued: (micros: Int64, exact: Bool)?
+    private var timeObserver: Any?
+    private var endObserver: NSObjectProtocol?
+    private var rateObserver: NSKeyValueObservation?
+    private var statusObserver: NSKeyValueObservation?
+    private var itemObserver: NSKeyValueObservation?
+    /// The screen was kept on here, and is let go here.
+    private var keptAwake = false
+
+    init(playback: DataVideoPlayback) {
+        let item = AVPlayerItem(asset: playback.asset)
+        item.videoComposition = playback.overlay
+        player.replaceCurrentItem(with: item)
+        // The video is in files on the phone, nothing to buffer: play at once from wherever it was sent.
+        // Waiting to "minimize stalls" held it up to a minute after seeking back on iOS 27 (FBBD-435,
+        // Arek 2026-11-02).
+        player.automaticallyWaitsToMinimizeStalling = false
+        totalMicros = max(0, DataVideoMaker.micros(playback.asset.duration))
+    }
+
+    func start() {
+        if timeObserver == nil {
+            timeObserver = player.addPeriodicTimeObserver(
+                forInterval: CMTime(value: 1, timescale: 30), queue: .main
+            ) { [weak self] t in
+                MainActor.assumeIsolated { self?.follow(t) }
+            }
+        }
+        if endObserver == nil {
+            endObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.micros = self.totalMicros
+                    self.setPlaying(false)
+                }
+            }
+        }
+        if rateObserver == nil {
+            // iOS stopped it (an interruption, the app left): Play/Pause and the screen follow.
+            // Not while a seek is under way: iOS 27 drops the rate to 0 during a seek (FBBD-435, Arek
+            // 2026-11-02: on an iPhone it stopped after seeking back), which is not a stop.
+            rateObserver = player.observe(\.rate, options: [.new]) { [weak self] p, _ in
+                let stopped = p.rate == 0
+                Task { @MainActor in
+                    guard let self, stopped, self.playing, !self.seeking, self.queued == nil,
+                          self.player.rate == 0 else { return }
+                    self.setPlaying(false)
+                }
+            }
+        }
+        if itemObserver == nil, let item = player.currentItem { watch(item) }
+        if statusObserver == nil {
+            // Why it waits instead of playing, in the app log (FBBD-435).
+            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
+                guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+                let why = p.reasonForWaitingToPlay?.rawValue ?? "none"
+                let at = DataVideoMaker.micros(p.currentTime()) / 1_000
+                AppLog.i("WatchVideo", "waiting to play at \(at) ms: \(why)")
+            }
+        }
+        setPlaying(true)
+    }
+
+    /// A failed item is noted in the app log and made again where it was, up to three times (FBBD-435:
+    /// the simulators failed the item at once with -11800 / -12784, and the clock never moved).
+    private func watch(_ item: AVPlayerItem) {
+        itemObserver?.invalidate()
+        itemObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let why = item.error.map { DataVideoTransport.describe($0) } ?? "no error"
+            let events = item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" }.joined(separator: " | ") ?? ""
+            AppLog.e("WatchVideo", "the video failed: \(why) \(events)")
+            Task { @MainActor in self?.remake(item) }
+        }
+    }
+
+    private var remade = 0
+
+    private func remake(_ failed: AVPlayerItem) {
+        guard failed === player.currentItem, remade < 3, timeObserver != nil else { return }
+        remade += 1
+        let item = AVPlayerItem(asset: failed.asset)
+        // The last try leaves the overlay out: the video without the data beats a frozen picture, and
+        // the log then says whether the overlay was what failed.
+        item.videoComposition = remade < 3 ? failed.videoComposition : nil
+        AppLog.w("WatchVideo", "making the video again (\(remade)\(remade < 3 ? "" : ", without the overlay")) at \(micros / 1_000) ms")
+        player.replaceCurrentItem(with: item)
+        watch(item)
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.micros = self.totalMicros
+                self.setPlaying(false)
+            }
+        }
+        seek(fraction: totalMicros > 0 ? Double(micros) / Double(totalMicros) : 0, exact: true)
+        if playing { player.playImmediately(atRate: 1) }
+    }
+
+    /// Stops it where it is (the app left the screen), as Android's on pause.
+    func pause() {
+        if playing { setPlaying(false) }
+    }
+
+    func stop() {
+        settle?.cancel()
+        settle = nil
+        setPlaying(false)
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        rateObserver?.invalidate()
+        rateObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
+        itemObserver?.invalidate()
+        itemObserver = nil
+    }
+
+    func playPause() {
+        if !playing && micros >= totalMicros && totalMicros > 0 { seek(fraction: 0, exact: true) }
+        setPlaying(!playing)
+    }
+
+    /// Goes to [fraction] of the whole video: to the nearest key frame while dragging, exactly when let go.
+    /// A loose seek is followed by an exact one once the bar has been still for a moment, so the video
+    /// lands where the bar is even when the bar's end of a drag never comes (FBBD-435: on iOS 27 the
+    /// clock stayed on the drag's place).
+    func seek(fraction: Double, exact: Bool) {
+        let target = Int64((min(max(fraction, 0), 1) * Double(totalMicros)).rounded())
+        micros = target
+        queued = (target, exact)
+        settle?.cancel()
+        if !exact {
+            settle = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, !Task.isCancelled else { return }
+                self.seek(fraction: fraction, exact: true)
+                self.settled += 1
+            }
+        }
+        if !seeking { nextSeek() }
+    }
+
+    private func nextSeek() {
+        guard let next = queued else { return }
+        queued = nil
+        let target = next.micros, exact = next.exact
+        seeking = true
+        seekNumber += 1
+        let number = seekNumber
+        let tolerance: CMTime = exact ? .zero : .positiveInfinity
+        let sent = DispatchTime.now().uptimeNanoseconds
+        player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] done in
+            Task { @MainActor in
+                guard let self else { return }
+                let took = (DispatchTime.now().uptimeNanoseconds - sent) / 1_000_000
+                if exact || took > 1_000 {
+                    AppLog.i("WatchVideo", "seek to \(target / 1_000) ms \(done ? "done" : "cut short") in \(took) ms, playing \(self.playing)")
+                }
+                guard number == self.seekNumber, self.seeking else { return }
+                self.seekEnded(exact: exact)
+            }
+        }
+        // Its end not come after a second: on with the next one, and the clock follows the player again.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, number == self.seekNumber, self.seeking else { return }
+            AppLog.w("WatchVideo", "seek to \(target / 1_000) ms not done after 1 s, going on")
+            self.seekEnded(exact: exact)
+        }
+    }
+
+    private func seekEnded(exact: Bool) {
+        seeking = false
+        if queued != nil {
+            nextSeek()
+        } else {
+            // Plays on from there: iOS 27 can leave it stopped after a seek (FBBD-435).
+            if playing && player.rate == 0 { player.playImmediately(atRate: 1) }
+            if exact { follow(player.currentTime()) }
+        }
+    }
+
+    /// The error with its domain, code and the errors under it (FBBD-435: "could not be completed" alone says nothing).
+    nonisolated static func describe(_ error: Error) -> String {
+        let e = error as NSError
+        var text = "\(e.domain) \(e.code) \(e.localizedDescription)"
+        if let reason = e.localizedFailureReason { text += " (\(reason))" }
+        if let under = e.userInfo[NSUnderlyingErrorKey] as? Error { text += " <- " + describe(under) }
+        return text
+    }
+
+    private func follow(_ t: CMTime) {
+        // A seek under way or waiting: the bar stays where it was sent, not where the player was.
+        guard !seeking, queued == nil, t.isNumeric else { return }
+        micros = min(max(DataVideoMaker.micros(t), 0), totalMicros)
+    }
+
+    private func setPlaying(_ on: Bool) {
+        playing = on
+        if on { player.play() } else { player.pause() }
+        // The screen stays on while it plays, as on Android (AVKit's controls did this before).
+        if on && !UIApplication.shared.isIdleTimerDisabled {
+            UIApplication.shared.isIdleTimerDisabled = true
+            keptAwake = true
+        } else if !on && keptAwake {
+            UIApplication.shared.isIdleTimerDisabled = false
+            keptAwake = false
+        }
+    }
+}
+
+/// The picture, letterboxed in the space it gets.
+private struct DataVideoPicture: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PictureView {
+        let v = PictureView()
+        v.playerLayer.player = player
+        v.playerLayer.videoGravity = .resizeAspect
+        v.backgroundColor = .black
+        return v
+    }
+
+    func updateUIView(_ uiView: PictureView, context: Context) {}
+
+    final class PictureView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
     }
 }
 

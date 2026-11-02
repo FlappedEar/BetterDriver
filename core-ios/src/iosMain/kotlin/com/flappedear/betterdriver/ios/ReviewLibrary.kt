@@ -468,6 +468,12 @@ class ReviewLibrary(base: String) {
         } catch (e: Exception) {
             lines += "recovery stopped: ${e.message}"
         }
+        // A drive imported twice before FBBD-427 is listed once again; its extra imported copies go.
+        try {
+            store.removeCopies().forEach { lines += "$it removed: a copy of a drive listed twice" }
+        } catch (e: Exception) {
+            lines += "removing copies stopped: ${e.message}"
+        }
         return lines
     }
 

@@ -55,6 +55,30 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// A drive stored twice (FBBD-427, Arek on the Mac: deleting one of two rows took both): deleting
+    /// one copy leaves the other, and the rest of the list.
+    func testDeletingOneOfTwoCopiesKeepsTheOther() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoTwin"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        // Newest first: Silesia Ring, then the two Jastrząb copies (same start).
+        XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 180), "the twin is not listed")
+        XCTAssertEqual(rows.count, 3)
+        rows.element(boundBy: 2).press(forDuration: 1.2)
+        app.buttons["Delete"].firstMatch.tap()
+        let confirm = app.alerts.buttons["confirmDelete"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "no delete question")
+        confirm.tap()
+        expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: rows)
+        waitForExpectations(timeout: 30)
+        // Nothing else goes a moment later either (a reload after the delete): one copy is left.
+        sleep(3)
+        XCTAssertEqual(rows.count, 2, "deleting one copy took more than one session")
+        keep("One of two copies deleted")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testSharingASessionWritesItWithoutAFailure() {
         app.launchArguments = ["-freshInstall", "-demoSessions"]
         app.launch()
@@ -85,8 +109,8 @@ final class ReviewScreensTests: XCTestCase {
         }
         // On the iPad the list stays beside the session, as on an Android tablet (FBBD-40).
         let back = NSPredicate(format: "isHittable == true")
-        expectation(for: back, evaluatedWith: rows.element(boundBy: 0))
-        waitForExpectations(timeout: 15)
+        let listed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: rows.element(boundBy: 0))], timeout: 15)
+        XCTAssertEqual(listed, .completed, "the list is not beside the session")
     }
 
     func testASessionWithNoTrackShowsItsDriveOnTheMap() {
