@@ -177,8 +177,12 @@ final class SatelliteMaps: ObservableObject {
     private func tileURL(_ source: SatelliteSource, z: Int32, x: Int32, y: Int32) -> URL? {
         switch source {
         case .google:
-            guard let key = key(.google), takeGoogleTile(), let token = googleSession(key: key) else { return nil }
-            return URL(string: TileSources.shared.googleSatellite(key: key, session: token).url(z: z, x: x, y: y))
+            guard let key = key(.google), let token = googleSession(key: key),
+                  let url = URL(string: TileSources.shared.googleSatellite(key: key, session: token).url(z: z, x: x, y: y))
+            else { return nil }
+            // A tile the cache still holds costs Google nothing: only real fetches count against the cap.
+            let cached = http.configuration.urlCache?.cachedResponse(for: URLRequest(url: url)) != nil
+            return cached || takeGoogleTile() ? url : nil
         case .mapTiler:
             guard let key = key(.mapTiler) else { return nil }
             return URL(string: TileSources.shared.mapTiler(key: key).url(z: z, x: x, y: y))

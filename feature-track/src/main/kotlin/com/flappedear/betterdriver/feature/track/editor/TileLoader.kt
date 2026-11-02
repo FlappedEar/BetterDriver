@@ -29,6 +29,9 @@ import java.util.concurrent.Executors
  * lap in 3D (up to 48 tiles in one picture, FBBD-316) never drops a tile it is still showing.
  */
 private const val MemoryBytes = 64 * 1024 * 1024
+
+/** Google's tiles kept compressed in memory: some 600 of 512 px, more than a track's 3D lap uses. */
+private const val GoogleBytes = 32 * 1024 * 1024
 private const val BytesPerPixel = 4
 private const val Threads = 6
 private const val TimeoutMs = 15_000
@@ -72,6 +75,14 @@ class TileLoader(
 
     private val memory = object : LruCache<Key, ImageBitmap>(MemoryBytes) {
         override fun sizeOf(key: Key, value: ImageBitmap) = value.width * value.height * BytesPerPixel
+    }
+    /**
+     * Google's tiles as fetched (JPEG, about 50 KB each), in memory only, as its terms ask: a whole
+     * track's tiles fit, so watching more laps of it costs no more Google tiles until the app is
+     * closed. The decoded [memory] holds only 64 of them, fewer than one lap of the 3D picture uses.
+     */
+    private val googleBytes = object : LruCache<Key, ByteArray>(GoogleBytes) {
+        override fun sizeOf(key: Key, value: ByteArray) = value.size
     }
     private val pending = ConcurrentHashMap.newKeySet<Key>()
     private val failedAt = HashMap<Key, Long>()
@@ -174,6 +185,7 @@ class TileLoader(
         copyrights.clear()
         googleCredit = GoogleMapTiles.credit(emptyList())
         memory.snapshot().keys.filter { it.source == GoogleId }.forEach { memory.remove(it) }
+        googleBytes.evictAll()
         keyGeneration++
         failedAt.clear()
         pending.clear()
@@ -318,8 +330,12 @@ class TileLoader(
     private fun file(key: Key) = File(cacheDir, "${key.source}/${key.z}/${key.x}/${key.y}.tile")
 
     private fun readCached(source: TileSource, key: Key): ImageBitmap? {
-        val f = file(key).takeIf { source.stored && it.isFile } ?: return null
-        return BitmapFactory.decodeFile(f.path)?.asImageBitmap()
+        val bitmap = if (source.stored) {
+            file(key).takeIf { it.isFile }?.let { BitmapFactory.decodeFile(it.path) }
+        } else {
+            googleBytes.get(key)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+        }
+        return bitmap?.asImageBitmap()
     }
 
     // A failed download leaves nothing on disk and is retried later; it is never an error.
@@ -335,7 +351,10 @@ class TileLoader(
         // A WMS reports errors as XML with status 200: only real images are kept.
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
         if (source.id == GoogleId) noteCopyright(key)
-        if (!source.stored) return bitmap.asImageBitmap()
+        if (!source.stored) {
+            googleBytes.put(key, bytes)
+            return bitmap.asImageBitmap()
+        }
         try {
             val f = file(key)
             f.parentFile?.mkdirs()
