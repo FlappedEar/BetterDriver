@@ -103,6 +103,10 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
             }
             val made = writer.finish(format)
             c.beforeAdd()
+            // Never the same drive twice (FBBD-427).
+            if (store.copyOf(File(root, made.id).path, made.info, made.durationMicros) != null) {
+                throw ImportFormatException(ForeignImport.AlreadyHere)
+            }
             add(File(root, made.id))
             return made
         } finally {

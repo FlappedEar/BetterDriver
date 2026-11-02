@@ -12,8 +12,19 @@ struct ProgressionCard: View {
     @State private var progression = false
 
     var body: some View {
-        Card {
-            SectionTitle("Against earlier sessions here")
+        // The Highlights card (UI-307 A), as Android's: one sentence on the typical lap and two bars to
+        // compare, then the detail. The sentence is the shared core's (typicalLapHighlight).
+        let highlight = SessionProgressKt.typicalLapHighlight(progress: progress)
+        HealthCard(title: highlight != nil ? "Typical lap" : "Against earlier sessions here", icon: .laps) {
+            if let highlight {
+                Text(highlight)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Palette.onBackground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("typicalLapHighlight")
+                TypicalLapBars(progress: progress)
+                SectionTitle("Against earlier sessions here")
+            }
             if progress.earlierSessions > 0,
                let earlierBest = progress.earlierBestSeconds?.doubleValue,
                let delta = progress.bestDeltaSeconds?.doubleValue {
@@ -71,11 +82,36 @@ struct ProgressionSummaryCard: View {
 
     var body: some View {
         Group {
-            if let progress { ProgressionCard(progress: progress, sessionId: sessionId) }
+            if let progress {
+                VStack(spacing: 12) {
+                    HealthSectionTitle("Highlights")
+                    ProgressionCard(progress: progress, sessionId: sessionId)
+                }
+            }
         }
         .task(id: sessionId) {
             let read = summary
             progress = await Task.detached(priority: .utility) { ReviewBridge.progress(read) }.value
+        }
+    }
+}
+
+/// This session's typical lap against the session before's, as two bars, the longer lap the longer
+/// bar, from 90 % of the quicker lap, so a second in a lap of eighty shows (as Android's TypicalLapBars).
+private struct TypicalLapBars: View {
+    let progress: SessionProgress
+
+    var body: some View {
+        if let now = progress.lapMedianSeconds?.doubleValue, let before = progress.previousMedianSeconds?.doubleValue {
+            let floor = min(now, before) * 0.9
+            let top = max(now, before) - floor
+            HealthCompareBars(bars: [
+                HealthCompareBar(label: "This session", value: progressionLapTime(now), share: (now - floor) / top, color: Palette.accent),
+                HealthCompareBar(
+                    label: progress.previousLabel ?? "", value: progressionLapTime(before),
+                    share: (before - floor) / top, color: Palette.beforeBar
+                ),
+            ])
         }
     }
 }

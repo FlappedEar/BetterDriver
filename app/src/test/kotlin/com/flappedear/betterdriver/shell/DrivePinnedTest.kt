@@ -1,8 +1,6 @@
 package com.flappedear.betterdriver.shell
 
 import com.flappedear.betterdriver.analysis.review.SessionFacts
-import com.flappedear.betterdriver.coach.FocusTarget
-import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -11,9 +9,13 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.File
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 
-/** Drive's Pinned cards (UI-308 A): the next session's focus here, and the last day here. */
+/**
+ * Drive's Pinned cards (UI-308 A): the app hands the shared core (coach DrivePinnedTest, FBBD-421)
+ * its sessions with the day each started on in the phone's time zone.
+ */
 class DrivePinnedTest {
     private val day1 = LocalDate.of(2026, 8, 28).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
     private val day2 = LocalDate.of(2026, 8, 29).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli()
@@ -21,31 +23,6 @@ class DrivePinnedTest {
 
     private fun s(id: String, start: Long, track: String, state: SessionState = SessionState.FINISHED) =
         SessionSummary(id, File(id), SessionInfo(start, track = track), state, 600_000_000L)
-
-    private fun target(name: String, role: String, seconds: Double?) = FocusTarget(
-        id = name, role = role, segmentId = name, name = name, kind = "sectorGap", confidence = "HIGH",
-        timeAvailableSeconds = seconds,
-    )
-
-    @Test
-    fun `the focus lists the primary corner first with the time of all of them`() {
-        val record = SessionFocusRecord(
-            trackId = "t",
-            sessionId = "a",
-            sessionStartUtcMillis = 1,
-            targets = listOf(
-                target("Corner 1", FocusTarget.Secondary, 0.53),
-                target("Corner 3", FocusTarget.Primary, 0.59),
-                target("Corner 7", FocusTarget.Secondary, 0.41),
-            ),
-        )
-        val focus = driveFocus(record)!!
-        assertEquals(listOf("Corner 3", "Corner 1", "Corner 7"), focus.corners)
-        assertEquals(1.53, focus.secondsToFind!!, 1e-9)
-        assertEquals("1.53 s a lap to find", focusTimeText(focus.secondsToFind!!))
-        assertNull(driveFocus(record.copy(targets = emptyList())))
-        assertNull(driveFocus(null))
-    }
 
     @Test
     fun `the last day here is the newest day with a timed session at the track`() {
@@ -66,10 +43,21 @@ class DrivePinnedTest {
             "old" to SessionFacts(laps = 4, bestMillis = 108_000),
         )
         val last = lastTimeHere(sessions, facts, "Jastrząb", ZoneOffset.UTC)!!
-        assertEquals(LocalDate.of(2026, 8, 29), last.day)
+        assertEquals(LocalDate.of(2026, 8, 29), LocalDate.ofEpochDay(last.epochDay))
         assertEquals(109_910L, last.bestMillis)
         assertEquals(listOf(113_270L, 109_910L), last.sessionBests)
         assertNull(lastTimeHere(sessions, facts, null, ZoneOffset.UTC))
         assertNull(lastTimeHere(sessions, facts, "Tor Poznań", ZoneOffset.UTC))
+    }
+
+    @Test
+    fun `a session late in the evening counts on its own day where the phone is`() {
+        // 23:30 UTC on 28 August is already 29 August in Poland.
+        val late = s("late", day2 - hour / 2, "Jastrząb")
+        val warsaw = ZoneId.of("Europe/Warsaw")
+        val inPoland = pinnedSessions(listOf(late), warsaw).single().epochDay
+        val inUtc = pinnedSessions(listOf(late), ZoneOffset.UTC).single().epochDay
+        assertEquals(LocalDate.of(2026, 8, 29).toEpochDay(), inPoland)
+        assertEquals(LocalDate.of(2026, 8, 28).toEpochDay(), inUtc)
     }
 }

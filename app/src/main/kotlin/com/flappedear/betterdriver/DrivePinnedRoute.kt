@@ -5,12 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import com.flappedear.betterdriver.coach.DriveFocus
+import com.flappedear.betterdriver.coach.DrivePinned
+import com.flappedear.betterdriver.coach.driveFocus
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.Sessions
-import com.flappedear.betterdriver.shell.DriveFocus
-import com.flappedear.betterdriver.shell.DrivePinned
-import com.flappedear.betterdriver.shell.driveFocus
 import com.flappedear.betterdriver.shell.lastTimeHere
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackDetection
