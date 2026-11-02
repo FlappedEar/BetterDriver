@@ -46,20 +46,25 @@ again.
 
 ```sh
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && source ~/.zprofile
-mkdir ~/actions-runner-1 && cd ~/actions-runner-1
+cd ~ && rm -rf ~/actions-runner-1 ~/actions-runner-2
+url=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | grep -o 'https://[^"]*actions-runner-osx-arm64-[0-9.]*\.tar\.gz' | head -1); echo "$url"
+curl -L -o ~/runner.tar.gz "$url"
+mkdir ~/actions-runner-1 ~/actions-runner-2
+tar xzf ~/runner.tar.gz -C ~/actions-runner-1
+tar xzf ~/runner.tar.gz -C ~/actions-runner-2
+ls ~/actions-runner-1/config.sh ~/actions-runner-2/config.sh
 ```
 
-On GitHub, FlappedEar/BetterDriver > Settings > Actions > Runners > New self-hosted runner >
-macOS, ARM64: run its "Download" commands (curl + tar, without the `mkdir`/`cd`), then:
+The token: FlappedEar/BetterDriver > Settings > Actions > Runners > New self-hosted runner >
+macOS, ARM64, the `--token` value in its "Configure" section (valid 1 h; reload the page for a
+new one).
 
 ```sh
-./config.sh --url https://github.com/FlappedEar/BetterDriver --token <TOKEN FROM THAT PAGE> \
-  --name mac-mini-1 --labels bd-mac --unattended
+cd ~/actions-runner-1
+./config.sh --url https://github.com/FlappedEar/BetterDriver --token TOKEN --name mac-mini-1 --labels bd-mac --unattended
 ./svc.sh install && ./svc.sh start
-mkdir ~/actions-runner-2 && cd ~/actions-runner-2
-tar xzf ~/actions-runner-1/actions-runner-osx-arm64-*.tar.gz
-./config.sh --url https://github.com/FlappedEar/BetterDriver --token <NEW TOKEN: reload the page> \
-  --name mac-mini-2 --labels bd-mac --unattended
+cd ~/actions-runner-2
+./config.sh --url https://github.com/FlappedEar/BetterDriver --token TOKEN --name mac-mini-2 --labels bd-mac --unattended
 ./svc.sh install && ./svc.sh start
 ```
 
