@@ -218,8 +218,9 @@ class ReplayDriveTest {
         val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > CpuBudget.getValue(process) }
         check(over.isEmpty()) {
             over.entries.joinToString("\n") { (process, m) ->
-                "CPU budget (FBBD-281): $process process %.1f %% > %.1f %%; ${m?.how}"
-                    .format(m?.value, CpuBudget.getValue(process))
+                // m.how holds "% of one core": appended after format(), never part of the pattern
+                "CPU budget (FBBD-281): $process process %.1f %% > %.1f %%; "
+                    .format(m?.value, CpuBudget.getValue(process)) + m?.how
             }
         }
     }
