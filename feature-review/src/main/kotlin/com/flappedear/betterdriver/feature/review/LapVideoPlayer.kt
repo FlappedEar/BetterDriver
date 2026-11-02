@@ -119,20 +119,27 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
                 stopping = false
             }
         }
-        // Started, or a new review speed: at once; a drift correction at most every half second.
-        val fresh = rate != lastRate || !player.playWhenReady
-        lastRate = rate
-        if (rateChangeDue(if (fresh) null else speed, step.speed, (nowNanos - speedSetNanos) / NanosPerMilli)) {
-            if (step.speed != speed) player.setPlaybackSpeed(step.speed)
-            speed = step.speed
-            speedSetNanos = nowNanos
-        }
+        setSpeed(step.speed, rate, nowNanos)
         if (player.playWhenReady != playing) player.playWhenReady = playing
         return pending
     }
 
     fun pause() {
         player.playWhenReady = false
+    }
+
+    /**
+     * Sets the player to [wanted] for the review speed [rate]: at once when it starts playing or the
+     * review speed changed, a drift correction at most every half second ([rateChangeDue], FBBD-429).
+     */
+    private fun setSpeed(wanted: Float, rate: Double, nowNanos: Long) {
+        val fresh = rate != lastRate || !player.playWhenReady
+        lastRate = rate
+        if (rateChangeDue(if (fresh) null else speed, wanted, (nowNanos - speedSetNanos) / NanosPerMilli)) {
+            if (wanted != speed) player.setPlaybackSpeed(wanted)
+            speed = wanted
+            speedSetNanos = nowNanos
+        }
     }
 
     fun release() = player.release()
