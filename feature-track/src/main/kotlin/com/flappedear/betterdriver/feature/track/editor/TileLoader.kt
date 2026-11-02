@@ -162,8 +162,10 @@ class TileLoader(
         google = null
         session = null
         sessionTriedAt = 0L
+        // Photos and their owners' credit go together: the tiles are fetched again, and credited.
         copyrights.clear()
         googleCredit = GoogleMapTiles.credit(emptyList())
+        memory.snapshot().keys.filter { it.source == GoogleId }.forEach { memory.remove(it) }
         keyGeneration++
         failedAt.clear()
         pending.clear()
