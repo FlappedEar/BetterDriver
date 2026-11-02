@@ -13,6 +13,17 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.29.0
+
+- Android: Google's satellite photo in the track editor and under the perfect lap in 3D, with
+  your own Google Map Tiles API key (**Map › Add Google key…**). See [Drive](drive.md#satellite-map).
+- The OBD page and Settings name the Bluetooth LE OBD-II adapter in use, not the Wi-Fi adapter
+  listed before it. On the iPhone, the Wi-Fi adapter's page shows its address.
+- iPhone and iPad: a video with data has its own seek bar, as on Android, so scrubbing works
+  on a Mac, and Close no longer covers AirPlay.
+- iPhone: the coach keeps each session's next focus for the next coached session at that track,
+  and accounts for how old each GPS fix is, as on Android.
+
 ## 1.28.0
 
 - Android: a new look outside the car (dark cards, amber headings, Inter font). A session's

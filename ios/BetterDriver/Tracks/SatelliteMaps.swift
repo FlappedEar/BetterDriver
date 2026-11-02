@@ -45,6 +45,8 @@ final class SatelliteMaps: ObservableObject {
     private let lock = NSLock()
     private var session: (token: String, expiry: Date)?
     private var copyrights: [String: String] = [:]
+    /// Google tiles asked for today, against the shared daily cap (GoogleTileBudget, FBBD-412). Under [lock].
+    private var tileDay: GoogleTileDay?
     private let http: URLSession
     /// Set by the UI tests (-stubSatellite): stub keys, tiles drawn by the app, no network.
     private let stub: Bool
@@ -61,6 +63,7 @@ final class SatelliteMaps: ObservableObject {
         config.timeoutIntervalForRequest = 15
         if stub { config.protocolClasses = [StubSatelliteProtocol.self] }
         http = URLSession(configuration: config)
+        tileDay = GoogleTileBudget.shared.read(text: try? String(contentsOf: Self.budgetFile, encoding: .utf8))
     }
 
     // MARK: Keys
@@ -100,8 +103,47 @@ final class SatelliteMaps: ObservableObject {
         }
     }
 
-    /// The sources with what they need, best first; Apple's always.
-    var available: [SatelliteSource] { SatelliteSource.allCases.filter { $0 == .apple || key($0) != nil } }
+    /// The sources with what they need, best first; Apple's always. Google's not once today's tiles are used.
+    var available: [SatelliteSource] {
+        SatelliteSource.allCases.filter { $0 == .apple || (key($0) != nil && !($0 == .google && googleSpentToday)) }
+    }
+
+    // MARK: Daily cap
+
+    /// The same file name as Android's (TileLoader).
+    private static var budgetFile: URL { AppFolders.base.appendingPathComponent("google-tiles-today.txt") }
+
+    private static func today() -> Int64 {
+        GoogleTileBudget.shared.today(nowMillis: Int64(Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// True when today's Google tiles are used up: the next source shows until tomorrow (UTC).
+    var googleSpentToday: Bool {
+        if stub { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        return GoogleTileBudget.shared.spent(day: tileDay, today: Self.today())
+    }
+
+    /// Counts one Google tile against today's cap and keeps the count; false when the cap is used.
+    private func takeGoogleTile() -> Bool {
+        if stub { return true }
+        let today = Self.today()
+        lock.lock()
+        let next = GoogleTileBudget.shared.take(day: tileDay, today: today)
+        if let next {
+            tileDay = next
+            // Kept under the lock, so an older count never overwrites a newer one.
+            try? GoogleTileBudget.shared.write(day: next).write(to: Self.budgetFile, atomically: true, encoding: .utf8)
+        }
+        lock.unlock()
+        if next == nil {
+            // The menus and the editor's map move to the next source.
+            DispatchQueue.main.async { self.revision += 1 }
+            return false
+        }
+        return true
+    }
 
     var best: SatelliteSource { available.first ?? .apple }
 
@@ -147,8 +189,12 @@ final class SatelliteMaps: ObservableObject {
     private func tileURL(_ source: SatelliteSource, z: Int32, x: Int32, y: Int32) -> URL? {
         switch source {
         case .google:
-            guard let key = key(.google), let token = googleSession(key: key) else { return nil }
-            return URL(string: TileSources.shared.googleSatellite(key: key, session: token).url(z: z, x: x, y: y))
+            guard let key = key(.google), let token = googleSession(key: key),
+                  let url = URL(string: TileSources.shared.googleSatellite(key: key, session: token).url(z: z, x: x, y: y))
+            else { return nil }
+            // A tile the cache still holds costs Google nothing: only real fetches count against the cap.
+            let cached = http.configuration.urlCache?.cachedResponse(for: URLRequest(url: url)) != nil
+            return cached || takeGoogleTile() ? url : nil
         case .mapTiler:
             guard let key = key(.mapTiler) else { return nil }
             return URL(string: TileSources.shared.mapTiler(key: key).url(z: z, x: x, y: y))

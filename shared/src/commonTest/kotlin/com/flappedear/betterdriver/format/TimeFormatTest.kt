@@ -22,6 +22,15 @@ class TimeFormatTest {
     }
 
     @Test
+    fun videoClockShowsMinutesAndSecondsThenHours() {
+        assertEquals("0:00", formatVideoClock(0))
+        assertEquals("0:00", formatVideoClock(-5))
+        assertEquals("4:05", formatVideoClock(245_900_000))
+        assertEquals("59:59", formatVideoClock(3_599_000_000))
+        assertEquals("1:02:03", formatVideoClock(3_723_000_000))
+    }
+
+    @Test
     fun delta() {
         assertEquals("${Minus}0.34", formatDelta(-0.34))
         assertEquals("+0.08", formatDelta(0.08))

@@ -45,20 +45,28 @@ enum DataVideoMaker {
             let range = CMTimeRange(start: cmTime(cut.fromMicros), end: cmTime(cut.toMicros))
             let at = cmTime(cut.outputStartMicros)
             guard let source = try await asset.loadTracks(withMediaType: .video).first else { continue }
-            try video.insertTimeRange(range, of: source, at: at)
+            // Only what the file's video track holds: a range past its end (the file's length counts its
+            // sound too, or the last frame's time) leaves the player failing with -11800/-12784 (FBBD-435).
+            let held = range.intersection(try await source.load(.timeRange))
+            guard held.duration.seconds > 0 else { continue }
+            let heldAt = CMTimeAdd(at, CMTimeSubtract(held.start, range.start))
+            try video.insertTimeRange(held, of: source, at: heldAt)
             // The phone's files say how they are turned (PhoneCamera's transform). Video is landscape,
             // as the track screen: a file turned upright (recorded before landscape was forced) plays
             // as the camera took it, which is the right way up for a phone in a landscape mount.
             let transform = landscape(try await source.load(.preferredTransform))
             if let first = turned {
-                if (transform.a < 0) != (first.a < 0) { flipped.append(CMTimeRange(start: at, duration: range.duration)) }
+                if (transform.a < 0) != (first.a < 0) { flipped.append(CMTimeRange(start: heldAt, duration: held.duration)) }
             } else {
                 video.preferredTransform = transform
                 turned = transform
             }
             // A clip without sound is silent there, so clips with and without it follow each other.
             if let sound = try await asset.loadTracks(withMediaType: .audio).first {
-                try? audio.insertTimeRange(range, of: sound, at: at)
+                let heard = held.intersection((try? await sound.load(.timeRange)) ?? held)
+                if heard.duration.seconds > 0 {
+                    try? audio.insertTimeRange(heard, of: sound, at: CMTimeAdd(heldAt, CMTimeSubtract(heard.start, held.start)))
+                }
             }
         }
         if audio.segments.isEmpty { composition.removeTrack(audio) }
