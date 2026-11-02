@@ -1,15 +1,21 @@
 import SwiftUI
 
-/// The Android app's dark colours (core-ui Theme.kt DarkScheme): black background for OLED.
+/// The Android app's dark colours (core-ui Theme.kt DarkScheme), the Health-like look (UI-307 A,
+/// FBBD-421): true black for OLED, cards in Apple's grouped grey #1C1C1E, grey text #8E8E93,
+/// separators #38383A, amber the only accent.
 enum Palette {
-    static let accent = Color(hex: 0xFCB203)
-    static let onAccent = Color(hex: 0x1A1200)
+    static let accent = Color(hex: 0xFFC044)
+    static let onAccent = Color(hex: 0x211B0F)
     static let background = Color.black
-    static let surface = Color(hex: 0x151B20)
-    static let surfaceVariant = Color(hex: 0x1C242A)
-    static let onBackground = Color(hex: 0xEEF2F4)
-    static let onSurfaceVariant = Color(hex: 0x8C9AA5)
-    static let outline = Color(hex: 0x26313A)
+    /// A card on black.
+    static let surface = Color(hex: 0x1C1C1E)
+    /// A control or a selected row on a card.
+    static let surfaceVariant = Color(hex: 0x2C2C2E)
+    static let onBackground = Color.white
+    static let onSurfaceVariant = Color(hex: 0x8E8E93)
+    static let outline = Color(hex: 0x38383A)
+    /// The earlier session's bar in a comparison: Apple's grey.
+    static let beforeBar = Color(hex: 0x636366)
     /// The best lap, purple as on Android (TrackColors.best).
     static let best = Color(hex: 0xC58BFF)
     /// The other lap of a comparison (TrackColors.cold).

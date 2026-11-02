@@ -23,7 +23,13 @@ import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.analysis.review.trackProposal as proposeFromSession
+import com.flappedear.betterdriver.coach.CoachFolders
 import com.flappedear.betterdriver.coach.CoachPicksStore
+import com.flappedear.betterdriver.coach.DrivePinned
+import com.flappedear.betterdriver.coach.PinnedSession
+import com.flappedear.betterdriver.coach.SessionFocusStore
+import com.flappedear.betterdriver.coach.driveFocus
+import com.flappedear.betterdriver.coach.lastTimeHere
 import com.flappedear.betterdriver.coach.CueCountsText
 import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.card
@@ -56,6 +62,8 @@ import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterMediumStyle
 import platform.Foundation.NSDateFormatterShortStyle
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSTimeZone
+import platform.Foundation.localTimeZone
 import platform.Foundation.NSLock
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
@@ -337,6 +345,31 @@ class ReviewLibrary(base: String) {
     /** Each listed session's row, as Android's (UI-139 C): its detail line and best lap. Off the main thread. */
     fun sessionRows(): Map<String, SessionRowFacts> = rows.read(sessions())
 
+    private val focusStore = SessionFocusStore(CoachFolders.under("$base/coach", sessionsRoot).focus)
+
+    /**
+     * Drive's Pinned cards (UI-308 A, FBBD-421) at the saved track [trackId] the phone is at, named
+     * [track] on screen: the focus the last session there kept for the next one (FBBD-20) and the last
+     * day there, worked out by the shared core as on Android. Nothing while the track is unknown or
+     * when it cannot be read. Reads the sessions' laps: off the main thread.
+     */
+    @Suppress("TooGenericExceptionCaught") // Swift cannot catch a Kotlin exception; the cards are only left out.
+    fun drivePinned(trackId: String?, track: String?): DrivePinned = try {
+        val listed = sessions()
+        val ids = listed.map { it.id }.toSet()
+        val focus = trackId?.let { driveFocus(focusStore.latest(it, kept = { id -> id in ids })) }
+        val zone = NSTimeZone.localTimeZone
+        val pinned = listed.map { s ->
+            val start = s.info.startUtcMillis
+            val at = NSDate.dateWithTimeIntervalSince1970(start / MillisPerSecond)
+            val offset = zone.secondsFromGMTForDate(at) * MillisPerSecondLong
+            PinnedSession(s.id, s.info.track, start, (start + offset).floorDiv(MillisPerDay), recording = false)
+        }
+        DrivePinned(focus, lastTimeHere(pinned, rows.facts(listed), track))
+    } catch (_: Exception) {
+        DrivePinned()
+    }
+
     private val pickerLock = NSLock()
     private val pickerCache = HashMap<String, Pair<PickerStamp, Pair<String, PickerSession>?>>()
 
@@ -515,3 +548,6 @@ internal fun sessionLabel(startUtcMillis: Long): String = NSDateFormatter().appl
 
 /** What became of a received session: added to the list, or the one already here kept. */
 enum class ImportOutcome { ADDED, KEPT }
+
+private const val MillisPerSecondLong = 1000L
+private const val MillisPerDay = 86_400_000L

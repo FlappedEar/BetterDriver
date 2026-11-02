@@ -374,6 +374,10 @@ object TrackFiles {
     fun placeAt(lat: Double, lon: Double, tracks: List<Track>, circuits: CircuitList): String? =
         detectTrack(GeoPoint(lat, lon), tracks, circuits).placeName
 
+    /** The id of the saved track at [lat], [lon], for Drive's Pinned cards (FBBD-421); null at none. */
+    fun savedTrackIdAt(lat: Double, lon: Double, tracks: List<Track>): String? =
+        (detectTrack(GeoPoint(lat, lon), tracks, CircuitList.Empty) as? TrackDetection.Saved)?.track?.id
+
     /** The circuit directory from the list bundled with the app; empty when it cannot be read. */
     fun circuits(json: String?): CircuitList = try {
         json?.let(CircuitList::decode) ?: CircuitList.Empty

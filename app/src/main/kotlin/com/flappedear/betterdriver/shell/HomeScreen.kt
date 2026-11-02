@@ -33,6 +33,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.coach.DriveFocus
+import com.flappedear.betterdriver.coach.DrivePinned
+import com.flappedear.betterdriver.coach.LastTimeHere
+import com.flappedear.betterdriver.coach.focusCornersText
+import com.flappedear.betterdriver.coach.focusDetailText
+import com.flappedear.betterdriver.coach.lastTimeDetailText
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.NumberFont
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -44,10 +50,13 @@ import com.flappedear.betterdriver.core.ui.component.HealthValueRow
 import com.flappedear.betterdriver.core.ui.component.MiniBars
 import com.flappedear.betterdriver.core.ui.component.SectionTitle
 import com.flappedear.betterdriver.format.formatLapTime
-import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
+import com.flappedear.betterdriver.setup.camerasLine
+import com.flappedear.betterdriver.setup.devicesUnit
+import com.flappedear.betterdriver.setup.sessionDeviceNames
+import java.time.LocalDate
 
 /**
  * Drive (UI-130 C, UI-131 A, UI-132 B; cards since UI-308 A): a large title, one START ring in the
@@ -117,9 +126,8 @@ fun HomeScreen(
 @Composable
 private fun NextSessionHere(focus: DriveFocus, trackName: String?) {
     HealthCard(title = "Next session here", icon = HealthIcon.Coach, trailing = trackName) {
-        HealthValue(focus.corners.joinToString(" · "), size = 22.dp)
-        val first = focus.corners.first()
-        HealthDetail(listOfNotNull(focus.secondsToFind?.let(::focusTimeText), "$first first").joinToString(" · "))
+        HealthValue(focusCornersText(focus), size = 22.dp)
+        HealthDetail(focusDetailText(focus))
     }
 }
 
@@ -127,13 +135,13 @@ private fun NextSessionHere(focus: DriveFocus, trackName: String?) {
 @Composable
 private fun LastTimeHereCard(last: LastTimeHere) {
     val c = TrackTheme.colors
-    HealthCard(title = "Last time here", icon = HealthIcon.Laps, trailing = dayLabel(last.day)) {
+    val day = dayLabel(LocalDate.ofEpochDay(last.epochDay))
+    HealthCard(title = "Last time here", icon = HealthIcon.Laps, trailing = day) {
         HealthValueRow(
             chart = { MiniBars(last.sessionBests.map { it.toDouble() }, MaterialTheme.colorScheme.primary, c.best) },
         ) {
             HealthValue(formatLapTime(last.bestMillis), color = c.best)
-            val n = last.sessionBests.size
-            HealthDetail("best · $n session${if (n == 1) "" else "s"}")
+            HealthDetail(lastTimeDetailText(last))
         }
     }
 }
@@ -145,15 +153,12 @@ private fun LastTimeHereCard(last: LastTimeHere) {
 @Composable
 private fun ThisSession(setup: Setup, recording: Boolean, cameraAllowed: Boolean, onChange: () -> Unit) {
     val active = setup.active()
-    val names = listOfNotNull(active.gnss?.name) +
-        active.carData.map { it.name } +
-        active.sensors.map { it.name } +
-        active.cameras.map { it.name }
+    val names = sessionDeviceNames(setup, receiver = null)
     val car = active.car?.name ?: if (setup.cars.isEmpty()) "No car added" else "No car"
     HealthCard(title = "This session", icon = HealthIcon.Device, trailing = car) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {
-                HealthValue("${names.size}", unit = if (names.size == 1) "device" else "devices")
+                HealthValue("${names.size}", unit = devicesUnit(names.size))
                 if (names.isNotEmpty()) HealthDetail(names.joinToString(" · "))
                 HealthDetail(camerasLine(setup))
             }
@@ -167,17 +172,6 @@ private fun ThisSession(setup: Setup, recording: Boolean, cameraAllowed: Boolean
             )
         }
         if (recording) DimText("Recording. This session's choice is fixed until it stops.")
-    }
-}
-
-/** How many of the listed cameras record this session. */
-internal fun camerasLine(setup: Setup): String {
-    val all = setup.ofKind(EquipmentKind.CAMERA)
-    val on = all.count { it.id in setup.session.cameraIds }
-    return when {
-        all.isEmpty() -> "No cameras"
-        all.size == 1 -> if (on == 1) "${all[0].name} on" else "${all[0].name} off"
-        else -> "$on of ${all.size} cameras on"
     }
 }
 

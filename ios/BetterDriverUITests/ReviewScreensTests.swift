@@ -204,7 +204,7 @@ final class ReviewScreensTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 1).tap()
-        XCTAssertTrue(app.staticTexts["NEXT SESSION · WORK ON"].waitForExistence(timeout: 120), "no next session card")
+        XCTAssertTrue(app.staticTexts["Next session"].waitForExistence(timeout: 120), "no next session card")
         for label in ["BEST ACTUAL LAP", "REALISTIC OPTIMAL", "RAW THEORETICAL BEST", "WHERE TIME GOES", "G-FORCES · WHOLE SESSION"] {
             XCTAssertTrue(app.staticTexts[label].exists, "no \(label)")
         }

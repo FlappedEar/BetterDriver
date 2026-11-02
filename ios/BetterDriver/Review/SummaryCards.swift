@@ -20,8 +20,8 @@ struct SummaryFocusCard: View {
     var body: some View {
         let primary = ui.focus.first { $0.primary } ?? ui.focus.first
         let secondary = ui.focus.filter { $0 !== primary }
-        Card {
-            SectionTitle("Next session · work on")
+        // A card with an amber heading, as Apple Health (UI-307 A): the time to find large, the corner under it.
+        HealthCard(title: "Next session", icon: .coach) {
             if let primary {
                 if sizeClass == .regular && !secondary.isEmpty {
                     HStack(alignment: .top, spacing: 16) {
@@ -76,20 +76,13 @@ private struct SummaryFocusPrimary: View {
     @ViewBuilder private var focus: some View {
         Button { row.compareIndex.map { compare($0.intValue) } } label: {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .bottom) {
-                    Text(row.name)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(Palette.onBackground)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if let time = SummaryTextKt.focusTimeText(row: row) {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text(time)
-                                .font(.system(size: 24, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(row.timeDoubtful ? Palette.onSurfaceVariant : Palette.gain)
-                            Dim("a lap")
-                        }
-                    }
+                if let time = SummaryTextKt.focusTimeText(row: row) {
+                    HealthValue(value: time, unit: "a lap", color: row.timeDoubtful ? Palette.onSurfaceVariant : Palette.gain)
                 }
+                Text(row.name)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Palette.onBackground)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text(row.what.isEmpty ? row.observation : row.what)
                     .foregroundStyle(Palette.onBackground)
                     .multilineTextAlignment(.leading)
@@ -213,20 +206,47 @@ private struct SummaryFigure: View {
     }
 }
 
-/// The session's heart rate (FBBD-225, UI-107 A), only when it recorded heart rate (UI-109).
-struct SummaryHeartRateCard: View {
-    let hr: HeartRateUi
+/// The best actual lap, pinned (UI-307 A), as Android's BestLapCard: its time large in purple, the
+/// realistic optimal under it, and every counted lap as a tiny bar, the best tallest. The other two
+/// lap times are in [SummaryTimesCard].
+struct SummaryBestLapCard: View {
+    let ui: AnalysisUi
 
     var body: some View {
-        Card {
-            SectionTitle(hr.device.map { "Heart rate · \($0)" } ?? "Heart rate")
-            HStack(alignment: .top, spacing: 16) {
-                SummaryFigure(label: "Average", value: "\(hr.averageBpm)", detail: "bpm", color: Palette.onBackground, size: 22)
-                SummaryFigure(label: "Max", value: "\(hr.maxBpm)", detail: "bpm", color: Palette.onBackground, size: 22)
-                SummaryFigure(label: "Min", value: "\(hr.minBpm)", detail: "bpm", color: Palette.onBackground, size: 22)
+        let counted = ui.laps.filter { $0.deltaSeconds != nil }.map { Double($0.millis) / 1000 }
+        HealthCard(title: ProvenanceMarkKt.BestActualLapLabel, icon: .laps, trailing: "Lap \(ui.bestLapNumber)") {
+            HealthValueRow {
+                HealthValue(value: SummaryTextKt.bestLapText(ui: ui), color: Palette.best)
+                if ui.realisticMillis != nil {
+                    HealthDetail("\(ProvenanceMarkKt.RealisticOptimalLabel.lowercased()) \(SummaryTextKt.realisticLapText(ui: ui))")
+                }
+            } chart: {
+                HealthMiniBars(values: counted)
             }
-            Dim("Whole session, \(hr.minutes) min")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pinnedBestLap")
+    }
+}
+
+/// The session's heart rate (FBBD-225, UI-107 A), only when it recorded heart rate (UI-109), pinned
+/// as a card (UI-307 A): the average large, lowest to highest and the strap under it, and each lap's
+/// average as a tiny line.
+struct SummaryHeartRateCard: View {
+    let hr: HeartRateUi
+    let laps: [LapRow]
+
+    var body: some View {
+        let byLap = laps.compactMap { $0.heartRate.map { Double($0.averageBpm) } }
+        HealthCard(title: "Heart rate", icon: .heart, trailing: "\(hr.minutes) min") {
+            HealthValueRow {
+                HealthValue(value: "\(hr.averageBpm)", unit: "bpm avg")
+                HealthDetail((["\(hr.minBpm) – \(hr.maxBpm)"] + [hr.device].compactMap { $0 }).joined(separator: " · "))
+            } chart: {
+                HealthMiniLine(values: byLap)
+            }
+        }
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("heartRateSummary")
     }
 }
