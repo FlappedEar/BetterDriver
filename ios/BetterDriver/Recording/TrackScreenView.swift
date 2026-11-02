@@ -167,6 +167,8 @@ enum OrientationLock {
     /// refusal is asked again once it has settled.
     private static func turn(_ wanted: UIInterfaceOrientationMask, retry: Bool) {
         guard mask == (wanted == .portrait ? normal : wanted) else { return }
+        // A Mac window does not turn, and macOS refuses every ask (12 lines a Mac session).
+        if ProcessInfo.processInfo.isiOSAppOnMac { return }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         var controller = scene?.keyWindow?.rootViewController
         while let c = controller {
