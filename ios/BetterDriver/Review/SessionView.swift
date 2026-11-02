@@ -117,7 +117,7 @@ struct SessionView: View {
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
             case .corners: CornersTab(screen: screen)
-            case .car: CarTab(car: screen?.car)
+            case .car: CarTab(car: screen?.car ?? summary.whole.car)
             case .video: DataVideoPanel(sessionId: session.id, title: title) { playing = $0 }
             }
         } else {
