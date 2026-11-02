@@ -84,7 +84,7 @@ class ForeignInbox(private val sessionsRoot: String, private val stagingRoot: St
             }
             val made = writer.finish(format)
             // Never the same drive twice (FBBD-427).
-            if (SessionStore(sessionsRoot).copyOf(made.info.startUtcMillis, made.durationMicros) != null) {
+            if (SessionStore(sessionsRoot).copyOf("$root/${made.id}", made.info, made.durationMicros) != null) {
                 throw ImportFormatException(ForeignImport.AlreadyHere)
             }
             add("$root/${made.id}", made.id)

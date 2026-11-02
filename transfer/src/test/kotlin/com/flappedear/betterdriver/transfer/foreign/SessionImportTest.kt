@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionFileNames
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -332,6 +333,12 @@ class SessionImportTest {
         assertEquals(listOf(copy.name), store.removeCopies())
         assertEquals(listOf(a.id), store.list().map { it.id })
         assertEquals(emptyList(), store.removeCopies())
+        // A copy whose data differs by one byte is another drive's data: it stays.
+        store.dir(a.id).copyRecursively(copy)
+        val chunk = copy.listFiles().orEmpty().first { SessionFileNames.isChunk(it.name) }
+        chunk.writeBytes(chunk.readBytes().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() })
+        assertEquals(emptyList(), store.removeCopies())
+        assertEquals(2, store.list().size)
     }
 
     @Test

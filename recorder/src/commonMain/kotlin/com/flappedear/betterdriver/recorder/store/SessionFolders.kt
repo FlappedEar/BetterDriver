@@ -118,7 +118,7 @@ class SessionFolders(val root: String) {
      * Run at app start. Returns the ids deleted.
      */
     fun removeCopies(): List<String> =
-        SessionCopies.extras(list()) { CoreFiles.isDirectory(CoreFiles.join(it.dir, VideoFiles.DIR)) }
+        SessionCopies.extras(list(), hasVideo = { CoreFiles.isDirectory(CoreFiles.join(it.dir, VideoFiles.DIR)) })
             .filter { delete(it.id) == DeleteResult.DELETED }
             .map { it.id }
 
