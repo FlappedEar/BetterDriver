@@ -13,6 +13,20 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.30.0
+
+- iPhone and iPad: Android's look, with dark cards, amber headings and Android's tab icons; Drive's
+  Pinned cards, Sessions by day with a Track day card, and the Summary's Pinned and Highlights.
+- The same drive is no longer listed twice: importing it again is refused, and extra copies are
+  removed at start.
+- Lap review plays two videos smoothly on iPad and Mac. On the iPhone, a video with data plays on
+  after a seek.
+- Track editor: lines fit the track's real width, with **Width −/+** to change it.
+- Saved perfect-lap videos keep MapTiler's satellite photo when a MapTiler key is entered.
+- Google's satellite photos stop at 2,500 tiles a day per device, inside Google's free tier.
+- iPhone: the Car tab shows the whole drive for a session without laps, and tyre pressures no
+  longer mix into car channels such as coolant and RPM.
+
 ## 1.29.0
 
 - Android: Google's satellite photo in the track editor and under the perfect lap in 3D, with
