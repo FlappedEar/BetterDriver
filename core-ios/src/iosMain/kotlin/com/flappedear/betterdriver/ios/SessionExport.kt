@@ -90,15 +90,6 @@ class SessionExport(
         NSFileManager.defaultManager.removeItemAtPath("$outRoot/$id", null)
     }
 
-    /** Bytes of the files of [share], for its log line. */
-    fun bytes(share: ExportShare): Long = share.files.sumOf { path ->
-        try {
-            PosixMp4Source(path).use { it.length }
-        } catch (_: IoProblem) {
-            0L
-        }
-    }
-
     /** Writes the plain VBO of session [id]; returns its path. */
     @Throws(Exception::class)
     fun vbo(id: String): String {
@@ -186,6 +177,15 @@ class SessionExport(
         }
     }
 
+}
+
+/** Bytes of the files of [share], for its log line (FBBD-443). */
+fun exportedBytes(share: ExportShare): Long = share.files.sumOf { path ->
+    try {
+        PosixMp4Source(path).use { it.length }
+    } catch (_: IoProblem) {
+        0L
+    }
 }
 
 /**

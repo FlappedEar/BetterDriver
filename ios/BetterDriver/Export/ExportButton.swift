@@ -83,7 +83,7 @@ struct ExportButton: View {
                     let exports = Exports.make()
                     // Written and listed by the shared core, as on Android (ExportShare).
                     let share = try exports.share(id: id, format: core)
-                    AppLog.i(Exports.tag, share.logLine(bytes: exports.bytes(share: share)))
+                    AppLog.i(Exports.tag, share.logLine(bytes: SessionExportKt.exportedBytes(share: share)))
                     return share.files.map { URL(fileURLWithPath: $0) }
                 }
             }.value
