@@ -106,3 +106,32 @@ final class PhoneVideoFinishingTests: XCTestCase {
         return seconds.isFinite ? seconds : 0
     }
 }
+
+/// FBBD-441: the phone camera never gives up after failed files; it backs off while they keep failing.
+final class PhoneFileRetryTests: XCTestCase {
+    func testTheCameraKeepsStartingFilesAndBacksOffWhileTheyFail() {
+        var retry = PhoneFileRetry()
+        XCTAssertTrue(retry.mayOpen(at: 0))
+        // The 3 Nov pattern: files failing after 10 s to 4 min.
+        retry.failed(startedAt: 0, now: 30)
+        XCTAssertEqual(retry.wait, 0)
+        XCTAssertTrue(retry.mayOpen(at: 30), "the first file after a failure starts at once")
+        retry.failed(startedAt: 30, now: 40)
+        XCTAssertEqual(retry.wait, 2)
+        XCTAssertFalse(retry.mayOpen(at: 41))
+        XCTAssertTrue(retry.mayOpen(at: 42))
+        retry.failed(startedAt: 42, now: 45)
+        XCTAssertEqual(retry.wait, 4)
+        retry.failed(startedAt: 49, now: 50)
+        retry.failed(startedAt: 58, now: 59)
+        retry.failed(startedAt: 75, now: 76)
+        retry.failed(startedAt: 108, now: 109)
+        XCTAssertEqual(retry.wait, PhoneFileRetry.longestWait, "the wait stops growing at 30 s")
+        XCTAssertTrue(retry.mayOpen(at: 139), "a fourth, tenth, any file still starts")
+        // A file that recorded for a minute ends the run: the next failure restarts at once.
+        retry.failed(startedAt: 139, now: 139 + PhoneFileRetry.steadySeconds)
+        XCTAssertEqual(retry.inARow, 1)
+        XCTAssertEqual(retry.wait, 0)
+        XCTAssertEqual(retry.total, 8)
+    }
+}

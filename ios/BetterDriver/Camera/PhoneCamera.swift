@@ -50,8 +50,14 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var lastSyncPts: CMTime = .invalid
     /// The current file's frames: taken, dropped, late (BD-01).
     private var counts = PhoneFrameCounts()
-    private var failures = 0
-    private static let maxFailures = 3
+    /// When the next file may start after failed ones (FBBD-441): never given up for the session.
+    private var retry = PhoneFileRetry()
+    /// The current file's start and what it took, for the line logged when it fails (FBBD-441).
+    private var fileStartedAt = 0.0
+    private var lastVideoPts: CMTime = .invalid
+    private var lastAudioPts: CMTime = .invalid
+    private var audioAppended = 0
+    private var audioRefused = 0
 
     /// [onStatus] runs on the main queue.
     init(log: PhoneVideoLog, mode: PhoneVideoMode, onStatus: @escaping (CameraStatus) -> Void) {
@@ -199,23 +205,30 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         guard running else { return }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
         if output === videoOut {
-            // A writer that failed on its own (a full disk, a failed sound sample) ends its file; the
-            // next frame starts a new one, up to [maxFailures] times in a session.
+            // A writer that failed on its own (a full disk, a failed sound sample) ends its file; a
+            // later frame starts a new one, after [retry]'s wait (FBBD-441).
             if let writer, writer.status == .failed || writer.status == .cancelled {
-                failedFile()
+                failedFile(input: "writer", frame: sample)
             }
-            if writer == nil, running { open(at: pts, frame: sample) }
+            if writer == nil, running, retry.mayOpen(at: Self.seconds(pts)) { open(at: pts, frame: sample) }
             guard let writer, writer.status == .writing, let videoIn else { return }
             // A frame the writer is not ready for is counted and left out; only a frame in the file
             // may be named by a video_sync (audit 30 Oct BD-01).
             switch counts.frame(ready: videoIn.isReadyForMoreMediaData, append: { videoIn.append(sample) }) {
-            case .appended: sync(at: pts)
+            case .appended:
+                lastVideoPts = pts
+                sync(at: pts)
             case .dropped: break
-            case .failed: failedFile()
+            case .failed: failedFile(input: "video", frame: sample)
             }
         } else if output === audioOut, let writer, writer.status == .writing, let audioIn,
                   CMTimeCompare(pts, firstPts) >= 0, audioIn.isReadyForMoreMediaData {
-            _ = audioIn.append(sample)
+            if audioIn.append(sample) {
+                audioAppended += 1
+                lastAudioPts = pts
+            } else {
+                audioRefused += 1
+            }
         }
     }
 
@@ -263,6 +276,11 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             firstPts = pts
             lastSyncPts = pts
             counts = PhoneFrameCounts()
+            fileStartedAt = Self.seconds(pts)
+            lastVideoPts = .invalid
+            lastAudioPts = .invalid
+            audioAppended = 0
+            audioRefused = 0
             log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: recording.fps)
             // Green at the chosen mode, amber once stepped down (UI-07).
             status(recording.label, ok: recording == mode)
@@ -362,12 +380,34 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         self.file = nil
     }
 
-    /// The file failed while recording: it ends, the camera says so, and after [maxFailures] there is no more video.
-    private func failedFile() {
+    /// The file failed while recording: it ends, the camera says so, and the next file starts after
+    /// [retry]'s wait (FBBD-441). The line says what the file took up to the failure, to find the cause
+    /// of the -11800/-16341 failures of 3 Nov: which append failed ([input]), the gap from the last
+    /// video frame to [frame], the last sound sample, and the size of [frame].
+    private func failedFile(input: String, frame: CMSampleBuffer) {
+        let pts = CMSampleBufferGetPresentationTimeStamp(frame)
+        let now = Self.seconds(pts)
+        let size = CMSampleBufferGetFormatDescription(frame).map(CMVideoFormatDescriptionGetDimensions)
+        let gapMs = lastVideoPts.isValid ? Int((now - Self.seconds(lastVideoPts)) * 1000) : -1
+        let audioMs = lastAudioPts.isValid ? Int((now - Self.seconds(lastAudioPts)) * 1000) : -1
+        if let writer, let file {
+            AppLog.w(
+                Self.tag,
+                "\(file) failed: input=\(input) age_s=\(Int(now - fileStartedAt)) video_gap_ms=\(gapMs) " +
+                    "audio_behind_ms=\(audioMs) audio_appended=\(audioAppended) audio_refused=\(audioRefused) " +
+                    "frame=\(size.map { "\($0.width)x\($0.height)" } ?? "-") rotation=\(Int(rotation)) " +
+                    "\(counts.text) \(Self.describe(writer))"
+            )
+        }
         finishFile(reason: "error")
-        failures += 1
-        if failures >= Self.maxFailures { running = false }
+        retry.failed(startedAt: fileStartedAt, now: now)
+        AppLog.i(Self.tag, "failed files \(retry.total), next file in \(Int(retry.wait)) s")
         status("Camera error", ok: false)
+    }
+
+    private static func seconds(_ t: CMTime) -> Double {
+        let s = CMTimeGetSeconds(t)
+        return s.isFinite ? s : 0
     }
 
     private func interrupted() {
