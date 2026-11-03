@@ -13,6 +13,13 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.32.0
+
+- iPhone: phone video keeps recording after a failed file instead of stopping after three.
+- Every page in **Settings › Equipment** shows live data without a session (Android and iPhone).
+- A tyre whose value has not changed keeps recording its last reading.
+- iPhone and iPad: deleting a track also deletes its coach files, as on Android.
+
 ## 1.31.0
 
 - iPhone: records from a Wi-Fi GPS (NMEA or RaceChrono DIY), a Bluetooth LE GPS and a RaceChrono
