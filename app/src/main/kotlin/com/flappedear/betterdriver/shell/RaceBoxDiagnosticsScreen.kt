@@ -25,27 +25,6 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**
- * What differs between the RaceBox diagnostics page and an Equipment page's live data (FBBD-440),
- * which share its look: the title, the Bluetooth notice, the recording card and the closing note.
- */
-data class LivePageText(
-    val title: String,
-    val permission: String,
-    val recording: String,
-    val recordingNote: String,
-    val note: String,
-)
-
-/** The RaceBox diagnostics page's own text. */
-val RaceBoxPageText = LivePageText(
-    title = RaceBoxDiagnosticsTitle,
-    permission = "Allow Nearby devices for BetterDriver in Android settings to connect to the RaceBox.",
-    recording = "Recording. Showing what the recorder receives.",
-    recordingNote = "Everything else is shown when no session is recording.",
-    note = DiagNotReported,
-)
-
-/**
  * RaceBox diagnostics (UI-39 option A): every value the RaceBox reports, in one live list. While a
  * session records, only what the recorder receives (UI-40 option B).
  * The screen only reads; it never changes a RaceBox setting. An Equipment page's live data

@@ -116,12 +116,12 @@ class GoProLive(
 
     private suspend fun poll(c: GoProClient) {
         val response = try {
-            c.send(OpenGoPro.statuses(*asked))
+            c.send(statusQuery(asked))
         } catch (e: GoProException) {
             // An older camera may refuse a status it does not have: ask only the basic ones from then on.
             if (asked.size == Basic.size) throw e
             asked = Basic
-            c.send(OpenGoPro.statuses(*asked))
+            c.send(statusQuery(asked))
         }
         statuses = statuses + OpenGoPro.parseStatuses(response.payload).mapValues { (_, v) -> number(v) }
         polls++
@@ -141,6 +141,10 @@ class GoProLive(
     }
 
     private fun nowMs(): Long = clock.elapsedNow().inWholeMilliseconds
+
+    /** Get Status Values for [ids], as OpenGoPro.statuses without copying the array into a vararg. */
+    private fun statusQuery(ids: IntArray) =
+        OpenGoPro.Request(GoProUuids.QUERY, byteArrayOf(GetStatusValues) + ByteArray(ids.size) { ids[it].toByte() })
 
     companion object {
         /** Status ids (open_gopro, models/constants/statuses.py, StatusId). */
@@ -164,6 +168,7 @@ class GoProLive(
         )
 
         private const val ByteMask = 0xFFL
+        private const val GetStatusValues: Byte = 0x13
 
         /** What every Open GoPro camera answers. */
         private val Basic = intArrayOf(INTERNAL_BATTERY_BARS, ENCODING, BUSY, PRIMARY_STORAGE, REMAINING_VIDEO_TIME)
@@ -217,29 +222,9 @@ object GoProLiveText {
                 ),
             )
         }
-        val st = s.statuses
-        section("Battery") {
-            st[GoProLive.INTERNAL_BATTERY_PERCENTAGE]?.let { add(DiagRow("Charge", "$it %")) }
-            st[GoProLive.INTERNAL_BATTERY_BARS]?.let {
-                add(DiagRow("Bars", if (it == Charging) "Charging" else "$it of $FullBars"))
-            }
-        }
-        section("SD card") {
-            st[GoProLive.PRIMARY_STORAGE]?.let { add(DiagRow("Card", storage(it))) }
-            st[GoProLive.REMAINING_VIDEO_TIME]?.let { add(DiagRow("Video left", hoursMinutes(it))) }
-            st[GoProLive.SD_CARD_REMAINING]?.let { add(DiagRow("Free space", "${fixed(it / KbPerGb, 1)} GB")) }
-            st[GoProLive.VIDEOS]?.let { add(DiagRow("Videos on the card", it.toString())) }
-        }
-        section("Camera state") {
-            st[GoProLive.ENCODING]?.let { on ->
-                val length = st[GoProLive.VIDEO_ENCODING_DURATION]?.takeIf { on != 0L }
-                add(DiagRow("Recording", yesNo(on) + length?.let { " · ${minutesSeconds(it)}" }.orEmpty()))
-            }
-            st[GoProLive.BUSY]?.let { add(DiagRow("Busy", yesNo(it))) }
-            st[GoProLive.OVERHEATING]?.let { add(DiagRow("Too hot", yesNo(it))) }
-            st[GoProLive.COLD]?.let { add(DiagRow("Too cold", yesNo(it))) }
-            st[GoProLive.GPS_LOCK]?.let { add(DiagRow("Camera GPS", if (it != 0L) "Locked" else "No lock")) }
-        }
+        battery(s.statuses)?.let { add(it) }
+        sdCard(s.statuses)?.let { add(it) }
+        state(s.statuses)?.let { add(it) }
         add(
             DiagSection(
                 "Link",
@@ -251,9 +236,32 @@ object GoProLiveText {
         )
     }
 
-    private fun MutableList<DiagSection>.section(title: String, rows: MutableList<DiagRow>.() -> Unit) {
-        val list = mutableListOf<DiagRow>().apply(rows)
-        if (list.isNotEmpty()) add(DiagSection(title, list))
+    private fun section(title: String, rows: MutableList<DiagRow>.() -> Unit): DiagSection? =
+        mutableListOf<DiagRow>().apply(rows).takeIf { it.isNotEmpty() }?.let { DiagSection(title, it) }
+
+    private fun battery(st: Map<Int, Long>) = section("Battery") {
+        st[GoProLive.INTERNAL_BATTERY_PERCENTAGE]?.let { add(DiagRow("Charge", "$it %")) }
+        st[GoProLive.INTERNAL_BATTERY_BARS]?.let {
+            add(DiagRow("Bars", if (it == Charging) "Charging" else "$it of $FullBars"))
+        }
+    }
+
+    private fun sdCard(st: Map<Int, Long>) = section("SD card") {
+        st[GoProLive.PRIMARY_STORAGE]?.let { add(DiagRow("Card", storage(it))) }
+        st[GoProLive.REMAINING_VIDEO_TIME]?.let { add(DiagRow("Video left", hoursMinutes(it))) }
+        st[GoProLive.SD_CARD_REMAINING]?.let { add(DiagRow("Free space", "${fixed(it / KbPerGb, 1)} GB")) }
+        st[GoProLive.VIDEOS]?.let { add(DiagRow("Videos on the card", it.toString())) }
+    }
+
+    private fun state(st: Map<Int, Long>) = section("Camera state") {
+        st[GoProLive.ENCODING]?.let { on ->
+            val length = st[GoProLive.VIDEO_ENCODING_DURATION]?.takeIf { on != 0L }
+            add(DiagRow("Recording", yesNo(on) + length?.let { " · ${minutesSeconds(it)}" }.orEmpty()))
+        }
+        st[GoProLive.BUSY]?.let { add(DiagRow("Busy", yesNo(it))) }
+        st[GoProLive.OVERHEATING]?.let { add(DiagRow("Too hot", yesNo(it))) }
+        st[GoProLive.COLD]?.let { add(DiagRow("Too cold", yesNo(it))) }
+        st[GoProLive.GPS_LOCK]?.let { add(DiagRow("Camera GPS", if (it != 0L) "Locked" else "No lock")) }
     }
 
     private fun yesNo(v: Long) = if (v != 0L) "Yes" else "No"

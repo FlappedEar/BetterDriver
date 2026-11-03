@@ -89,25 +89,11 @@ internal fun LiveDataRoute(item: Equipment, recorder: RecorderClient, onBack: ()
         onPauseOrDispose {}
     }
     val connect = allowed && !recording
-    var view by remember { mutableStateOf<DiagnosticsView?>(null) }
     if (item.model == EquipmentModel.GOPRO) {
-        val live = goProLive(item.address?.takeIf { connect })
-        val current by rememberUpdatedState(live)
-        LaunchedEffect(recording, allowed) {
-            while (true) {
-                view = when {
-                    recording -> DiagnosticsView.Recording(emptyList())
-                    !allowed -> DiagnosticsView.NoPermission
-                    else -> current?.snapshot()?.let { s ->
-                        DiagnosticsView.Live(header(GoProLiveText.header(item.name, s)), GoProLiveText.sections(s))
-                    }
-                }
-                delay(RefreshMs)
-            }
-        }
-        view?.let { RaceBoxDiagnosticsScreen(it, onBack, text = GoProText) }
+        GoProLiveRoute(item, recording, allowed, connect, onBack)
         return
     }
+    var view by remember { mutableStateOf<DiagnosticsView?>(null) }
     val feed = remember(item.id) { EquipmentLiveData() }
     DisposableEffect(item.id, connect) {
         val holder = if (connect) SourceHolder(context.applicationContext, item, feed).also { it.open() } else null
@@ -129,6 +115,33 @@ internal fun LiveDataRoute(item: Equipment, recorder: RecorderClient, onBack: ()
         }
     }
     view?.let { RaceBoxDiagnosticsScreen(it, onBack, text = LiveText) }
+}
+
+/** A paired GoPro's read-only status (FBBD-440), in the same page. */
+@Composable
+private fun GoProLiveRoute(
+    item: Equipment,
+    recording: Boolean,
+    allowed: Boolean,
+    connect: Boolean,
+    onBack: () -> Unit,
+) {
+    var view by remember { mutableStateOf<DiagnosticsView?>(null) }
+    val live = goProLive(item.address?.takeIf { connect })
+    val current by rememberUpdatedState(live)
+    LaunchedEffect(recording, allowed) {
+        while (true) {
+            view = when {
+                recording -> DiagnosticsView.Recording(emptyList())
+                !allowed -> DiagnosticsView.NoPermission
+                else -> current?.snapshot()?.let { s ->
+                    DiagnosticsView.Live(header(GoProLiveText.header(item.name, s)), GoProLiveText.sections(s))
+                }
+            }
+            delay(RefreshMs)
+        }
+    }
+    view?.let { RaceBoxDiagnosticsScreen(it, onBack, text = GoProText) }
 }
 
 /**
