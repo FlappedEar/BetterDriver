@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recording
 import android.os.Bundle
 import com.flappedear.betterdriver.core.ble.hr.HeartRateLink
 import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
+import com.flappedear.betterdriver.core.ble.tpms.TpmsStatus
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.obd.ObdReading
 import com.flappedear.betterdriver.obd.ObdStatus
@@ -148,6 +149,8 @@ internal object RecorderProtocol {
 
     private const val HR_LINK = "hr.link"
     private const val HR_BPM = "hr.bpm"
+    private const val TPMS_VALUE = "tpms.value"
+    private const val TPMS_OK = "tpms.ok"
 
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"
@@ -285,6 +288,15 @@ internal object RecorderProtocol {
             ?: return null
         return HeartRateStatus(link, if (b.containsKey(HR_BPM)) b.getInt(HR_BPM) else null)
     }
+
+    /** Adds the recording's TPMS bridge for the status strip (FBBD-444) to a [MSG_STATE] bundle. */
+    fun putTyres(b: Bundle, s: TpmsStatus) = b.apply {
+        putString(TPMS_VALUE, s.value)
+        putBoolean(TPMS_OK, s.ok)
+    }
+
+    /** The recording's TPMS bridge for the status strip, or null while it shows nothing. */
+    fun tyresFrom(b: Bundle): TpmsStatus? = b.getString(TPMS_VALUE)?.let { TpmsStatus(it, b.getBoolean(TPMS_OK)) }
 
     /** The recording's OBD-II connection, or null when the recording has no OBD source. */
     fun obdFrom(b: Bundle): ObdStatus? {

@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.camera.CameraTestState
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
+import com.flappedear.betterdriver.core.ble.tpms.TpmsStatus
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
@@ -52,6 +53,8 @@ data class RecorderState(
     val obd: ObdStatus? = null,
     /** The recording's heart-rate monitor (FBBD-268), or null when it records no heart rate. */
     val heartRate: HeartRateStatus? = null,
+    /** The recording's TPMS bridge for the status strip (FBBD-444), or null while it shows nothing. */
+    val tyres: TpmsStatus? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -102,6 +105,7 @@ class RecorderClient private constructor(private val context: Context) {
             timing = RecorderProtocol.timingFrom(msg.data),
             obd = RecorderProtocol.obdFrom(msg.data),
             heartRate = RecorderProtocol.heartRateFrom(msg.data),
+            tyres = RecorderProtocol.tyresFrom(msg.data),
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
                 CoachStatus(
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),

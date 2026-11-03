@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recording
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
 import com.flappedear.betterdriver.core.ble.hr.HeartRateLink
 import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
+import com.flappedear.betterdriver.core.ble.tpms.TpmsStatus
 import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.obd.ObdLinkState
@@ -223,6 +224,21 @@ class LiveUiTest {
         assertEquals(none, status(ObdLinkState.Connecting, HeartRateStatus(HeartRateLink.NO_CONTACT, null)))
         assertEquals(none, status(null, HeartRateStatus(HeartRateLink.STREAMING, null)))
         assertEquals(none, status(null, null))
+    }
+
+    @Test
+    fun tyresShowWhileTheBridgeStreamsAndAmberWithTheWheelsAtFault() {
+        fun status(tyres: TpmsStatus?) =
+            liveTrackState(RecorderState(connected = true, live = live, tyres = tyres), tiles, true).status.drop(1)
+        assertEquals(
+            listOf(StatusItem("Tyres", "4 tyres", icon = StatusIcon.Tyre)),
+            status(TpmsStatus("4 tyres", ok = true)),
+        )
+        assertEquals(
+            listOf(StatusItem("Tyres", "RR stale", ok = false, icon = StatusIcon.Tyre)),
+            status(TpmsStatus("RR stale", ok = false)),
+        )
+        assertEquals(emptyList<StatusItem>(), status(null))
     }
 
     @Test

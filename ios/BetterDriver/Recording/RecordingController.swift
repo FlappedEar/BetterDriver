@@ -457,7 +457,8 @@ final class RecordingController: ObservableObject {
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
-            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus,
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, tyres: tyres?.status,
+            camera: cameraStatus,
             tileIds: tileIds, secondTileIds: secondTileIds
         )
         screen = model
@@ -549,16 +550,20 @@ struct TrackScreenModel: Equatable {
     static let radarColumns = 3
 
     static let noValue = TrackTiles.shared.NO_VALUE
+    /// The car dashboard's tyre pressure symbol, as Android's StatusIcon.Tyre (FBBD-444).
+    static let tyreIcon = "exclamationmark.tirepressure"
     /// A fresh install's main screen: speed, G and four empty slots.
     static let defaultTiles = TrackTiles.shared.ids(setup: SettingsCore.shared.freshSetup(id: "default"), carId: nil, second: false)
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
-    /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
+    /// strap's, when one records (FBBD-333). [tyres] is the TPMS bridge's, while it streams (FBBD-444).
+    /// [camera]: the phone camera's line, when it records video.
     /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot;
     /// [secondTileIds] its second screen.
     init(
         _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
-        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles, secondTileIds: [String] = []
+        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
+        secondTileIds: [String] = []
     ) {
         let live = s.live
         let gnss: Status = switch s.gnss {
@@ -575,9 +580,11 @@ struct TrackScreenModel: Equatable {
         let heart = heartRate?.bpm.map { bpm in
             Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
         }
+        // The TPMS bridge (FBBD-444): the tyre icon while values arrive, amber with the wheels at fault.
+        let tyre = tyres.map { Status(label: "Tyres", value: $0.value, ok: $0.ok, icon: Self.tyreIcon) }
         // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
         let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
-        status = [place, gnss, video, obd, heart].compactMap { $0 }
+        status = [place, gnss, video, obd, heart, tyre].compactMap { $0 }
         coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {

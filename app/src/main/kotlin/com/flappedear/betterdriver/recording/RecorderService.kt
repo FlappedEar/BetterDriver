@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
 import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
 import com.flappedear.betterdriver.core.ble.obd.ObdSource
+import com.flappedear.betterdriver.core.ble.tpms.TpmsSource
 import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -395,6 +396,7 @@ class RecorderService : Service() {
         if (a != null) {
             ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
             HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
+            TpmsSource.current?.status()?.let { RecorderProtocol.putTyres(state, it) }
         }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }

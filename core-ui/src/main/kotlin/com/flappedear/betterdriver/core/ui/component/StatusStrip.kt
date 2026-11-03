@@ -26,7 +26,7 @@ import com.flappedear.betterdriver.core.ui.labelStyle
 import com.flappedear.betterdriver.core.ui.textStyle
 
 /** Icons a status item can show instead of its dot and label (UI-110 B). */
-enum class StatusIcon { Car, Heart }
+enum class StatusIcon { Car, Heart, Tyre }
 
 /**
  * One source in the status strip. [ok] false shows a warning-coloured dot and the value in amber.
@@ -43,10 +43,14 @@ data class StatusItem(
     val keepValue: Boolean = false,
 )
 
-/** Material Icons, Round style (UI-19 option B): directions_car and favorite. */
+/**
+ * Material Icons, Round style (UI-19 option B): directions_car and favorite; the tyre is the car
+ * dashboard's tyre pressure symbol drawn in the same round style (FBBD-444).
+ */
 private fun statusIcon(icon: StatusIcon): ImageVector = when (icon) {
     StatusIcon.Car -> CarIcon
     StatusIcon.Heart -> HeartIcon
+    StatusIcon.Tyre -> TyreIcon
 }
 
 private val CarIcon = vector(
@@ -65,6 +69,20 @@ private val HeartIcon = vector(
         ".14 3.88-3.3 6.99-8.55 11.76l-.1.09z",
 )
 
+/** A tyre in section with an exclamation mark and three tread blocks, as on a car's TPMS warning light. */
+private val TyreIcon = vector(
+    "Tyre",
+    "M6.1 3.2c.4-.6 1.3-.5 1.6.1.2.4.1.8-.1 1.2C6.6 6.6 6 9 6 11.6c0 2.5.6 4.8 1.6 6.4h8.8" +
+        "c1-1.6 1.6-3.9 1.6-6.4 0-2.6-.6-5-1.6-7.1-.2-.4-.3-.8-.1-1.2.3-.6 1.2-.7 1.6-.1" +
+        "C19.2 5.6 20 8.5 20 11.6c0 3.2-.9 6.1-2.4 8.2-.3.4-.7.6-1.2.6H7.6c-.5 0-.9-.2-1.2-.6" +
+        "C4.9 17.7 4 14.8 4 11.6c0-3.1.8-6 2.1-8.4z" +
+        "M7 21.4c0-.5.4-.9.9-.9h1.2c.5 0 .9.4.9.9s-.4.9-.9.9H7.9c-.5 0-.9-.4-.9-.9z" +
+        "m4 0c0-.5.4-.9.9-.9h.2c.5 0 .9.4.9.9s-.4.9-.9.9h-.2c-.5 0-.9-.4-.9-.9z" +
+        "m3 0c0-.5.4-.9.9-.9h1.2c.5 0 .9.4.9.9s-.4.9-.9.9h-1.2c-.5 0-.9-.4-.9-.9z" +
+        "M12 5c.6 0 1 .4 1 1v5.5c0 .6-.4 1-1 1s-1-.4-1-1V6c0-.6.4-1 1-1z" +
+        "m0 9.2c.7 0 1.2.5 1.2 1.2s-.5 1.2-1.2 1.2-1.2-.5-1.2-1.2.5-1.2 1.2-1.2z",
+)
+
 private fun vector(name: String, path: String): ImageVector = ImageVector.Builder(
     name = name,
     defaultWidth = 24.dp,
@@ -77,7 +95,7 @@ private fun vector(name: String, path: String): ImageVector = ImageVector.Builde
 ).build()
 
 /**
- * Status strip (UI-07 option A): GNSS, camera, OBD and heart rate (UI-110 B), and the recording
+ * Status strip (UI-07 option A): GNSS, camera, OBD, heart rate (UI-110 B) and tyres (FBBD-444), and the recording
  * clock on the right. Quiet while fine (UI-141 B): a green dot and a name, with values only for the
  * heart rate, the recording time and anything wrong, which shows in amber; so a value on the strip
  * means look. Replaced by [AlertBanner] when an alert is active.

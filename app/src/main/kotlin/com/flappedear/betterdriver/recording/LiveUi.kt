@@ -62,8 +62,10 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
     val obd = state.obd?.takeIf { it.state == ObdLinkState.Connected }
         ?.let { StatusItem("OBD", "Connected", icon = StatusIcon.Car) }
     val heart = state.heartRate?.bpm?.let { StatusItem("Heart rate", "$it", icon = StatusIcon.Heart, keepValue = true) }
+    // The TPMS bridge (FBBD-444): the tyre icon while values arrive, amber with the wheels at fault.
+    val tyres = state.tyres?.let { StatusItem("Tyres", it.value, ok = it.ok, icon = StatusIcon.Tyre) }
     val screen = TrackScreenState(
-        status = listOfNotNull(place, gnss, camera, obd, heart),
+        status = listOfNotNull(place, gnss, camera, obd, heart, tyres),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,
