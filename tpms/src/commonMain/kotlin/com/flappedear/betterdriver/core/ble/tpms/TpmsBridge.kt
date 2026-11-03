@@ -7,6 +7,8 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
+import com.flappedear.betterdriver.recorder.log.CoreLog
+import com.flappedear.betterdriver.recorder.log.logLine
 
 /**
  * The FlappedEar TPMS bridge (https://github.com/FlappedEar/RCTPMS, FBBD-224): an ESP32 that hears
@@ -128,14 +130,30 @@ fun parseTpmsValue(bytes: ByteArray): TpmsValue? {
  */
 const val StaleAfterMicros = 300_000_000L
 
+/** How often a recording session writes the four wheels' values to the debug log. */
+const val SummaryEveryMicros = 60_000_000L
+
+private const val MicrosPerSecond = 1_000_000L
+
+/** [bar] with two decimals ("2.31"), without platform formatting. */
+internal fun formatBar(bar: Double): String {
+    val centi = kotlin.math.round(bar * CentiPerUnit).toLong()
+    val sign = if (centi < 0) "-" else ""
+    val a = kotlin.math.abs(centi)
+    return "$sign${a / CentiPerUnit}.${(a % CentiPerUnit).toString().padStart(2, '0')}"
+}
+
+private const val CentiPerUnit = 100
+
 /** A wheel's latest values for a status display; null where the bridge has sent none yet. */
 data class TyreReading(val bar: Double?, val celsius: Double?, val stale: Boolean)
 
 /**
  * Turns the bridge's notifications into sample sets, one value per set stamped on arrival (the
  * bridge sends each of its eight values about once a second). A wheel whose pressure and
- * temperature both stayed the same for [StaleAfterMicros] is stale: its repeats are left out, so a
- * dead sensor does not record a flat line, until either value changes again. Each change of a
+ * temperature both stayed the same for [StaleAfterMicros] is stale, until either value changes
+ * again. Its values keep being recorded: the last reading is kept, not left out (Arek, 3 Nov: in
+ * city driving the pressure may not change for minutes). Each change of a
  * wheel's state is an event. Synchronized on the JVM, so a reconnect can [reset] it from another
  * thread; on iOS one queue makes every call.
  */
@@ -183,7 +201,6 @@ class TpmsDecoder(private val sink: SampleSink) {
             w.stale = true
             sink.event(TpmsEvents.STALE, "wheel=$name")
         }
-        if (w.stale) return
         recorded++
         sink.submit(SampleSet(now, listOf(ChannelValue(v.channel.id, v.value))))
     }
@@ -191,6 +208,25 @@ class TpmsDecoder(private val sink: SampleSink) {
     /** The four wheels' latest values, front left to rear right. */
     @JvmSynchronized
     fun readings(): List<TyreReading> = wheels.map { TyreReading(it.bar, it.celsius, it.stale) }
+
+    /**
+     * Each wheel's latest pressure and temperature, the seconds since either last changed and
+     * whether it is stale, at session time [now]: "FL 2.31 bar 24 °C 12 s, FR ...". A wheel the
+     * bridge has sent nothing for reads "FL -". For the debug log once a minute (FBBD-224: the 3 Nov
+     * drive log showed every wheel stale and had no values to tell a quiet sensor from a steady one).
+     */
+    @JvmSynchronized
+    fun summary(now: Long): String = wheels.mapIndexed { i, w ->
+        val name = TpmsChannels.WHEELS[i]
+        if (w.bar == null && w.celsius == null) {
+            "$name -"
+        } else {
+            val bar = w.bar?.let { formatBar(it) } ?: "-"
+            val celsius = w.celsius?.let { "${it.toLong()}" } ?: "-"
+            val age = (now - w.changedMicros) / MicrosPerSecond
+            "$name $bar bar $celsius °C ${age} s" + if (w.stale) " stale" else ""
+        }
+    }.joinToString(", ")
 
     /**
      * After a drop: the next values start each wheel's staleness count afresh, as the bridge may
@@ -229,7 +265,18 @@ class TpmsSession(
         sink.event(TpmsEvents.DEVICE, "address=$address name=$deviceName")
     }
 
-    fun feed(bytes: ByteArray) = decoder.feed(bytes)
+    /** Session time of the last tyre summary in the debug log; none before the first value. */
+    private var loggedMicros = Long.MIN_VALUE
+
+    fun feed(bytes: ByteArray) {
+        decoder.feed(bytes)
+        val now = sink.nowMicros()
+        if (loggedMicros == Long.MIN_VALUE) loggedMicros = now
+        if (now - loggedMicros >= SummaryEveryMicros) {
+            loggedMicros = now
+            logLine(CoreLog.LevelInfo, "Tpms", "tyres: ${decoder.summary(now)}", null, null)
+        }
+    }
 
     /**
      * The bridge link's new state [s], from the shared notify link on either platform: logged, and
