@@ -594,7 +594,7 @@ class ElmPoller(
     private fun monitorStn(windowMs: Long): Int {
         var frames = 0
         var refused = false
-        line.monitorLines("STM", windowMs, MONITOR_STOP_MS) { lines ->
+        line.monitorLines("STM", windowMs, MONITOR_STOP_MS, MONITOR_QUIET_MS) { lines ->
             if (lines.any { it.trim() == "?" }) refused = true
             frames += report(lines)
         }
@@ -932,6 +932,13 @@ class ElmPoller(
 
         /** How long a stopped monitor may take to print its prompt. */
         private const val MONITOR_STOP_MS = 1_000L
+
+        /**
+         * A listen through STN filters ends early after this long without a frame (FBBD-271): the FR-S
+         * sends the listened ids 20 to 100 times a second, so a stalled vLinker is noticed within about
+         * a second rather than at the end of a 5 s window; on a quiet bus it only makes a listen shorter.
+         */
+        private const val MONITOR_QUIET_MS = 500L
         private const val MAX_EMPTY_LISTENS = 10
 
         /** Characters of the VIN in the log: the maker and model, not the car's serial. */

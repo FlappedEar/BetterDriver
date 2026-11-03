@@ -63,6 +63,7 @@ class ObdConnector(
     private val scan: () -> Boolean = { false },
     private val lostRetryMs: Long = LOST_RETRY_MS,
     private val lostFastMs: Long = LOST_FAST_MS,
+    /** The open CAN probe at each connect ([ElmPoller]'s); tests cut it short. */
     private val probeMs: Long = ElmPoller.DEFAULT_PROBE_MS,
 ) {
     @Volatile
@@ -172,7 +173,10 @@ class ObdConnector(
         tracker.connecting(target.name)
         answered = false
         val reason = try {
-            ElmPoller(line, profile(), Poll(target), running, clock, pollSet = pollSet, probeMs = probeMs, scan = scan()).run()
+            val poller = ElmPoller(
+                line, profile(), Poll(target), running, clock, pollSet = pollSet, probeMs = probeMs, scan = scan(),
+            )
+            poller.run()
         } catch (e: IOException) {
             // The link dropped or a write failed: the usual way a connection ends. An adapter that went
             // silent with the link up ends the line itself (FBBD-271), said as the poller says it.
@@ -181,7 +185,11 @@ class ObdConnector(
             open?.close()
             open = null
         }
-        if (answered && running() && isLinkLoss(reason)) lostAtMs = clock.nowMs()
+        // A silent adapter is a link problem even before the car answered (FBBD-271): tried again soon.
+        val linkTrouble = answered || reason == ElmLine.SILENT
+        if (linkTrouble && running() && isLinkLoss(reason)) {
+            lostAtMs = lostAtMs ?: clock.nowMs()
+        }
         listener.log("connection to ${target.where} ended: $reason")
         tracker.ended(reason)
         listener.ended(target, reason)

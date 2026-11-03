@@ -110,9 +110,16 @@ class ElmLine(
      * can be stamped when it arrived rather than at the end of the window: [onLines] gets every batch
      * of whole lines on the calling thread, outside the lock, the last batch (up to the prompt) after
      * the monitor stopped. False when no prompt came [timeoutMs] after the stop; the next command then
-     * resyncs as after [command].
+     * resyncs as after [command]. With [quietMs] the monitor is stopped early once no line came for that
+     * long, so a stalled adapter is noticed within about a second, not at the end of a long window.
      */
-    fun monitorLines(text: String, windowMs: Long, timeoutMs: Long, onLines: (List<String>) -> Unit): Boolean {
+    fun monitorLines(
+        text: String,
+        windowMs: Long,
+        timeoutMs: Long,
+        quietMs: Long = Long.MAX_VALUE,
+        onLines: (List<String>) -> Unit,
+    ): Boolean {
         lock.locked {
             if (outstanding) awaitPrompt(resyncWaitMs())
             outstanding = false
@@ -124,11 +131,17 @@ class ElmLine(
         val windowEnd = monoNanos() + windowMs * NanosPerMs
         var stopped = false
         var stopDeadline = 0L
+        var lastLines = monoNanos()
         while (true) {
-            val (lines, prompt) = lock.locked { awaitLines(if (stopped) stopDeadline else windowEnd) }
-            if (lines.isNotEmpty()) onLines(lines)
+            val quietEnd = if (quietMs == Long.MAX_VALUE) Long.MAX_VALUE else lastLines + quietMs * NanosPerMs
+            val (lines, prompt) = lock.locked { awaitLines(if (stopped) stopDeadline else minOf(windowEnd, quietEnd)) }
+            if (lines.isNotEmpty()) {
+                lastLines = monoNanos()
+                onLines(lines)
+            }
             if (prompt) return true
-            if (!stopped && monoNanos() >= windowEnd) {
+            // Nothing for [quietMs]: a quiet bus or a stalled adapter (FBBD-271); stopping now tells which.
+            if (!stopped && (monoNanos() >= windowEnd || monoNanos() >= quietEnd)) {
                 write(STOP_MONITOR)
                 stopped = true
                 stopDeadline = monoNanos() + timeoutMs * NanosPerMs
