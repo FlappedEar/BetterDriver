@@ -13,6 +13,11 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.31.0
+
+- iPhone: records from a Wi-Fi GPS (NMEA or RaceChrono DIY), a Bluetooth LE GPS and a RaceChrono
+  DIY Bluetooth GPS, added in **Settings › Equipment** as on Android.
+
 ## 1.30.1
 
 - **Watch video**, the **Video** tab and **Realistic optimal video** are left out for a session
