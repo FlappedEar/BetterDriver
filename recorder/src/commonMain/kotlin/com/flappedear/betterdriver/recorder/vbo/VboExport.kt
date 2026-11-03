@@ -103,12 +103,13 @@ object VboExport {
     private fun forwardFixes(session: SessionData, sets: List<SampleSet>, from: Long): Set<Int> {
         val kept = HashSet<Int>()
         var last = Double.NEGATIVE_INFINITY
-        var utc: Double? = null
         sets.forEachIndexed { i, set ->
-            set.values.lastOrNull { it.channelId == GnssChannels.UTC_MS.id }?.let { utc = it.value }
             if (isFix(set) && set.tMicros >= from) {
+                // The row's time column: its GNSS UTC time, or session start plus elapsed time without one.
+                val raw = set.values.lastOrNull { it.channelId == GnssChannels.UTC_MS.id }?.value
+                    ?: (session.info.startUtcMillis + set.tMicros / MicrosPerMilli)
                 // Compared as written, to the millisecond: two fixes within one ms would print the same time.
-                val time = roundHalfUp(rowTime(session, set, utc)).toDouble()
+                val time = roundHalfUp(raw).toDouble()
                 if (time > last) {
                     kept += i
                     last = time
@@ -117,14 +118,6 @@ object VboExport {
         }
         return kept
     }
-
-    /** The time column of [set]'s row: its GNSS UTC time, or session start plus elapsed time without one. */
-    private fun rowTime(session: SessionData, set: SampleSet, latestUtc: Double?): Double =
-        if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {
-            session.info.startUtcMillis + set.tMicros / MicrosPerMilli
-        } else {
-            latestUtc ?: 0.0
-        }
 
     private fun extraColumns(extra: List<ChannelDef>, derived: List<VboDerivedChannel>): List<VboColumn> {
         // Unique against standard header and column names, so a custom channel can never pose as a standard one,
