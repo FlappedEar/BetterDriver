@@ -151,8 +151,9 @@ data class TyreReading(val bar: Double?, val celsius: Double?, val stale: Boolea
 /**
  * Turns the bridge's notifications into sample sets, one value per set stamped on arrival (the
  * bridge sends each of its eight values about once a second). A wheel whose pressure and
- * temperature both stayed the same for [StaleAfterMicros] is stale: its repeats are left out, so a
- * dead sensor does not record a flat line, until either value changes again. Each change of a
+ * temperature both stayed the same for [StaleAfterMicros] is stale, until either value changes
+ * again. Its values keep being recorded: the last reading is kept, not left out (Arek, 3 Nov: in
+ * city driving the pressure may not change for minutes). Each change of a
  * wheel's state is an event. Synchronized on the JVM, so a reconnect can [reset] it from another
  * thread; on iOS one queue makes every call.
  */
@@ -200,7 +201,6 @@ class TpmsDecoder(private val sink: SampleSink) {
             w.stale = true
             sink.event(TpmsEvents.STALE, "wheel=$name")
         }
-        if (w.stale) return
         recorded++
         sink.submit(SampleSet(now, listOf(ChannelValue(v.channel.id, v.value))))
     }
