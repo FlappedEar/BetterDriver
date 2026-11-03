@@ -6,7 +6,9 @@ import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.recorder.export.CsvWriter
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import com.flappedear.betterdriver.recorder.export.ExportLap
+import com.flappedear.betterdriver.recorder.export.ExportShare
 import com.flappedear.betterdriver.recorder.export.GpxWriter
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -49,7 +51,7 @@ class ExportException(message: String) : Exception(message)
  * its video files BetterDriver-<id>_0001.MP4 and on. The same exporter writes the VBO on both (VboExport),
  * with the G columns FlappedEar Overlays reads (FBBD-216). CSV and GPX are written as Android writes
  * them, with the laps at the session's saved track in [tracksRoot]. Files are made under [outRoot], from where the
- * app hands them to Files, AirDrop or another app.
+ * app hands them to the share sheet ([share], FBBD-443), as Share log.
  */
 class SessionExport(
     private val sessionsRoot: String,
@@ -60,16 +62,39 @@ class SessionExport(
 
     /** Session [id] has a whole video file to export with. */
     fun hasVideo(id: String): Boolean = try {
-        clips(id).isNotEmpty()
+        wholeVideoClips(store, id).isNotEmpty()
     } catch (_: Exception) {
         false
+    }
+
+    /**
+     * Writes session [id] as [format] and returns what the share sheet gets (FBBD-443): the one file,
+     * or for VBO + video the VBO and each video file next to it, as the shared [ExportShare] lists them.
+     */
+    @Throws(Exception::class)
+    fun share(id: String, format: ExportFormat): ExportShare = when (format) {
+        ExportFormat.Vbo -> ExportShare.of(id, format, vbo(id))
+        ExportFormat.Csv -> ExportShare.of(id, format, csv(id))
+        ExportFormat.Gpx -> ExportShare.of(id, format, gpx(id))
+        ExportFormat.VboVideo -> {
+            val folder = vboWithVideo(id)
+            val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(folder, null)
+                ?.filterIsInstance<String>().orEmpty()
+            val videos = names.filter { it.startsWith(ExportShare.videoPrefix(id)) }.sorted().map { "$folder/$it" }
+            ExportShare.of(id, format, "$folder/${ExportShare.fileName(id, format)}", videos)
+        }
+    }
+
+    /** Removes session [id]'s waiting export, so its video links do not keep a deleted session's video. */
+    fun forget(id: String) {
+        NSFileManager.defaultManager.removeItemAtPath("$outRoot/$id", null)
     }
 
     /** Writes the plain VBO of session [id]; returns its path. */
     @Throws(Exception::class)
     fun vbo(id: String): String {
         val dir = freshDir(id)
-        val path = "$dir/${baseName(id)}.vbo"
+        val path = "$dir/${ExportShare.fileName(id, ExportFormat.Vbo)}"
         val data = store.read(id)
         TextFile(path).use { VboExport.export(data, it, derived = vboAccelerations(data)) }
         return path
@@ -78,7 +103,7 @@ class SessionExport(
     /** Writes session [id] as CSV, with lap columns at a saved track, as Android does; returns its path. */
     @Throws(Exception::class)
     fun csv(id: String): String {
-        val path = "${freshDir(id)}/${baseName(id)}.csv"
+        val path = "${freshDir(id)}/${ExportShare.fileName(id, ExportFormat.Csv)}"
         val data = store.read(id)
         val time = IsoTimes()
         TextFile(path).use { CsvWriter.write(data, it, laps(data), time::local) }
@@ -88,7 +113,7 @@ class SessionExport(
     /** Writes session [id] as GPX 1.1, one segment per lap at a saved track, as Android does; returns its path. */
     @Throws(Exception::class)
     fun gpx(id: String): String {
-        val path = "${freshDir(id)}/${baseName(id)}.gpx"
+        val path = "${freshDir(id)}/${ExportShare.fileName(id, ExportFormat.Gpx)}"
         val data = store.read(id)
         val time = IsoTimes()
         TextFile(path).use { GpxWriter.write(data, it, laps(data), time::utc) }
@@ -114,25 +139,31 @@ class SessionExport(
      */
     @Throws(Exception::class)
     fun vboWithVideo(id: String): String {
-        val folder = "${freshDir(id)}/${baseName(id)}"
+        val folder = "${freshDir(id)}/${ExportShare.baseName(id)}"
         mkdirs(folder)
         val data = store.read(id)
-        val clips = clips(id)
-        val video = if (clips.isEmpty()) null else VboVideo("${baseName(id)}_", clips)
-        TextFile("$folder/${baseName(id)}.vbo").use { VboExport.export(data, it, video, vboAccelerations(data)) }
+        val clips = wholeVideoClips(store, id)
+        val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
+        TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use {
+            VboExport.export(data, it, video, vboAccelerations(data))
+        }
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
         video?.orderedClips?.forEachIndexed { i, clip ->
             val to = "$folder/${video.fileName(i)}"
-            if (!NSFileManager.defaultManager.copyItemAtPath("$videoDir/${clip.file}", to, null)) {
+            val from = "$videoDir/${clip.file}"
+            // A hard link: the same file under the export's name, no second copy of the video on the phone.
+            val files = NSFileManager.defaultManager
+            if (!files.linkItemAtPath(from, to, null) && !files.copyItemAtPath(from, to, null)) {
                 throw ExportException("cannot copy ${clip.file}")
             }
         }
         return folder
     }
 
-    private fun clips(id: String): List<VideoClip> = wholeVideoClips(store, id)
-
-    /** An empty folder for this export of [id]: an earlier one is removed. */
+    /**
+     * An empty folder for this export of [id]: an earlier one of [id] is removed, never another
+     * session's, which may still be written or shared. Deleting a session removes its export ([forget]).
+     */
     private fun freshDir(id: String): String {
         val dir = "$outRoot/$id"
         NSFileManager.defaultManager.removeItemAtPath(dir, null)
@@ -146,7 +177,21 @@ class SessionExport(
         }
     }
 
-    private fun baseName(id: String) = "BetterDriver-$id"
+}
+
+/**
+ * The export format named [name] as in Kotlin ("Vbo", "VboVideo", "Csv", "Gpx"), for Swift: the
+ * names Swift gives Kotlin enum entries are not spelled the same.
+ */
+fun exportFormat(name: String): ExportFormat = ExportFormat.valueOf(name)
+
+/** Bytes of the files of [share], for its log line (FBBD-443). */
+fun exportedBytes(share: ExportShare): Long = share.files.sumOf { path ->
+    try {
+        PosixMp4Source(path).use { it.length }
+    } catch (_: IoProblem) {
+        0L
+    }
 }
 
 /**

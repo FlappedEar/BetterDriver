@@ -12,12 +12,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.flappedear.betterdriver.recording.ExportFormat
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 
 /**
  * Export opens a short menu of formats (FBBD-150): VBO for Circuit Tools and other VBO readers,
  * plus VBO + video into a folder when the session has video (FBBD-25), CSV with every channel for
- * spreadsheets, GPX for maps. Choosing one asks where to save, as VBO export always did. A session
+ * spreadsheets, GPX for maps. Choosing one writes it, then opens the share sheet (FBBD-443). A session
  * with video also offers Video with data ([dataVideo], FBBD-152): a lap or the whole video with the
  * data drawn in, chosen in a picker.
  */
@@ -80,7 +80,7 @@ internal data class ExportChoice(val format: ExportFormat, val label: String, va
  * VBO too, one file without video columns (FBBD-227): before, VBO + video was its only VBO line.
  */
 internal fun exportChoices(video: Boolean) = buildList {
-    if (video) add(ExportChoice(ExportFormat.VboVideo, "VBO + video", "Circuit Tools, into a new folder"))
+    if (video) add(ExportChoice(ExportFormat.VboVideo, "VBO + video", "Circuit Tools, VBO and video files"))
     add(ExportChoice(ExportFormat.Vbo, "VBO", if (video) "Data only, one file" else "Circuit Tools"))
     add(ExportChoice(ExportFormat.Csv, "CSV", "Every channel and lap, for spreadsheets"))
     add(ExportChoice(ExportFormat.Gpx, "GPX", "GPS track by lap, for maps"))

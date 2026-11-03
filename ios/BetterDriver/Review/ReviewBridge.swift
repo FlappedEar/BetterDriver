@@ -408,7 +408,10 @@ extension ReviewBridge {
     /// Deletes session [id] with its video; nil when done, else why not, as Android's card says it.
     static func delete(_ id: String) -> String? {
         switch library.delete(id: id) {
-        case .deleted, .notFound: return nil
+        case .deleted, .notFound:
+            // Its waiting export's video links would keep the deleted video on the phone (FBBD-443).
+            Exports.make().forget(id: id)
+            return nil
         case .recording: return "Recording, not deleted"
         default: return "Delete failed"
         }
