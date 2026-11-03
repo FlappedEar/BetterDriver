@@ -2,9 +2,12 @@ package com.flappedear.betterdriver
 
 import android.app.Application
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -16,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
 import com.flappedear.betterdriver.coach.DriveFocus
 import com.flappedear.betterdriver.coach.DrivePinned
@@ -68,6 +72,8 @@ import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.ParameterDraft
 import com.flappedear.betterdriver.shell.ParameterStep
 import com.flappedear.betterdriver.shell.ParameterSteps
+import com.flappedear.betterdriver.shell.Reach
+import com.flappedear.betterdriver.shell.SessionCard
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionFacts
 import com.flappedear.betterdriver.shell.SessionTransferState
@@ -274,6 +280,21 @@ abstract class MainScreensLayoutTest(private val device: String) {
             onRemove = null,
             onBack = {},
         )
+    }
+
+    /** The list at START (FBBD-446, UI-311 A): every kind of listed item, one row each. */
+    @Test
+    fun startList() = checkScreen("start_list", Routes.Drive) {
+        var n = 100
+        val ids = { "s${++n}" }
+        val setup = configured()
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "vLinker MC+", "DD", ids)
+            .addEquipment(EquipmentModel.HEART_RATE, "Polar 8054-1", "EE", ids)
+            .addEquipment(EquipmentModel.HEART_RATE, "Polar 808S", "FF", ids)
+            .addEquipment(EquipmentModel.TPMS_BRIDGE, "RCTPMS", "GG", ids)
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+            SessionCard(setup, SessionCardActions(), reach = mapOf("s101" to Reach.InRange), onStart = {})
+        }
     }
 
     @Test

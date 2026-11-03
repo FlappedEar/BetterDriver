@@ -106,6 +106,8 @@ class DemoTrackSmokeTest {
         app.waitUntilGone("Add a GNSS receiver to start")
 
         app.waitForText("START").performClick()
+        // START opens the list at START (FBBD-446); its own button starts the session.
+        app.waitForText("Start session").performScrollTo().performClick()
         app.withManualClock {
             app.pumpUntil(LoadTimeoutMs, "the recorder and coach processes") {
                 appProcesses().containsAll(Processes)

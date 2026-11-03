@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +63,9 @@ import java.time.LocalDate
  * Drive (UI-130 C, UI-131 A, UI-132 B; cards since UI-308 A): a large title, one START ring in the
  * accent colour, then Pinned cards in the session summary's style: what to work on next time here
  * and how the last day here went ([pinned], each only with data), and the devices this session uses
- * with Change, which opens a sheet with the car, the receiver and a switch per camera. The last
+ * with Change. START and Change open the list at START (FBBD-446, UI-311 A): every listed item, each
+ * with whether it is in range ([reach], looked for only while the list is open), and the sheet's own
+ * Start, which calls [onStart]. The last
  * session is not on Drive (FBBD-276); it is the first row in Sessions. Without a GNSS receiver START
  * is greyed out and a card offers to add one (UI-37 option B), so nothing is recorded from made-up
  * positions. While a session starts or records ([recording]), START goes back to it and the choice is
@@ -81,6 +84,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     cameraAllowed: Boolean = true,
     pinned: DrivePinned = DrivePinned(),
+    reach: @Composable () -> Map<String, Reach> = { emptyMap() },
 ) {
     val canStart = recording || setup.active().gnss != null
     var choosing by rememberSaveable { mutableStateOf(false) }
@@ -93,7 +97,14 @@ fun HomeScreen(
             StartButton(
                 if (canStart) trackName ?: "No track detected" else "No GNSS receiver",
                 enabled = canStart,
-                onStart = onStart,
+                // While recording START goes back to the running session; else it opens the list.
+                onStart = {
+                    if (recording) {
+                        onStart()
+                    } else {
+                        choosing = true
+                    }
+                },
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 4.dp),
             )
             if (!canStart) {
@@ -114,9 +125,19 @@ fun HomeScreen(
         }
     }
     if (choosing && !recording) {
-        ModalBottomSheet(onDismissRequest = { choosing = false }) {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp).navigationBarsPadding()) {
-                SessionCard(setup, actions, cameraAllowed = cameraAllowed)
+        ModalBottomSheet(
+            onDismissRequest = { choosing = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                    .navigationBarsPadding(),
+            ) {
+                SessionCard(setup, actions, cameraAllowed = cameraAllowed, reach = reach()) {
+                    choosing = false
+                    onStart()
+                }
             }
         }
     }
