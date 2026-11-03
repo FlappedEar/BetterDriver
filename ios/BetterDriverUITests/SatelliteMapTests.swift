@@ -122,18 +122,26 @@ final class SatelliteMapTests: XCTestCase {
     }
 
     /// Picks [name] from the editor's map menu.
+    /// Picks [name] in the editor's map menu and waits for the picker to read "Map: [name]". On a busy
+    /// simulator the menu can close before the item's tap lands, so the menu is opened again once
+    /// (iPad 2 CI on 3 Nov failed with the old map still picked). The callers still check the label.
     private func pick(_ name: String, on picker: XCUIElement) {
         let item = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@ OR label == %@", name, "✓ \(name)")).firstMatch
-        // A tap at the button's point, again while the menu is not up: as the session More menu's tests,
-        // the menu can close while it opens.
-        for _ in 0..<4 where !(item.exists && item.isHittable) {
-            picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            _ = item.waitForExistence(timeout: 5)
+        let picked = NSPredicate(format: "label == %@", "Map: \(name)")
+        for attempt in 0..<2 {
+            // A tap at the button's point, again while the menu is not up: as the session More menu's
+            // tests, the menu can close while it opens.
+            for _ in 0..<4 where !(item.exists && item.isHittable) {
+                picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                _ = item.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(item.exists, "no \(name) in the map menu")
+            if attempt == 0 { keep("Track editor, map menu") }
+            item.tap()
+            let wait = XCTNSPredicateExpectation(predicate: picked, object: picker)
+            if XCTWaiter().wait(for: [wait], timeout: 10) == .completed { break }
         }
-        XCTAssertTrue(item.exists, "no \(name) in the map menu")
-        keep("Track editor, map menu")
-        item.tap()
         sleep(1)
     }
 
