@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.review.SessionFacts
+import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.recordedFacts
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
 import com.flappedear.betterdriver.analysis.review.trackFor
@@ -14,9 +15,15 @@ import platform.Foundation.NSLock
 
 /**
  * A session's card in Sessions, as Android's (UI-139 C, UI-308 A): "Corolla · 22 min · 14 laps · OBD",
- * its best lap, and the best lap's time for the day's Track day card ([bestMillis]).
+ * its best lap, and the best lap's time for the day's Track day card ([bestMillis]). [video]: the card
+ * offers Watch video (FBBD-426), only with a whole video file to play.
  */
-class SessionRowFacts(val detail: String, val best: String?, val bestMillis: Long? = null)
+class SessionRowFacts(
+    val detail: String,
+    val best: String?,
+    val bestMillis: Long? = null,
+    val video: Boolean = false,
+)
 
 /**
  * Reads each listed session's [SessionFacts] with the shared core, as Android's ReviewLaps: its laps
@@ -37,8 +44,11 @@ internal class SessionRows(
     fun read(listed: List<StoredSession>): Map<String, SessionRowFacts> = facts(listed).let { all ->
         listed.associate { s ->
             val facts = all.getValue(s.id)
-            val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, hasVideo(s.id))
-            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis)
+            val video = hasVideo(s.id)
+            val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, video)
+            // A listed session is not recording: the recorder adds it once it ends.
+            val offers = offersVideo(video, recording = false)
+            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis, offers)
         }
     }
 
