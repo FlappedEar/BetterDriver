@@ -81,9 +81,9 @@ class TrackDaySoakTest {
         sent.add(values)
     }
 
-    /** About as fast as the writer: a day of data in seconds, but never a full queue. */
-    private fun pace(s: Int) {
-        if (s % PaceEverySeconds == 0) Thread.sleep(1)
+    /** Waits while the writer is behind, as real sources only produce in real time: never a full queue. */
+    private fun pace(rec: Recording) {
+        while (rec.queuedForTest > MaxBacklog && !rec.isStopped) Thread.sleep(1)
     }
 
     private fun recordSession(store: SessionStore, seconds: Int): Pair<Recording, Sent> {
@@ -92,7 +92,7 @@ class TrackDaySoakTest {
         val sent = Sent()
         for (s in 0 until seconds) {
             feedSecond(rec, s, sent)
-            pace(s)
+            pace(rec)
         }
         assertTrue(rec.stop(), "session did not finish")
         return rec to sent
@@ -151,7 +151,7 @@ class TrackDaySoakTest {
         val sent = Sent()
         for (s in 0 until LowStorageAtSecond) {
             feedSecond(rec, s, sent)
-            pace(s)
+            pace(rec)
         }
         // Let the writer put all of it on disk, then the space runs out while the sources keep going.
         Thread.sleep(SettleMs)
@@ -181,7 +181,7 @@ class TrackDaySoakTest {
         const val ObdEverySeconds = 2
         const val TyreChannels = 8
         const val MicrosPerSecond = 1_000_000L
-        const val PaceEverySeconds = 2
+        const val MaxBacklog = 20_000
         const val LowStorageAtSecond = 300
         const val SettleMs = 500L
         val GnssGap = 600 until 603
