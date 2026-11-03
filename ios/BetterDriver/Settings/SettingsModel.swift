@@ -64,6 +64,27 @@ final class SettingsModel: ObservableObject {
                 )
             }
         }
+        // Two straps and a tyre bridge that are never there, for the list at START's test (FBBD-447).
+        if ProcessInfo.processInfo.arguments.contains("-sensorsListed"),
+           !setup.equipment.contains(where: { $0.modelName == ModelName.heartRate }),
+           let strap = SettingsCore.shared.model(name: ModelName.heartRate),
+           let bridge = SettingsCore.shared.model(name: ModelName.tpmsBridge) {
+            update {
+                SettingsCore.shared.addEquipment(
+                    setup: $0, model: strap, name: "Strap A", address: "00000000-0000-0000-0000-000000000441", id: "test-strap-a"
+                )
+            }
+            update {
+                SettingsCore.shared.addEquipment(
+                    setup: $0, model: strap, name: "Strap B", address: "00000000-0000-0000-0000-000000000442", id: "test-strap-b"
+                )
+            }
+            update {
+                SettingsCore.shared.addEquipment(
+                    setup: $0, model: bridge, name: "Tyre bridge", address: "00000000-0000-0000-0000-000000000443", id: "test-tpms"
+                )
+            }
+        }
         #endif
         // Once, also over a setup.json from a build before this move (TestFlight 1.15.0): after it,
         // Settings › Equipment is the one list, so an item removed there stays removed.
