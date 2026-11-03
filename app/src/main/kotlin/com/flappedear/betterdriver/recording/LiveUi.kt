@@ -47,14 +47,16 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
         when (live.gnss) {
             GnssState.Waiting -> StatusItem("GNSS", "Waiting", ok = false, icon = StatusIcon.Gnss)
             GnssState.Lost -> StatusItem("GNSS", "Lost", ok = false, icon = StatusIcon.Gnss)
-            GnssState.Ok -> StatusItem("GNSS", "${shownRateHz(live)} Hz · ${live.sats ?: NoValue} sats", icon = StatusIcon.Gnss)
+            GnssState.Ok ->
+                StatusItem("GNSS", "${shownRateHz(live)} Hz · ${live.sats ?: NoValue} sats", icon = StatusIcon.Gnss)
         }
     }
     val timing = state.timing
     val sources = TileSources(live, timing, receiverHasG)
     // The quiet strip (UI-141 B) names the track only when something is wrong there: a saved track
     // without timing, in amber. A circuit from the built-in list is only where the car is, not a problem.
-    val place = state.place?.takeIf { state.placeSaved && timing == null }?.let { StatusItem("Track", it, ok = false, icon = StatusIcon.Track) }
+    val place = state.place?.takeIf { state.placeSaved && timing == null }
+        ?.let { StatusItem("Track", it, ok = false, icon = StatusIcon.Track) }
     // GNSS and camera as icons, as OBD and heart rate (Arek 2026-11-03: fewer words on the strip).
     // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
     val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok, icon = StatusIcon.Camera) }
