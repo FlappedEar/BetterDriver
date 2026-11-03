@@ -108,6 +108,25 @@ class TpmsBridgeTest {
     }
 
     @Test
+    fun `the summary gives each wheel's values, the seconds since a change and staleness`() {
+        val sink = Sink()
+        val decoder = TpmsDecoder(sink)
+        assertEquals("FL -, FR -, RL -, RR -", decoder.summary(0))
+        sink.now = 10_000_000
+        decoder.feed(pressure(1, 231))
+        decoder.feed(temp(8, 24))
+        decoder.feed(pressure(4, 5))
+        sink.now = 320_000_000
+        decoder.feed(pressure(1, 231))
+        assertEquals(
+            "FL 2.31 bar 24 °C 310 s stale, FR -, RL -, RR 0.05 bar - °C 310 s",
+            decoder.summary(sink.now),
+        )
+        assertEquals("2.00", formatBar(2.0))
+        assertEquals("0.07", formatBar(0.069))
+    }
+
+    @Test
     fun `a wheel repeating the same reading for 5 min is stale until it changes`() {
         val sink = Sink()
         val decoder = TpmsDecoder(sink)
