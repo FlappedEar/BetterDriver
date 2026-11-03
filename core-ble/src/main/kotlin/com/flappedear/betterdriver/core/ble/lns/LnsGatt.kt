@@ -1,17 +1,20 @@
 package com.flappedear.betterdriver.core.ble.lns
 
 import com.flappedear.betterdriver.core.ble.FoundRaceBox
+import com.flappedear.betterdriver.core.ble.LnsIds
 import com.flappedear.betterdriver.core.ble.advertisesService
 import com.flappedear.betterdriver.core.ble.sigUuid
 import java.util.UUID
 
+private const val Hex = 16
+
 /** Bluetooth SIG assigned numbers of the Location and Navigation Service (FBBD-114). */
 object LnsGatt {
     /** Location and Navigation Service. */
-    val SERVICE: UUID = sigUuid(0x1819)
+    val SERVICE: UUID = sigUuid(LnsIds.SERVICE.toInt(Hex))
 
     /** Location and Speed: notified, one value per fix. */
-    val LOCATION_AND_SPEED: UUID = sigUuid(0x2A67)
+    val LOCATION_AND_SPEED: UUID = sigUuid(LnsIds.LOCATION_AND_SPEED.toInt(Hex))
 }
 
 /**

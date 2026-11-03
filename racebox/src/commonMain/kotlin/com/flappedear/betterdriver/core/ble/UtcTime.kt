@@ -15,7 +15,7 @@ private const val MaxSecond = 59
  * as LocalDateTime.of(...).toInstant(ZoneOffset.UTC) would throw for it (java.time is JVM-only).
  */
 @Suppress("LongParameterList", "ComplexCondition")
-internal fun utcEpochMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int): Long? {
+fun utcEpochMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int): Long? {
     if (month !in 1..12 || day !in 1..daysInMonth(year, month) || hour !in 0..MaxHour ||
         minute !in 0..MaxMinute || second !in 0..MaxSecond
     ) {

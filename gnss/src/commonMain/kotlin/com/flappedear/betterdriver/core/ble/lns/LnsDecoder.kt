@@ -1,10 +1,12 @@
 package com.flappedear.betterdriver.core.ble.lns
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
+import kotlin.concurrent.Volatile
 
 /**
  * LNS receiver channels beyond the shared [GnssChannels]. Ids 300 to 399 are reserved for LNS
@@ -76,7 +78,7 @@ class LnsDecoder(private val sink: SampleSink) {
         LnsChannels.ALL.forEach(sink::defineChannel)
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun feed(bytes: ByteArray) {
         val arrival = sink.nowMicros()
         val v = LocationAndSpeed.parse(bytes)
@@ -91,7 +93,7 @@ class LnsDecoder(private val sink: SampleSink) {
     }
 
     /** Forgets the fix state from before a reconnect. */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         hasFix = null
     }
