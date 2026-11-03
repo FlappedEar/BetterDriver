@@ -44,10 +44,36 @@ class SessionEquipmentTest {
     }
 
     @Test
-    fun theFirstListedStrapRecords() {
+    fun aStrapAddedSecondRecordsAndSurvivesTheSetupFile() {
+        // FBBD-445: Arek added a Polar 808S next to the listed 8054-1 and the app kept trying the 8054-1.
         val second = "6F1A2B3C-0000-4000-8000-000000000003"
-        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Garmin HRM", second, ::id)
-        assertEquals("Polar H10 1234", two.active().heartRateStrap?.name)
+        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Polar 808S", second, ::id)
+        assertEquals(2, two.ofKind(EquipmentKind.SENSOR).size)
+        assertEquals("Polar 808S", SetupJson.decode(SetupJson.encode(two)).active().heartRateStrap?.name)
+        assertEquals(second, two.active().heartRateStrap?.address)
+    }
+
+    @Test
+    fun theChosenStrapRecordsAndRemovingItFallsBackToTheOther() {
+        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Polar 808S", "6F1A2B3C-0000-4000-8000-000000000003", ::id)
+        val first = two.ofKind(EquipmentKind.SENSOR).first { it.name == "Polar H10 1234" }
+        val second = two.ofKind(EquipmentKind.SENSOR).first { it.name == "Polar 808S" }
+        assertEquals("Polar H10 1234", two.chooseHeartRate(first.id).active().heartRateStrap?.name)
+        assertEquals("Polar H10 1234", two.removeEquipment(second.id).active().heartRateStrap?.name)
+        // Adding a listed strap again picks it.
+        val again = two.chooseHeartRate(first.id)
+            .addEquipment(EquipmentModel.HEART_RATE, "Polar 808S", "6F1A2B3C-0000-4000-8000-000000000003", ::id)
+        assertEquals("Polar 808S", again.active().heartRateStrap?.name)
+        // Not a strap: ignored.
+        assertEquals(two, two.chooseHeartRate(two.equipment.first { it.model == EquipmentModel.OBD_WIFI }.id))
+    }
+
+    @Test
+    fun aSetupSavedBeforeTheChoiceRecordsTheStrapAddedLast() {
+        // Arek's phone: 8054-1 then 808S listed by 1.31.0, which saved no choice.
+        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Polar 808S", "6F1A2B3C-0000-4000-8000-000000000003", ::id)
+        val old = two.copy(session = two.session.copy(heartRateId = null))
+        assertEquals("Polar 808S", SetupJson.decode(SetupJson.encode(old)).active().heartRateStrap?.name)
     }
 
     @Test

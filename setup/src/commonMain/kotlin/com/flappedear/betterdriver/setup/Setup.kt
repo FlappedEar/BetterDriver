@@ -447,6 +447,11 @@ data class SessionChoice(
     val tiles: List<TrackChannel> = listOf(TrackChannel.SPEED),
     /** The track screen's data tiles (FBBD-262); null in a setup saved before them, see [Setup.trackScreens]. */
     val screens: TrackScreens? = null,
+    /**
+     * The heart-rate strap the session records (FBBD-446, FBBD-445): the one added last, until START's
+     * list lets Arek pick. Null in a setup saved before it: the last listed strap records.
+     */
+    val heartRateId: String? = null,
 )
 
 /** Why a session cannot start with the current choice. */
@@ -462,6 +467,8 @@ data class ActiveSession(
     val sensors: List<Equipment> = emptyList(),
     /** OBD-II adapters the session reads the car with: every listed one, tried in turn (FBBD-121). */
     val carData: List<Equipment> = emptyList(),
+    /** The chosen strap's id ([SessionChoice.heartRateId]); null records the last listed one. */
+    val heartRateId: String? = null,
 ) {
     val startProblem: StartProblem? get() = if (gnss == null) StartProblem.NO_GNSS else null
 
@@ -486,7 +493,7 @@ data class ActiveSession(
     fun obdShownFor(adapter: String?): Equipment? = SessionEquipment.obdShown(carData, adapter)
 
     /** The heart-rate strap the session records, null with none listed ([SessionEquipment]). */
-    val heartRateStrap: Equipment? get() = SessionEquipment.heartRateStrap(sensors)
+    val heartRateStrap: Equipment? get() = SessionEquipment.heartRateStrap(sensors, heartRateId)
 
     /** The tyre pressure bridge recorded with this session, if one is listed (FBBD-224). */
     val tpmsBridge: Equipment? get() = SessionEquipment.tpmsBridge(sensors)
@@ -522,6 +529,7 @@ data class Setup(
             tiles = session.tiles.filter { it in channelsFor(gnss) },
             sensors = ofKind(EquipmentKind.SENSOR),
             carData = ofKind(EquipmentKind.CAR_DATA),
+            heartRateId = session.heartRateId,
         )
     }
 
@@ -546,7 +554,7 @@ data class Setup(
         val same = listedAs(model, address)
         val advertised = name.takeIf { address != null && it.isNotBlank() }
         if (same != null) {
-            return replace(
+            val updated = replace(
                 same.copy(
                     name = name.ifBlank { model.label },
                     address = address ?: same.address,
@@ -554,13 +562,17 @@ data class Setup(
                     goPro = goPro?.let { camera } ?: same.goPro,
                 ),
             )
+            // Adding a listed strap again picks it, as a new one is.
+            return if (model == EquipmentModel.HEART_RATE) updated.chooseHeartRate(same.id) else updated
         }
         val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised, goPro = camera)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
             EquipmentKind.CAMERA -> next.useCamera(item.id, true)
-            EquipmentKind.SENSOR, EquipmentKind.CAR_DATA -> next
+            // The strap just added is the one Arek means to wear (FBBD-445): only one strap records.
+            EquipmentKind.SENSOR -> if (model == EquipmentModel.HEART_RATE) next.chooseHeartRate(item.id) else next
+            EquipmentKind.CAR_DATA -> next
         }
     }
 
@@ -601,7 +613,11 @@ data class Setup(
         }
         return copy(
             equipment = left,
-            session = session.copy(gnssId = gnssId, cameraIds = session.cameraIds - id),
+            session = session.copy(
+                gnssId = gnssId,
+                cameraIds = session.cameraIds - id,
+                heartRateId = session.heartRateId.takeUnless { it == id },
+            ),
         )
     }
 
@@ -633,6 +649,12 @@ data class Setup(
     fun chooseGnss(id: String?): Setup {
         if (id != null && equipment(id)?.kind != EquipmentKind.GNSS) return this
         return copy(session = session.copy(gnssId = id))
+    }
+
+    /** Chooses the heart-rate strap for the next session; null records the last listed one. */
+    fun chooseHeartRate(id: String?): Setup {
+        if (id != null && equipment(id)?.model != EquipmentModel.HEART_RATE) return this
+        return copy(session = session.copy(heartRateId = id))
     }
 
     /** Turns a camera on or off for the next session. */
