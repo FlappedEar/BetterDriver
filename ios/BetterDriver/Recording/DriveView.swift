@@ -276,6 +276,8 @@ struct ReceiverSheet: View {
             }
             scanner = s
             s.start()
+            // A listed receiver used last is picked at once (UI-313 A).
+            if picked == nil { picked = lastNotRaceBox }
         }
         .onDisappear { scanner?.stop() }
     }
@@ -300,6 +302,14 @@ struct ReceiverSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("start.car")
+    }
+
+    /// The receiver from Settings › Equipment used last (the recorder keeps a RaceBox's or a listed
+    /// receiver's name); a RaceBox is picked only once it is in range.
+    private var lastNotRaceBox: Receiver? {
+        if lastUsed.isEmpty { return nil }
+        guard let item = settings.setup.equipment.first(where: { ListedReceivers.models.contains($0.modelName) && $0.name == lastUsed }) else { return nil }
+        return .listed(item)
     }
 
     @ViewBuilder
@@ -378,7 +388,8 @@ struct ReceiverSheet: View {
     }
 
     private func choose(_ kind: StartKind, _ id: String?) {
-        settings.update { StartListKt.chooseAtStart($0, kind: kind, id: id, on: true) }
+        // A Kotlin extension of a Kotlin class is a method of that class in Swift.
+        settings.update { $0.chooseAtStart(kind: kind, id: id, on: true) }
     }
 
     private func groupTitle(_ text: String) -> some View {
