@@ -19,7 +19,12 @@ object ObdSessionEvents {
 
 private const val MicrosPerMs = 1_000L
 
-/** Channel ids of OBD channels: [ObdChannelBase] + the PID's place in [StandardPids.all]. */
+/**
+ * The channel ids OBD channels take, no other source's (FBBD-437): [ObdChannelBase] + the PID's place
+ * in [StandardPids.all], and from [ObdChannelOther] the car's own parameters.
+ */
+val ObdChannelIds: IntRange = 800..899
+
 private const val ObdChannelBase = 800
 private const val ObdChannelOther = 850
 private const val ObdDecimals = 2
