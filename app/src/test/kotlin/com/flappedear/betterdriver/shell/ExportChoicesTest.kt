@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.shell
 
-import com.flappedear.betterdriver.recording.ExportFormat
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

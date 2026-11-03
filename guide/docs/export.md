@@ -7,13 +7,14 @@ In **Sessions**, open a session's **⋮** sheet and tap **Export ▾**. Not whil
 | Choice | What you get |
 | --- | --- |
 | **Video with data** | An MP4 of one lap or the whole session with speed, times, G and the map drawn on the video. Needs video in the session. |
-| **VBO + video** | For Circuit Tools: the VBO and its MP4 files, saved into a new folder. Offered when the session has video. |
+| **VBO + video** | For Circuit Tools: the VBO and its MP4 files, shared together; save them into one folder. Offered when the session has video. |
 | **VBO** | One VBO file with every data channel, no video columns. Opens in Circuit Tools and other VBO tools; G columns are included for FlappedEar Overlays. |
 | **CSV** | Every channel and lap, for spreadsheets. Its time column follows the receiver's GNSS clock, so it lines up with RaceChrono. |
 | **GPX** | The GPS track by lap, for maps. |
 
-Android asks where to save the file. Car data channels (`obd_rpm` and the rest) and G columns
-go into the VBO and CSV.
+The file is written, then the share sheet opens, as for **Share log**: AirDrop, Quick Share,
+Mail, Drive, **Save to Files** or another app, the same on Android, iPhone and iPad. Car data
+channels (`obd_rpm` and the rest) and G columns go into the VBO and CSV.
 
 ### Video with data
 

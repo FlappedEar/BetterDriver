@@ -29,7 +29,7 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
-import com.flappedear.betterdriver.recording.ExportFormat
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
@@ -171,7 +171,7 @@ internal fun cardStatus(delete: DeleteState?, export: ExportState?): Pair<String
     DeleteState.Failed -> "Delete failed" to true
     null -> when (export) {
         ExportState.Running -> "Exporting…" to false
-        ExportState.Done -> "Saved" to false
+        ExportState.Done -> "Exported" to false
         ExportState.Failed -> "Export failed" to true
         null -> "" to false
     }

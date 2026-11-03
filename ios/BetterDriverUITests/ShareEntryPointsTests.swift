@@ -1,10 +1,10 @@
 import XCTest
 
 /// Every way a file leaves the app on iOS (FBBD-393): a session's Share, Settings › Diagnostics ›
-/// Share log, and the session's exports. Each must reach its sheet with the app still running: on an
-/// iPhone 12 the Share of a session with video showed nothing and then iOS killed the app. Video
-/// with data's Save is DataVideoTests'; CSV and GPX are ReviewScreensTests'. The memory of a long
-/// video's share is ShareTests' (unit tests): the simulator demo video is only ten seconds.
+/// Share log, and the session's exports, which open the same share sheet as Share log (FBBD-443).
+/// Each must reach its sheet with the app still running: on an iPhone 12 the Share of a session with
+/// video showed nothing and then iOS killed the app. Video with data's Save is DataVideoTests'. The
+/// memory of a long video's share is ShareTests' (unit tests): the simulator demo video is only ten seconds.
 final class ShareEntryPointsTests: XCTestCase {
     private let app = XCUIApplication()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
@@ -56,9 +56,9 @@ final class ShareEntryPointsTests: XCTestCase {
         assertShareSheet("Share log")
     }
 
-    func testVboExportsAreWrittenWithoutAFailure() {
-        // One launch per format: Files' Save sheet runs out of the app, so each run is ended.
-        for (index, format) in ["VBO + video", "VBO"].enumerated() {
+    func testEveryExportOpensTheShareSheet() {
+        // One launch per format: the share sheet is left open, so each run is ended.
+        for (index, format) in ["VBO + video", "VBO", "CSV", "GPX"].enumerated() {
             app.launchArguments = index == 0 ? ["-freshInstall", "-demoSessions", "-demoVideo"] : ["-demoSessions"]
             app.launch()
             openSessions()
@@ -76,11 +76,9 @@ final class ShareEntryPointsTests: XCTestCase {
             }
             XCTAssertTrue(item.isHittable, "no \(format) in the export menu")
             item.tap()
-            // A failed export says so in an alert; a written one goes on to Files.
-            let failed = app.alerts.firstMatch.waitForExistence(timeout: 30)
-            XCTAssertFalse(failed, "\(format): \(app.alerts.firstMatch.label)")
-            keep("Export \(format)")
-            XCTAssertEqual(app.state, .runningForeground, "\(format): the app stopped")
+            // A failed export says so in an alert; a written one goes on to the share sheet, as Share log.
+            assertShareSheet("Export \(format)")
+            XCTAssertFalse(app.alerts.firstMatch.exists, "\(format): \(app.alerts.firstMatch.label)")
             app.terminate()
         }
     }
