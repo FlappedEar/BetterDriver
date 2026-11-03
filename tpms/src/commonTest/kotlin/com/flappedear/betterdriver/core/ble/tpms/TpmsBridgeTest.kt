@@ -164,4 +164,35 @@ class TpmsBridgeTest {
         assertTrue(sink.events.isEmpty())
         assertEquals(1402, sink.sets.size)
     }
+
+    @Test
+    fun `the status strip shows the bridge only while it streams tyre values`() {
+        val sink = Sink()
+        val session = TpmsSession(sink, "AA:BB", "RC TPMS AMOLED")
+        session.start()
+        assertNull(session.status())
+        session.linkChanged(LinkState.Streaming(8))
+        // Streaming but no wheel heard yet: nothing on the strip.
+        assertNull(session.status())
+        session.feed(pressure(1, 230))
+        assertEquals(TpmsStatus("FR, RL, RR no data", ok = false), session.status())
+        for (pid in 2..4) session.feed(pressure(pid, 230))
+        assertEquals(TpmsStatus("4 tyres", ok = true), session.status())
+        session.linkChanged(LinkState.Reconnecting(1, 1_000, "lost"))
+        assertNull(session.status())
+        session.linkChanged(LinkState.Streaming(8))
+        assertEquals(TpmsStatus("4 tyres", ok = true), session.status())
+    }
+
+    @Test
+    fun `stale wheels are fine and missing wheels show in amber`() {
+        val fresh = TyreReading(2.3, 40.0, stale = false)
+        val stale = TyreReading(2.3, 40.0, stale = true)
+        val none = TyreReading(null, null, stale = false)
+        val tempOnly = TyreReading(null, 30.0, stale = false)
+        assertEquals(TpmsStatus("4 tyres", ok = true), tpmsStatus(true, listOf(fresh, fresh, fresh, stale)))
+        assertEquals(TpmsStatus("RL no data", ok = false), tpmsStatus(true, listOf(stale, fresh, tempOnly, fresh)))
+        assertNull(tpmsStatus(true, listOf(none, tempOnly, none, none)))
+        assertNull(tpmsStatus(false, listOf(fresh, fresh, fresh, fresh)))
+    }
 }

@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 import com.flappedear.betterdriver.recorder.log.CoreLog
 import com.flappedear.betterdriver.recorder.log.logLine
+import kotlin.concurrent.Volatile
 
 /**
  * The FlappedEar TPMS bridge (https://github.com/FlappedEar/RCTPMS, FBBD-224): an ESP32 that hears
@@ -148,6 +149,28 @@ private const val CentiPerUnit = 100
 /** A wheel's latest values for a status display; null where the bridge has sent none yet. */
 data class TyreReading(val bar: Double?, val celsius: Double?, val stale: Boolean)
 
+/** The bridge on the track screen's status strip (FBBD-444): a tyre icon, [value] shown in amber when not [ok]. */
+data class TpmsStatus(val value: String, val ok: Boolean)
+
+/**
+ * What the track screen's status strip shows for the TPMS bridge (FBBD-444). As OBD and the heart
+ * rate, only while data arrives: null while the link is not [streaming] or before any wheel's
+ * pressure. Fine while all four wheels have a pressure; a stale wheel (the same reading for 5 min)
+ * counts as fine, as a steady tyre is not a fault (Arek, 2026-11-03). Otherwise the wheels never
+ * heard, for example "RL, RR no data" (sensors sleep in a parked car and wake one by one as it
+ * rolls), so the driver sees a missing sensor before the session ends.
+ */
+fun tpmsStatus(streaming: Boolean, readings: List<TyreReading>): TpmsStatus? {
+    if (!streaming || readings.none { it.bar != null }) return null
+    val wheels = TpmsChannels.WHEELS
+    val missing = readings.indices.filter { readings[it].bar == null }.map { wheels[it] }
+    return if (missing.isEmpty()) {
+        TpmsStatus("${readings.size} tyres", ok = true)
+    } else {
+        TpmsStatus("${missing.joinToString(", ")} no data", ok = false)
+    }
+}
+
 /**
  * Turns the bridge's notifications into sample sets, one value per set stamped on arrival (the
  * bridge sends each of its eight values about once a second). A wheel whose pressure and
@@ -260,6 +283,10 @@ class TpmsSession(
     private var wasStreaming = false
     private var loggedStreaming = false
 
+    /** The link streams now; read by the status strip from another thread. */
+    @Volatile
+    private var streamingNow = false
+
     fun start() {
         decoder.defineChannels()
         sink.event(TpmsEvents.DEVICE, "address=$address name=$deviceName")
@@ -297,8 +324,12 @@ class TpmsSession(
             else -> Unit
         }
         if (s is LinkState.Streaming || s is LinkState.Reconnecting) loggedStreaming = s is LinkState.Streaming
+        streamingNow = s is LinkState.Streaming
     }
 
     /** The four wheels' latest values, front left to rear right. */
     fun readings(): List<TyreReading> = decoder.readings()
+
+    /** The bridge for the track screen's status strip (FBBD-444), or null while it shows nothing. */
+    fun status(): TpmsStatus? = tpmsStatus(streamingNow, decoder.readings())
 }

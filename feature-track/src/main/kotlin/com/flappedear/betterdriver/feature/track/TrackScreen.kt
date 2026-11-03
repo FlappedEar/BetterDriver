@@ -329,8 +329,8 @@ object TrackSlots {
 /** Example values matching the review mockups (round 31). Not real data. */
 val ExampleTrackState = TrackScreenState(
     status = listOf(
-        StatusItem("GNSS", "25 Hz · 18 sats"),
-        StatusItem("Camera", "1080p · 60"),
+        StatusItem("GNSS", "25 Hz · 18 sats", icon = StatusIcon.Gnss),
+        StatusItem("Camera", "1080p · 60", icon = StatusIcon.Camera),
         StatusItem("OBD", "Connected", icon = StatusIcon.Car),
         StatusItem("Heart rate", "142", icon = StatusIcon.Heart, keepValue = true),
     ),

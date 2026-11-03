@@ -77,15 +77,27 @@ class TpmsSource internal constructor(
     /** The four tyres' latest values while started, front left to rear right. */
     fun readings(): List<TyreReading>? = if (link == null) null else session?.readings()
 
+    /** The bridge for the track screen's status strip (FBBD-444), or null when stopped or showing nothing. */
+    fun status(): TpmsStatus? = if (link == null) null else session?.status()
+
     override fun start(sink: SampleSink) {
         val session = TpmsSession(sink, address, deviceName)
         this.session = session
         session.start()
         link = connect(session::feed, session::linkChanged).also { it.start() }
+        current = this
     }
 
     override fun stop() {
         link?.stop()
         link = null
+        if (current === this) current = null
+    }
+
+    companion object {
+        /** The bridge of the session recording in this process, if it records tyres. */
+        @Volatile
+        var current: TpmsSource? = null
+            private set
     }
 }
