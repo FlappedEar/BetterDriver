@@ -6,7 +6,9 @@ import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.recorder.export.CsvWriter
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import com.flappedear.betterdriver.recorder.export.ExportLap
+import com.flappedear.betterdriver.recorder.export.ExportShare
 import com.flappedear.betterdriver.recorder.export.GpxWriter
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -49,7 +51,7 @@ class ExportException(message: String) : Exception(message)
  * its video files BetterDriver-<id>_0001.MP4 and on. The same exporter writes the VBO on both (VboExport),
  * with the G columns FlappedEar Overlays reads (FBBD-216). CSV and GPX are written as Android writes
  * them, with the laps at the session's saved track in [tracksRoot]. Files are made under [outRoot], from where the
- * app hands them to Files, AirDrop or another app.
+ * app hands them to the share sheet ([share], FBBD-443), as Share log.
  */
 class SessionExport(
     private val sessionsRoot: String,
@@ -63,6 +65,33 @@ class SessionExport(
         clips(id).isNotEmpty()
     } catch (_: Exception) {
         false
+    }
+
+    /**
+     * Writes session [id] as [format] and returns what the share sheet gets (FBBD-443): the one file,
+     * or for VBO + video the VBO and each video file next to it, as the shared [ExportShare] lists them.
+     */
+    @Throws(Exception::class)
+    fun share(id: String, format: ExportFormat): ExportShare = when (format) {
+        ExportFormat.Vbo -> ExportShare.of(id, format, vbo(id))
+        ExportFormat.Csv -> ExportShare.of(id, format, csv(id))
+        ExportFormat.Gpx -> ExportShare.of(id, format, gpx(id))
+        ExportFormat.VboVideo -> {
+            val folder = vboWithVideo(id)
+            val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(folder, null)
+                ?.filterIsInstance<String>().orEmpty()
+            val videos = names.filter { it.startsWith(ExportShare.videoPrefix(id)) }.sorted().map { "$folder/$it" }
+            ExportShare.of(id, format, "$folder/${ExportShare.fileName(id, format)}", videos)
+        }
+    }
+
+    /** Bytes of the files of [share], for its log line. */
+    fun bytes(share: ExportShare): Long = share.files.sumOf { path ->
+        try {
+            PosixMp4Source(path).use { it.length }
+        } catch (_: IoProblem) {
+            0L
+        }
     }
 
     /** Writes the plain VBO of session [id]; returns its path. */
@@ -118,12 +147,15 @@ class SessionExport(
         mkdirs(folder)
         val data = store.read(id)
         val clips = clips(id)
-        val video = if (clips.isEmpty()) null else VboVideo("${baseName(id)}_", clips)
+        val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
         TextFile("$folder/${baseName(id)}.vbo").use { VboExport.export(data, it, video, vboAccelerations(data)) }
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
         video?.orderedClips?.forEachIndexed { i, clip ->
             val to = "$folder/${video.fileName(i)}"
-            if (!NSFileManager.defaultManager.copyItemAtPath("$videoDir/${clip.file}", to, null)) {
+            val from = "$videoDir/${clip.file}"
+            // A hard link: the same file under the export's name, no second copy of the video on the phone.
+            val files = NSFileManager.defaultManager
+            if (!files.linkItemAtPath(from, to, null) && !files.copyItemAtPath(from, to, null)) {
                 throw ExportException("cannot copy ${clip.file}")
             }
         }
@@ -132,10 +164,13 @@ class SessionExport(
 
     private fun clips(id: String): List<VideoClip> = wholeVideoClips(store, id)
 
-    /** An empty folder for this export of [id]: an earlier one is removed. */
+    /**
+     * An empty folder for this export of [id]. Only the newest export waits for the share sheet:
+     * earlier ones are removed, with their links to video a deleted session no longer has.
+     */
     private fun freshDir(id: String): String {
         val dir = "$outRoot/$id"
-        NSFileManager.defaultManager.removeItemAtPath(dir, null)
+        NSFileManager.defaultManager.removeItemAtPath(outRoot, null)
         mkdirs(dir)
         return dir
     }
@@ -146,7 +181,7 @@ class SessionExport(
         }
     }
 
-    private fun baseName(id: String) = "BetterDriver-$id"
+    private fun baseName(id: String) = ExportShare.baseName(id)
 }
 
 /**

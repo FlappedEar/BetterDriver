@@ -1,11 +1,10 @@
 package com.flappedear.betterdriver.recording
 
-import android.content.ContentResolver
 import android.content.Context
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.provider.DocumentsContract
+import android.system.ErrnoException
+import android.system.Os
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +16,8 @@ import com.flappedear.betterdriver.coach.coachDir
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.export.CsvExporter
+import com.flappedear.betterdriver.recorder.export.ExportFormat
+import com.flappedear.betterdriver.recorder.export.ExportShare
 import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.recorder.export.GpxExporter
 import com.flappedear.betterdriver.recorder.log.CheckLog
@@ -49,19 +50,6 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-
-/**
- * What a session card exports to (FBBD-150). VBO with video has its own folder export. VBO has no
- * registered type; a generic one keeps the .vbo file name.
- */
-enum class ExportFormat(val extension: String, val mimeType: String) {
-    Vbo("vbo", "application/octet-stream"),
-
-    /** The VBO with its video files, into a new folder (FBBD-25); written by [Sessions.exportWithVideo]. */
-    VboVideo("vbo", "application/octet-stream"),
-    Csv("csv", "text/csv"),
-    Gpx("gpx", "application/gpx+xml"),
-}
 
 /** Export progress of one session, shown on its card. */
 enum class ExportState { Running, Done, Failed }
@@ -161,6 +149,8 @@ class Sessions private constructor(private val context: Context) {
         if (exports[id] == ExportState.Running || deletes[id] == DeleteState.Running) return
         deletes[id] = DeleteState.Running
         io.execute {
+            // A waiting export's video links would keep the deleted video on the phone.
+            File(exportsDir(context), id).deleteRecursively()
             val result = try {
                 store.delete(id).also { r ->
                     // Its next-session focus goes with it, so the coach never works from it (FBBD-20).
@@ -188,100 +178,72 @@ class Sessions private constructor(private val context: Context) {
     }
 
     /**
-     * Writes the session as [format] to [uri], a document the user picked. CSV and GPX get lap
-     * columns and one track segment per lap when the session was at a saved track with a
-     * start/finish line (FBBD-150).
+     * Writes the session as [format] into the app's cache, then hands it to [ready] for the share
+     * sheet, as Share log does (FBBD-443): Quick Share, Drive, Gmail or another app in one step. CSV
+     * and GPX get lap columns and one track segment per lap when the session was at a saved track
+     * with a start/finish line (FBBD-150). VBO + video writes the VBO with an [avi] section and the
+     * video files next to it as `BetterDriver-<id>_0001.MP4` and on, as Circuit Tools expects them
+     * (FBBD-25); phone video is used when there is any, else the first camera that has files. The
+     * video files are hard links to the session's own, so the export takes no second copy of them.
      */
-    fun export(id: String, uri: Uri, format: ExportFormat = ExportFormat.Vbo) {
+    fun export(id: String, format: ExportFormat) {
         exports[id] = ExportState.Running
         DebugLog.i(Tag, "export $id as $format")
         io.execute {
-            val result = try {
+            val share = try {
                 val data = store.read(id)
-                val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
-                out.use {
+                // Only the newest export waits: older ones (and their video links) are freed here.
+                exportsDir(context).deleteRecursively()
+                val dir = File(exportsDir(context), id)
+                if (!dir.mkdirs()) throw IOException("cannot create $dir")
+                val file = File(dir, ExportShare.fileName(id, format))
+                val videos = mutableListOf<String>()
+                file.outputStream().buffered().use { out ->
                     when (format) {
-                        // VboVideo goes to a folder through exportWithVideo; a file here gets the plain VBO.
-                        ExportFormat.Vbo, ExportFormat.VboVideo ->
-                            logExport(id, data) { VboExporter.export(data, it, derived = vboAccelerations(data)) }
-                        ExportFormat.Csv -> CsvExporter.export(data, it, exportLaps(data, tracksDir(context)))
-                        ExportFormat.Gpx -> GpxExporter.export(data, it, exportLaps(data, tracksDir(context)))
+                        ExportFormat.Vbo ->
+                            logExport(id, data) { VboExporter.export(data, out, derived = vboAccelerations(data)) }
+                        ExportFormat.VboVideo -> {
+                            val sessionDir = store.dir(id)
+                            val timeline = VideoTimeline.from(data.events, indexedClips(sessionDir))
+                            val video = exportVideo(id, sessionDir, timeline)
+                            logExport(id, data) { VboExporter.export(data, out, video, vboAccelerations(data)) }
+                            video?.orderedClips?.forEachIndexed { i, clip ->
+                                val to = File(dir, video.fileName(i))
+                                linkOrCopy(File(File(sessionDir, VideoFiles.DIR), clip.file), to)
+                                videos += to.path
+                            }
+                        }
+                        ExportFormat.Csv -> CsvExporter.export(data, out, exportLaps(data, tracksDir(context)))
+                        ExportFormat.Gpx -> GpxExporter.export(data, out, exportLaps(data, tracksDir(context)))
                     }
                 }
-                DebugLog.i(Tag, "export $id done")
-                ExportState.Done
+                ExportShare.of(id, format, file.path, videos).also {
+                    DebugLog.i(Tag, it.logLine(it.files.sumOf { f -> File(f).length() }))
+                }
             } catch (e: IOException) {
                 DebugLog.w(Tag, "export failed", e)
-                ExportState.Failed
+                null
             } catch (e: IllegalStateException) {
                 DebugLog.w(Tag, "export failed", e) // unreadable metadata
-                ExportState.Failed
+                null
             } catch (_: OutOfMemoryError) {
                 // Left on this thread it ends the app (FBBD-232). No stack trace: formatting one needs memory.
                 DebugLog.w(Tag, "export failed: out of memory")
-                ExportState.Failed
+                null
             }
-            main.post { exports[id] = result }
+            main.post {
+                exports[id] = if (share != null) ExportState.Done else ExportState.Failed
+                if (share != null) ready = share
+            }
         }
     }
 
-    /**
-     * Writes the session to [tree], a folder the user picked, as Circuit Tools expects it (FBBD-25):
-     * `BetterDriver-<id>.vbo` with an [avi] section, and the video files next to it as
-     * `BetterDriver-<id>_0001.MP4` and on. Phone video is used when there is any, else the first
-     * camera that has files.
-     */
-    fun exportWithVideo(id: String, tree: Uri) {
-        exports[id] = ExportState.Running
-        DebugLog.i(Tag, "export $id as VBO with video")
-        io.execute {
-            val result = try {
-                val dir = store.dir(id)
-                val data = store.read(id)
-                val video = exportVideo(id, dir, VideoTimeline.from(data.events, indexedClips(dir)))
-                val picked =
-                    DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-                // Each export gets its own new folder: exporting again into the picked folder would make
-                // Android rename the new files ("… (1).MP4") while the VBO still names the old ones.
-                val folder = DocumentsContract.createDocument(
-                    context.contentResolver,
-                    picked,
-                    DocumentsContract.Document.MIME_TYPE_DIR,
-                    "BetterDriver-$id",
-                ) ?: throw IOException("cannot create a folder in $picked")
-                var whole = false
-                try {
-                    create(folder, VboMimeType, "BetterDriver-$id.vbo").use {
-                        logExport(id, data) { VboExporter.export(data, it, video, vboAccelerations(data)) }
-                    }
-                    video?.orderedClips?.forEachIndexed { i, clip ->
-                        create(folder, Mp4MimeType, video.fileName(i)).use { out ->
-                            File(File(dir, VideoFiles.DIR), clip.file).inputStream().use { it.copyTo(out, CopyBuffer) }
-                        }
-                    }
-                    whole = true
-                    DebugLog.i(Tag, "export $id done: ${video?.orderedClips?.size ?: 0} video files")
-                } finally {
-                    // No half export that could later be mistaken for a whole one, whatever stopped it.
-                    if (!whole) discard(context.contentResolver, folder)
-                }
-                ExportState.Done
-            } catch (e: IOException) {
-                DebugLog.w(Tag, "export failed", e)
-                ExportState.Failed
-            } catch (e: IllegalStateException) {
-                DebugLog.w(Tag, "export failed", e) // unreadable metadata
-                ExportState.Failed
-            } catch (e: IllegalArgumentException) {
-                DebugLog.w(Tag, "export failed", e) // folder no longer usable
-                ExportState.Failed
-            } catch (_: OutOfMemoryError) {
-                // Left on this thread it ends the app (FBBD-232). No stack trace: formatting one needs memory.
-                DebugLog.w(Tag, "export failed: out of memory")
-                ExportState.Failed
-            }
-            main.post { exports[id] = result }
-        }
+    /** A written export waiting for the share sheet; [shared] clears it once the sheet is open. */
+    var ready by mutableStateOf<ExportShare?>(null)
+        private set
+
+    fun shared(share: ExportShare) {
+        if (ready == share) ready = null
     }
 
     /** The session's clip index (clips.json) on the recorder's terms; clips still on a camera are left out. */
@@ -295,13 +257,8 @@ class Sessions private constructor(private val context: Context) {
         val present = timeline.clips.filter { File(videoDir, it.file).let { f -> f.isFile && Mp4Reader.isComplete(f) } }
         val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
         val clips = present.filter { it.camera == camera }
-        return if (clips.isEmpty()) null else VboVideo("BetterDriver-${id}_", clips)
+        return if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
     }
-
-    private fun create(folder: Uri, mime: String, name: String) =
-        DocumentsContract.createDocument(context.contentResolver, folder, mime, name)
-            ?.let { context.contentResolver.openOutputStream(it) }
-            ?: throw IOException("cannot create $name")
 
     private fun publish() {
         val sessions = store.list()
@@ -327,9 +284,6 @@ class Sessions private constructor(private val context: Context) {
 
     companion object {
         private const val Tag = "Sessions"
-        private const val VboMimeType = "application/octet-stream"
-        private const val Mp4MimeType = "video/mp4"
-        private const val CopyBuffer = 1 shl 20
 
         /** The newest sessions whose validation report is made in the background; older ones on opening. */
         private const val ReportedAhead = 3
@@ -417,18 +371,26 @@ private fun exportLaps(data: SessionData, tracksDir: File): List<ExportLap> = tr
     emptyList()
 }
 
-/** Removes a failed export's folder. Best effort: the export has already failed. */
-@Suppress("TooGenericExceptionCaught")
-private fun discard(resolver: ContentResolver, folder: Uri) {
+/** Where exports wait for the share sheet (FBBD-443); the transfer provider shares this folder. */
+internal fun exportsDir(context: Context) = File(context.cacheDir, "exports-out")
+
+/**
+ * [to] as a hard link to [from], the same video under the export's name with no second copy on the
+ * phone; a copy where the file system refuses links.
+ */
+internal fun linkOrCopy(from: File, to: File) {
     try {
-        DocumentsContract.deleteDocument(resolver, folder)
-    } catch (e: Exception) {
-        DebugLog.w("Sessions", "could not remove the failed export", e)
+        Os.link(from.path, to.path)
+    } catch (e: ErrnoException) {
+        DebugLog.i("Sessions", "no hard link for ${to.name} (${e.message}), copying")
+        from.inputStream().use { input -> to.outputStream().use { input.copyTo(it, CopyBufferBytes) } }
     }
 }
 
-/** The file name offered when exporting. */
-fun exportFileName(session: SessionSummary, format: ExportFormat) = "BetterDriver-${session.id}.${format.extension}"
+private const val CopyBufferBytes = 1 shl 20
+
+/** The file name of an export. */
+fun exportFileName(session: SessionSummary, format: ExportFormat) = ExportShare.fileName(session.id, format)
 
 /** Deletes session [id]'s next-session focus (FBBD-20) with the session, so the coach never works from it. */
 private fun forgetFocus(context: Context, id: String) {

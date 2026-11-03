@@ -4,8 +4,10 @@ import SwiftUI
 import UIKit
 
 /// Export from a session (FBBD-333), as the export menu of Android's session card: VBO + video for
-/// Circuit Tools into a new folder (FBBD-25), when the session has video, the VBO alone, CSV and
-/// GPX, and Video with data (FBBD-152) when it has video. The files are written in the background, then Files asks where to save them.
+/// Circuit Tools, the VBO and its video files (FBBD-25), when the session has video, the VBO alone, CSV and
+/// GPX, and Video with data (FBBD-152) when it has video. The files are written in the background,
+/// then the share sheet opens, as Share log does (FBBD-443): AirDrop, Mail, Save to Files or another
+/// app in one step. VBO + video shares the VBO and each video file, so Save to Files keeps them together.
 struct ExportButton: View {
     let sessionId: String
     /// Opens Video with data (FBBD-152). The session's page shows it, outside the toolbar, so the
@@ -16,7 +18,6 @@ struct ExportButton: View {
     /// Counts the session changes, so [hasVideo] is read again after each.
     @State private var videoCheck = 0
     @State private var running = false
-    @State private var ready: ExportedFile?
     @State private var failure: String?
 
     var body: some View {
@@ -53,37 +54,45 @@ struct ExportButton: View {
             }.value
         }
         .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in videoCheck += 1 }
-        .sheet(item: $ready) { file in
-            SaveToFiles(url: file.url) { ready = nil }
-        }
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
         }
     }
 
-    private enum Format { case vboWithVideo, vbo, csv, gpx }
+    private enum Format {
+        case vboWithVideo, vbo, csv, gpx
+
+        /// The shared core's format.
+        var core: ExportFormat {
+            switch self {
+            case .vboWithVideo: return .vboVideo
+            case .vbo: return .vbo
+            case .csv: return .csv
+            case .gpx: return .gpx
+            }
+        }
+    }
 
     private func export(_ format: Format) {
         let id = sessionId
+        let core = format.core
         running = true
         Task {
-            let result: Result<URL, Error> = await Task.detached {
+            let result: Result<[URL], Error> = await Task.detached {
                 Result {
                     let exports = Exports.make()
-                    let path: String
-                    switch format {
-                    case .vboWithVideo: path = try exports.vboWithVideo(id: id)
-                    case .vbo: path = try exports.vbo(id: id)
-                    case .csv: path = try exports.csv(id: id)
-                    case .gpx: path = try exports.gpx(id: id)
-                    }
-                    return URL(fileURLWithPath: path)
+                    // Written and listed by the shared core, as on Android (ExportShare).
+                    let share = try exports.share(id: id, format: core)
+                    AppLog.i(Exports.tag, share.logLine(bytes: exports.bytes(share: share)))
+                    return share.files.map { URL(fileURLWithPath: $0) }
                 }
             }.value
             running = false
             switch result {
-            case .success(let url): ready = ExportedFile(url: url)
-            case .failure(let error): failure = "Export failed: \(error.localizedDescription)"
+            case .success(let urls): LogShare.share(urls)
+            case .failure(let error):
+                AppLog.w(Exports.tag, "export \(id) failed: \(error.localizedDescription)")
+                failure = "Export failed: \(error.localizedDescription)"
             }
         }
     }
@@ -95,8 +104,11 @@ struct ExportedFile: Identifiable {
     var id: String { url.path }
 }
 
-/// The exporter over the app's folders; exports are made in the temporary folder, Files copies them out.
+/// The exporter over the app's folders; exports are made in the temporary folder, the share sheet sends them on.
 enum Exports {
+    /// The log's tag for exports, Android's: the same line under the same tag on both.
+    static let tag = "Sessions"
+
     static func make() -> SessionExport {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("export", isDirectory: true)
         return SessionExport(sessionsRoot: AppFolders.sessions.path, tracksRoot: AppFolders.tracks.path, outRoot: out.path)

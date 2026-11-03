@@ -343,7 +343,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
 }
 
 /**
- * Sessions list. Export asks where to save, then writes in the background (rememberSessionExport).
+ * Sessions list. Export writes in the background, then opens the share sheet (rememberSessionExport).
  * On a tablet ([layout]) a card opens its lap analysis beside the list (FBBD-40); the picked session
  * is kept when the tablet turns and when Android ends the app in the background.
  */

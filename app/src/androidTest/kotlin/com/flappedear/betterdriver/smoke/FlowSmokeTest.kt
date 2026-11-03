@@ -15,10 +15,12 @@ import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intended
 import androidx.test.espresso.intent.Intents.intending
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
+import androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasType
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.equalTo
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -30,9 +32,9 @@ import java.io.File
 
 /**
  * The 0.3.0 flows on the emulator (FBBD-161): the lap review comparing two laps, the Export menu
- * (CSV, GPX and Video with data), and a backup and restore round trip. Android's file picker is
- * stubbed with Espresso-Intents: it answers as if the user cancelled or picked a file in the app's
- * cache, so the flows run without the system picker.
+ * (CSV, GPX, VBO, VBO + video and Video with data), and a backup and restore round trip. Android's
+ * file picker and share sheet are stubbed with Espresso-Intents: the picker answers as if the user
+ * picked a file in the app's cache, so the flows run without the system's own screens.
  */
 @RunWith(AndroidJUnit4::class)
 class FlowSmokeTest {
@@ -109,38 +111,41 @@ class FlowSmokeTest {
     fun exportMenuCsvGpxVboAndVideo() {
         app.openSessions()
 
-        // CSV: the save dialog opens; cancelled, nothing is written.
-        intending(hasAction(Intent.ACTION_CREATE_DOCUMENT)).respondWith(ActivityResult(Activity.RESULT_CANCELED, null))
+        // Each export is written to the app's cache, then the share sheet opens, as Share log (FBBD-443).
+        intending(hasAction(Intent.ACTION_CHOOSER)).respondWith(ActivityResult(Activity.RESULT_OK, null))
         openExportMenu()
         app.waitForText("VBO + video").assertIsDisplayed()
         app.waitForText("VBO").assertIsDisplayed()
         app.waitForText("GPX").assertIsDisplayed()
         app.waitForText("Video with data").assertIsDisplayed()
         app.waitForText("CSV").performClick()
-        intended(allOf(hasAction(Intent.ACTION_CREATE_DOCUMENT), hasType("text/csv")))
-        app.waitForIdle()
-        check(!app.showsText("Exporting…")) { "a cancelled export ran" }
+        val csv = exported("csv")
+        check(csv.readText().startsWith("time,")) { "not a CSV file: ${csv.readText().take(SnippetChars)}" }
+        intended(shares(Intent.ACTION_SEND, "text/csv"))
 
-        // GPX: saved to a file in the cache, one track segment per lap.
-        val gpx = File(cache, "smoke.gpx").apply { delete() }
-        intending(allOf(hasAction(Intent.ACTION_CREATE_DOCUMENT), hasType("application/gpx+xml")))
-            .respondWith(picked(gpx))
+        // GPX: one track segment per lap.
         openExportMenu()
         app.waitForText("GPX").performClick()
-        app.waitForText("Saved", timeoutMs = LoadTimeoutMs)
-        val text = gpx.readText()
+        val text = exported("gpx").readText()
         check("<gpx" in text && "<trkseg>" in text) { "not a GPX file: ${text.take(SnippetChars)}" }
+        intended(shares(Intent.ACTION_SEND, "application/gpx+xml"))
 
         // Plain VBO of a session with video (FBBD-227): one file, no video columns.
-        val vbo = File(cache, "smoke.vbo").apply { delete() }
-        intending(allOf(hasAction(Intent.ACTION_CREATE_DOCUMENT), hasType("application/octet-stream")))
-            .respondWith(picked(vbo))
         openExportMenu()
         app.waitForText("VBO").performClick()
-        // "Saved" still shows from the GPX export, so wait for this file and the end of its export.
-        app.waitNamed("the VBO file", LoadTimeoutMs) { vbo.length() > 0 && !app.showsText("Exporting…") }
-        val vboText = vbo.readText()
+        val vboText = exported("vbo").readText()
         check("[data]" in vboText && "avifileindex" !in vboText) { "not a plain VBO: ${vboText.take(SnippetChars)}" }
+        intended(shares(Intent.ACTION_SEND, "application/octet-stream"))
+
+        // VBO + video: the VBO and its video files side by side, shared together (FBBD-25).
+        openExportMenu()
+        app.waitForText("VBO + video").performClick()
+        val withVideo = exported("vbo")
+        check("[avi]" in withVideo.readText()) { "no [avi] section in the VBO + video export" }
+        app.waitNamed("the export's video", LoadTimeoutMs) {
+            withVideo.parentFile?.listFiles()?.any { it.name.endsWith(".MP4") && it.length() > 0 } == true
+        }
+        intended(shares(Intent.ACTION_SEND_MULTIPLE, "*/*"))
 
         // Video with data: the sheet lists the whole session and its laps; Cancel closes it.
         openExportMenu()
@@ -185,6 +190,26 @@ class FlowSmokeTest {
         app.waitForText("Export ▾").performClick()
         app.waitForText("CSV")
     }
+
+    /**
+     * The export file with [extension] waiting for the share sheet, once its export has ended: each
+     * export clears the folder first, so it is the newest.
+     */
+    private fun exported(extension: String): File {
+        var found: File? = null
+        app.waitNamed("the $extension export", LoadTimeoutMs) {
+            found = File(cache, "exports-out").walk()
+                .firstOrNull { it.isFile && it.extension == extension && it.length() > 0 }
+            found != null && !app.showsText("Exporting…")
+        }
+        return checkNotNull(found)
+    }
+
+    /** The share sheet, opened for [action] (one file or several) of [type]. */
+    private fun shares(action: String, type: String) = allOf(
+        hasAction(Intent.ACTION_CHOOSER),
+        hasExtra(equalTo(Intent.EXTRA_INTENT), allOf(hasAction(action), hasType(type))),
+    )
 
     /** The picker's answer when the user picks [file]. */
     private fun picked(file: File) = ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file)))
