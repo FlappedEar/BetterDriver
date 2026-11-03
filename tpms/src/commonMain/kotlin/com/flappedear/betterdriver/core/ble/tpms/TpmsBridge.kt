@@ -38,20 +38,22 @@ object TpmsIds {
 }
 
 /**
- * Tyre channels, front left, front right, rear left, rear right. Ids 800 to 819 are reserved for
- * tyre sensors. The names are the ones FlappedEar Overlays reads (FBBD-223), in bar and °C.
+ * Tyre channels, front left, front right, rear left, rear right. Ids 900 to 919 are reserved for
+ * tyre sensors: 800 to 899 are the OBD-II reader's (ObdSession), and tyres there overwrote the car's
+ * coolant, RPM and other OBD channels in a session with both (FBBD-437). The names are the ones
+ * FlappedEar Overlays reads (FBBD-223), in bar and °C.
  */
 object TpmsChannels {
     const val SOURCE = "tpms"
 
-    val PRESSURE_FL = ChannelDef(800, "tyre_pressure_fl", "bar", SOURCE, 2)
-    val PRESSURE_FR = ChannelDef(801, "tyre_pressure_fr", "bar", SOURCE, 2)
-    val PRESSURE_RL = ChannelDef(802, "tyre_pressure_rl", "bar", SOURCE, 2)
-    val PRESSURE_RR = ChannelDef(803, "tyre_pressure_rr", "bar", SOURCE, 2)
-    val TEMP_FL = ChannelDef(804, "tyre_temp_fl", "°C", SOURCE, 0)
-    val TEMP_FR = ChannelDef(805, "tyre_temp_fr", "°C", SOURCE, 0)
-    val TEMP_RL = ChannelDef(806, "tyre_temp_rl", "°C", SOURCE, 0)
-    val TEMP_RR = ChannelDef(807, "tyre_temp_rr", "°C", SOURCE, 0)
+    val PRESSURE_FL = ChannelDef(900, "tyre_pressure_fl", "bar", SOURCE, 2)
+    val PRESSURE_FR = ChannelDef(901, "tyre_pressure_fr", "bar", SOURCE, 2)
+    val PRESSURE_RL = ChannelDef(902, "tyre_pressure_rl", "bar", SOURCE, 2)
+    val PRESSURE_RR = ChannelDef(903, "tyre_pressure_rr", "bar", SOURCE, 2)
+    val TEMP_FL = ChannelDef(904, "tyre_temp_fl", "°C", SOURCE, 0)
+    val TEMP_FR = ChannelDef(905, "tyre_temp_fr", "°C", SOURCE, 0)
+    val TEMP_RL = ChannelDef(906, "tyre_temp_rl", "°C", SOURCE, 0)
+    val TEMP_RR = ChannelDef(907, "tyre_temp_rr", "°C", SOURCE, 0)
 
     val PRESSURES = listOf(PRESSURE_FL, PRESSURE_FR, PRESSURE_RL, PRESSURE_RR)
     val TEMPS = listOf(TEMP_FL, TEMP_FR, TEMP_RL, TEMP_RR)

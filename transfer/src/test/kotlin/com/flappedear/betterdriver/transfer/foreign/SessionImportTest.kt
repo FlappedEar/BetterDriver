@@ -321,7 +321,7 @@ class SessionImportTest {
     fun `copies imported before FBBD-427 are removed at start, keeping one, and delete takes one copy`() {
         // Two copies of one drive as the old import left them: same start and length, own ids.
         val a = import(fixture("racelogic-25hz.vbo"))
-        // Named to sort after any id suffix (random hex): the copy, not the original, is the extra one.
+        // Named after every random id, so the copy, not the first import, is the one taken away.
         val copy = File(store.root, a.id.dropLast(8) + "zzcopy01")
         store.dir(a.id).copyRecursively(copy)
         File(copy, "meta.properties").let { it.writeText(it.readText().replace(a.id, copy.name)) }

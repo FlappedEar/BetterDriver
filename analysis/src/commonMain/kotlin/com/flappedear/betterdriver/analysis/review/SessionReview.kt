@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.progressAgainst
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
+import com.flappedear.betterdriver.feature.analysis.CarUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
@@ -38,6 +39,7 @@ import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.feature.analysis.mapUi
+import com.flappedear.betterdriver.feature.analysis.wholeDriveCar
 import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.recorder.RecorderEvent
@@ -84,16 +86,27 @@ fun sessionFixes(data: SessionData): List<Fix> =
  * What the summary shows of the whole session, laps or not, as Android's analysis loads it: the
  * quickest acceleration runs (FBBD-154) and the G-G diagram of the whole session, each null without.
  * [drive] is the whole drive on the map with its speed and figures when the session has no timed lap
- * (FBBD-342); null with laps or without positions.
+ * (FBBD-342); null with laps or without positions. [car] is the Car tab over the whole drive (UI-162 A),
+ * as Android's analysis shows it for a session without a counted lap; null when nothing was recorded.
  */
-data class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?, val drive: DriveMap? = null)
+data class WholeSession(
+    val acceleration: AccelerationUi?,
+    val gForces: GgTrace?,
+    val drive: DriveMap? = null,
+    val car: CarUi? = null,
+)
 
 /** The heart rate strap a session names ("address=<address> name=<name>"), or null. */
 fun heartRateStrap(events: List<RecorderEvent>): String? =
     events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }?.text?.substringAfter("name=", "")?.ifEmpty { null }
 
-private fun wholeSession(session: TelemetrySession, drive: DriveMap?) =
-    WholeSession(accelerationUi(findAccelerationRuns(session)), sessionGg(session), drive)
+private fun wholeSession(session: TelemetrySession, drive: DriveMap?, data: SessionData) =
+    WholeSession(
+        accelerationUi(findAccelerationRuns(session)),
+        sessionGg(session),
+        drive,
+        wholeDriveCar(session, heartRateStrap(data.events)),
+    )
 
 /** One timed lap as the review lists it. */
 data class ReviewLap(
@@ -343,7 +356,7 @@ fun reviewSession(
         val untimed = telemetrySessionOf(data, null)
         return ReviewedSession(
             SessionReview(null, emptyList(), null, null), null, null,
-            whole = wholeSession(untimed, driveMap(untimed)),
+            whole = wholeSession(untimed, driveMap(untimed), data),
         )
     }
     val session = telemetrySessionOf(data, track)
@@ -373,5 +386,5 @@ fun reviewSession(
     )
     // A session at the track with no complete lap is still seen on the map (FBBD-342).
     val drive = if (laps.isEmpty()) driveMap(session) else null
-    return ReviewedSession(review, analysis, session, data, plan, wholeSession(session, drive))
+    return ReviewedSession(review, analysis, session, data, plan, wholeSession(session, drive, data))
 }

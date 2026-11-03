@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.timing.edit.LineRef
 import com.flappedear.betterdriver.timing.edit.line
 import com.flappedear.betterdriver.timing.edit.lineRefs
 import com.flappedear.betterdriver.timing.edit.sectorsInLapOrder
+import com.flappedear.betterdriver.timing.edit.widened
 import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
@@ -159,6 +160,16 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         track = track.withLine(ref, if (left) l.copy(left = to) else l.copy(right = to))
     }
 
+    /** The selected line's width in whole metres, or 0 when it is not placed (FBBD-438). */
+    val selectedWidthMeters: Int get() = selectedLine?.widthMeters?.let { kotlin.math.round(it).toInt() } ?: 0
+
+    /** Makes the selected line [steps] steps of 2 m wider, or narrower when negative (FBBD-438). */
+    fun widen(steps: Int) {
+        val ref = selected ?: return
+        val l = track.line(ref) ?: return
+        track = track.withLine(ref, l.widened(steps))
+    }
+
     /** Turns the selected line round, for the other direction of travel. */
     fun flip() {
         val ref = selected ?: return
@@ -209,8 +220,10 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         get() = when {
             selected == null -> null
             method == PlaceMethod.FromLap && selectedLine == null ->
-                "Tap your lap (blue) where the line goes. It is placed square to the way you drove, 30 m wide."
-            method == PlaceMethod.FromLap -> "Drag the ends to the track edges. Tap the lap again to move the line."
+                "Tap your lap (blue) where the line goes. It is placed square to the way you drove, " +
+                    "as wide as your passes there."
+            method == PlaceMethod.FromLap ->
+                "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
             firstTap == null -> "Tap one edge of the track."
             else -> "Now tap the other edge."
         }

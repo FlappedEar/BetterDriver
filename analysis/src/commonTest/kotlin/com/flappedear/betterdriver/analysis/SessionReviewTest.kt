@@ -19,6 +19,9 @@ import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.feature.analysis.timeGoesHeading
 import com.flappedear.betterdriver.feature.analysis.whereToFindTimeLink
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
+import com.flappedear.betterdriver.recorder.ChannelDef
+import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -209,6 +212,22 @@ class SessionReviewTest {
         val review = reviewOf(demo(), emptyList())
         assertNull(review.track)
         assertEquals(emptyList(), review.laps)
+    }
+
+    @Test
+    fun `a session without laps still shows the car's values on the Car tab as on Android`() {
+        // FBBD-437: an iPhone session away from every track, with the FR-S's oil temperature over OBD.
+        val oil = ChannelDef(817, "obd_oil_temp", "°C", "obd", 2)
+        val data = demo().let { d ->
+            val temps = (0 until 50).map { SampleSet(it * MicrosPerSecond, listOf(ChannelValue(oil.id, 20.0 + it))) }
+            d.copy(channels = d.channels + (oil.id to oil), sampleSets = (d.sampleSets + temps).sortedBy { it.tMicros })
+        }
+        val reviewed = reviewSession(data, emptyList())
+        assertNull(reviewed.defaultScreen())
+        val car = checkNotNull(reviewed.whole.car)
+        assertEquals(listOf(VehicleChannel.OilTemp), car.temperatureKinds)
+        // Without anything of the car's recorded, the Car tab says so.
+        assertNull(reviewSession(demo(), emptyList()).whole.car)
     }
 
     private companion object {
