@@ -18,6 +18,7 @@ The full notes of every release are on
 - iPhone: phone video keeps recording after a failed file instead of stopping after three.
 - Every page in **Settings › Equipment** shows live data without a session (Android and iPhone).
 - A tyre whose value has not changed keeps recording its last reading.
+- Session export (VBO, VBO with video, CSV, GPX) opens the share sheet, as **Share log** does (Android and iPhone).
 - iPhone and iPad: deleting a track also deletes its coach files, as on Android.
 
 ## 1.31.0
