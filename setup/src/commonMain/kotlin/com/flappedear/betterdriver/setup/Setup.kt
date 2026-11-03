@@ -563,18 +563,21 @@ data class Setup(
                 ),
             )
             // Adding a listed strap again picks it, as a new one is.
-            return if (model == EquipmentModel.HEART_RATE) updated.chooseHeartRate(same.id) else updated
+            return updated.strapPicked(same)
         }
         val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised, goPro = camera)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
             EquipmentKind.CAMERA -> next.useCamera(item.id, true)
-            // The strap just added is the one Arek means to wear (FBBD-445): only one strap records.
-            EquipmentKind.SENSOR -> if (model == EquipmentModel.HEART_RATE) next.chooseHeartRate(item.id) else next
+            EquipmentKind.SENSOR -> next.strapPicked(item)
             EquipmentKind.CAR_DATA -> next
         }
     }
+
+    /** The strap just added is the one Arek means to wear (FBBD-445): only one strap records. */
+    private fun strapPicked(item: Equipment): Setup =
+        if (item.model == EquipmentModel.HEART_RATE) chooseHeartRate(item.id) else this
 
     /** The item a new [model] at [address] would be: the one listed already, if any. */
     private fun listedAs(model: EquipmentModel, address: String?): Equipment? = equipment.firstOrNull {
