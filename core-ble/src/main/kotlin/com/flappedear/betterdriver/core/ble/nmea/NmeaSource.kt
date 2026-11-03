@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.core.ble.nmea
 
 import android.content.Context
+import com.flappedear.betterdriver.core.ble.GnssReceiverSession
 import com.flappedear.betterdriver.core.ble.LinkState
-import com.flappedear.betterdriver.core.ble.linkEvents
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlinx.coroutines.flow.StateFlow
@@ -31,11 +31,9 @@ class NmeaSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = NmeaDecoder(sink)
-        decoder.defineChannels()
-        sink.event(NmeaEvents.DEVICE, "address=$address name=$deviceName")
-        val onState = linkEvents(sink, address, NmeaEvents.CONNECTED, NmeaEvents.DISCONNECTED, decoder::reset)
-        link = SppLink(context, address, onData = decoder::feed, onState = onState).also { it.start() }
+        val session = GnssReceiverSession.nmea(sink, address, deviceName)
+        session.start()
+        link = SppLink(context, address, onData = session::feed, onState = session::linkChanged).also { it.start() }
     }
 
     override fun stop() {

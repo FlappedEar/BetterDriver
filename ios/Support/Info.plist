@@ -11,10 +11,11 @@
 		<!-- The coach keeps saying its cues with the phone locked (FBBD-333). -->
 		<string>audio</string>
 	</array>
-	<!-- A Wi-Fi OBD-II adapter on its own network, at 192.168.0.10 (FBBD-333), and a GoPro's files
+	<!-- A Wi-Fi OBD-II adapter on its own network, at 192.168.0.10 (FBBD-333), a Wi-Fi GPS receiver
+	     at the address listed in Settings (FBBD-374), and a GoPro's files
 	     over the camera's own Wi-Fi at 10.5.5.9 (FBBD-343): iOS asks once. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>BetterDriver reads a Wi-Fi OBD-II adapter while it records, and downloads your GoPro's video over the camera's own Wi-Fi.</string>
+	<string>BetterDriver reads a Wi-Fi OBD-II adapter and a Wi-Fi GPS receiver while it records, and downloads your GoPro's video over the camera's own Wi-Fi.</string>
 	<!-- The GoPro's HTTP API is plain HTTP on its own network (http://10.5.5.9:8080, FBBD-343). -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

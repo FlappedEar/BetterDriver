@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.core.ble.nmea
 
+import com.flappedear.betterdriver.core.ble.GnssReceiverSession
 import com.flappedear.betterdriver.core.ble.LinkState
-import com.flappedear.betterdriver.core.ble.linkEvents
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlinx.coroutines.flow.StateFlow
@@ -28,12 +28,10 @@ class TcpNmeaSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = NmeaDecoder(sink)
-        decoder.defineChannels()
-        val address = "$host:$port"
-        sink.event(NmeaEvents.DEVICE, "address=$address name=$deviceName")
-        val onState = linkEvents(sink, address, NmeaEvents.CONNECTED, NmeaEvents.DISCONNECTED, decoder::reset)
-        link = TcpLink(host, port, decoder::feed, onState, network = network).also { it.start() }
+        // The same session as the iPhone's Wi-Fi GPS (FBBD-374).
+        val session = GnssReceiverSession.nmea(sink, "$host:$port", deviceName)
+        session.start()
+        link = TcpLink(host, port, session::feed, session::linkChanged, network = network).also { it.start() }
     }
 
     override fun stop() {

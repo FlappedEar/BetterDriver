@@ -1,10 +1,12 @@
 package com.flappedear.betterdriver.core.ble.nmea
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
+import kotlin.concurrent.Volatile
 
 /**
  * NMEA receiver channels beyond the shared [GnssChannels]. Ids 200 to 299 are reserved for NMEA
@@ -91,21 +93,22 @@ class NmeaDecoder(private val sink: SampleSink) {
     var epochs = 0L
         private set
 
-    val checksumErrors: Long get() = synchronized(this) { parser.checksumErrors }
+    val checksumErrors: Long
+        @JvmSynchronized get() = parser.checksumErrors
 
     fun defineChannels() {
         GnssChannels.ALL.forEach(sink::defineChannel)
         NmeaChannels.ALL.forEach(sink::defineChannel)
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun feed(bytes: ByteArray) {
         val now = sink.nowMicros()
         parser.feed(bytes, now, onRcLine = { rcLine(it, now) }, onEpoch = ::epoch)
     }
 
     /** Drops a partial sentence and fix left from before a reconnect. */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         parser.reset()
         lastRcCount = null
@@ -118,7 +121,7 @@ class NmeaDecoder(private val sink: SampleSink) {
         }
         val count = line.count
         val last = lastRcCount
-        if (count != null && last != null) rcMissed += Math.floorMod(count - last - 1, RcCountModulo)
+        if (count != null && last != null) rcMissed += (count - last - 1).mod(RcCountModulo)
         lastRcCount = count
         val values = listOf(
             RcChannels.ACCEL_X to line.accelXg,

@@ -63,6 +63,8 @@ private func modelNote(_ model: String) -> String {
     case ModelName.phoneGps:
         "Records position and speed from this phone's own GPS, about one position a second, for each session " +
             "it is chosen for. A RaceBox gives 25 and exact lap times."
+    case ModelName.tcpGnss:
+        "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     case ModelName.heartRate: "Records your heart rate with every session while it is listed."
     case ModelName.tpmsBridge:
         "Records the four tyres' pressures and temperatures with every session while it is listed."
@@ -106,8 +108,10 @@ struct EquipmentItemPage: View {
                     } else {
                         ListRow("Model", value: item.modelLabel)
                     }
-                    // A Wi-Fi adapter's address is "host:port", as Android's item page shows it (FBBD-423).
-                    if let address = item.address, item.modelName == ModelName.obdWifi {
+                    // A Wi-Fi adapter's or GPS receiver's address is "host:port", as Android's item page
+                    // shows it (FBBD-423, FBBD-374).
+                    if let address = item.address,
+                       item.modelName == ModelName.obdWifi || item.modelName == ModelName.tcpGnss {
                         ListRow("Address", value: address)
                     } else if item.address != nil {
                         ListRow("Bluetooth", value: "Bluetooth LE")
@@ -265,6 +269,10 @@ struct AddEquipmentPage: View {
     @State private var pairingLink: GoProBleLink?
     // A GoPro started by hand is added by generation, picked in a dialog (FBBD-105), as on Android.
     @State private var pickingGoPro = false
+    // A Wi-Fi GPS is added with its address and port, typed in a dialog as on Android (FBBD-374).
+    @State private var typingAddress = false
+    @State private var wifiHost = ""
+    @State private var wifiPort = ""
 
     var body: some View {
         let listed = Set(settings.setup.equipment.compactMap(\.address))
@@ -296,8 +304,8 @@ struct AddEquipmentPage: View {
             }
             DimText(
                 scanner.searching
-                    ? "Searching for RaceBox, GoPro HERO9 or later, heart-rate monitors and Bluetooth LE OBD-II " +
-                        "adapters. Put a GoPro in pairing mode first."
+                    ? "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS, RaceChrono DIY, heart-rate " +
+                        "monitors and Bluetooth LE OBD-II adapters. Put a GoPro in pairing mode first."
                     : "Allow Bluetooth for BetterDriver in the iPhone's Settings to search for a RaceBox or GoPro."
             )
             if let pairingError {
@@ -314,6 +322,10 @@ struct AddEquipmentPage: View {
                         ListRow(m.label, value: withoutNote(m.name), divider: i > 0) {
                             if m.name == ModelName.goProFiles {
                                 pickingGoPro = true
+                            } else if m.name == ModelName.tcpGnss {
+                                wifiHost = ""
+                                wifiPort = ""
+                                typingAddress = true
                             } else {
                                 add(m.name, name: m.label, address: nil)
                             }
@@ -338,6 +350,22 @@ struct AddEquipmentPage: View {
         }
         .onAppear { scanner.start() }
         .onDisappear { scanner.stop() }
+        .alert("Wi-Fi GPS", isPresented: $typingAddress) {
+            TextField("IP address or host", text: $wifiHost)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            TextField("Port", text: $wifiPort)
+                .keyboardType(.numberPad)
+            let address = SettingsCore.shared.tcpAddress(host: wifiHost, port: wifiPort)
+            Button("Add") {
+                if let address { add(ModelName.tcpGnss, name: "Wi-Fi GPS", address: address) }
+            }
+            .disabled(address == nil)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Join the receiver's Wi-Fi first. Its manual gives the address and port.")
+        }
         .confirmationDialog("Which GoPro", isPresented: $pickingGoPro, titleVisibility: .visible) {
             ForEach(GoProCore.shared.fileImportModels, id: \.name) { m in
                 Button(GoProCore.shared.choiceLabel(model: m)) {
@@ -353,6 +381,7 @@ struct AddEquipmentPage: View {
     private func withoutNote(_ model: String) -> String {
         switch model {
         case ModelName.phoneGps: "This phone's own GPS, about 1 position a second"
+        case ModelName.tcpGnss: "NMEA or RaceChrono DIY over Wi-Fi"
         case ModelName.goProFiles: "HERO8 or older, MAX"
         case ModelName.cameraFiles: "DJI Action, Insta360, Garmin and others"
         case ModelName.demoTrack: "Laps and coach cues on a made-up circuit"
@@ -427,13 +456,16 @@ struct NearbyDevice {
     var note: String? {
         if model == ModelName.obdBluetooth { return "OBD-II adapter · Bluetooth LE" }
         if model == ModelName.tpmsBridge { return "Tyre pressure bridge" }
+        if model == ModelName.lnsGnss { return "GPS receiver · Bluetooth LE" }
+        if model == ModelName.diyGnss { return "RaceChrono DIY GPS" }
         return model == ModelName.heartRate ? "Heart-rate monitor" : nil
     }
 }
 
-/// Listens for RaceBoxes, Open GoPro cameras (service 0xFEA6, as Android's GoProScanner), heart-rate
-/// monitors (service 0x180D), the TPMS bridge (service 0x1FF8 named "RC TPMS ...", FBBD-224) and OBD-II
-/// adapters (by name, as Android's ObdAdapterNames) while Add equipment is open.
+/// Listens for RaceBoxes, Open GoPro cameras (service 0xFEA6, as Android's GoProScanner), Bluetooth LE
+/// GPS receivers (Location and Navigation, 0x1819, FBBD-374), heart-rate monitors (service 0x180D),
+/// RaceChrono DIY devices and the TPMS bridge (both service 0x1FF8; the bridge is named "RC TPMS ...",
+/// FBBD-224) and OBD-II adapters (by name, as Android's ObdAdapterNames) while Add equipment is open.
 @MainActor
 final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published private(set) var found: [String: NearbyDevice] = [:]
@@ -444,11 +476,22 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
 
     private static let heartRate = CBUUID(string: "180D")
     private static let diy = CBUUID(string: TpmsIds.shared.SERVICE)
+    private static let lns = CBUUID(string: LnsIds.shared.SERVICE)
     private static let goPro = CBUUID(string: GoProUuids.shared.CONTROL_SERVICE)
     private static let obdParts = [
         "obd", "elm327", "vlink", "v-link", "vgate", "icar", "konnwei", "viecar", "veepeak", "carista",
         "kiwi", "unicarscan", "tonwon",
     ]
+
+    /// What a device that advertises no name is called.
+    nonisolated static func unnamed(_ model: String) -> String {
+        switch model {
+        case ModelName.goPro: "GoPro"
+        case ModelName.lnsGnss: "Bluetooth LE GPS"
+        case ModelName.diyGnss: "RaceChrono DIY GPS"
+        default: "Heart-rate monitor"
+        }
+    }
 
     func start() {
         wanted = true
@@ -490,13 +533,17 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
             model = ModelName.heartRate
         } else if services.contains(NearbyScanner.diy) && TpmsIds.shared.isBridge(name: name) {
             model = ModelName.tpmsBridge
+        } else if services.contains(NearbyScanner.diy) {
+            model = ModelName.diyGnss
+        } else if services.contains(NearbyScanner.lns) {
+            model = ModelName.lnsGnss
         } else if NearbyScanner.obdParts.contains(where: { name.lowercased().contains($0) }) {
             model = ModelName.obdBluetooth
         } else {
             return
         }
         let device = NearbyDevice(
-            model: model, name: name.isEmpty ? (model == ModelName.goPro ? "GoPro" : "Heart-rate monitor") : name,
+            model: model, name: name.isEmpty ? NearbyScanner.unnamed(model) : name,
             address: peripheral.identifier.uuidString, rssi: RSSI.intValue
         )
         MainActor.assumeIsolated { found[device.address] = device }

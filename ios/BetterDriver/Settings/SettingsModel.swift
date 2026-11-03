@@ -176,6 +176,9 @@ extension Equipment {
 enum ModelName {
     static let raceBox = "RACEBOX"
     static let phoneGps = "PHONE_GPS"
+    static let tcpGnss = "TCP_GNSS"
+    static let lnsGnss = "LNS_GNSS"
+    static let diyGnss = "DIY_GNSS"
     static let phoneCamera = "PHONE_CAMERA"
     static let heartRate = "HEART_RATE"
     static let tpmsBridge = "TPMS_BRIDGE"

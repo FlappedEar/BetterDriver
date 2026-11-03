@@ -3,13 +3,14 @@ package com.flappedear.betterdriver.core.ble.diy
 import android.content.Context
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.GattLink
+import com.flappedear.betterdriver.core.ble.GnssReceiverSession
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.advertisesService
-import com.flappedear.betterdriver.core.ble.linkEvents
 import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.core.ble.tpms.TpmsIds
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -45,11 +46,17 @@ class DiyBleSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = DiyGpsDecoder(sink, requestTime = { link?.read(DiyGatt.GPS_TIME) })
-        decoder.defineChannels()
-        sink.event(DiyEvents.DEVICE, "address=$address name=$deviceName")
-        val onState = linkEvents(sink, address, DiyEvents.CONNECTED, DiyEvents.DISCONNECTED, decoder::reset)
-        link = GattLink(context, address, DiyGatt.PROFILE, onData = decoder::feed, onState = onState)
+        // The same session as the iPhone's (FBBD-374).
+        val session = GnssReceiverSession.diy(sink, address, deviceName, requestTime = { link?.read(DiyGatt.GPS_TIME) })
+        session.start()
+        val onData = { uuid: UUID, bytes: ByteArray ->
+            when (uuid) {
+                DiyGatt.GPS_MAIN -> session.feed(bytes)
+                DiyGatt.GPS_TIME -> session.feedTime(bytes)
+                else -> Unit
+            }
+        }
+        link = GattLink(context, address, DiyGatt.PROFILE, onData = onData, onState = session::linkChanged)
             .also { it.start() }
     }
 
