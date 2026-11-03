@@ -26,8 +26,8 @@ final class ObdPageTests: XCTestCase {
         let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Wi-Fi OBD-II adapter'")).firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 10), "the Wi-Fi adapter is not in the equipment list")
         item.tap()
-        let live = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Connection and live values'")).firstMatch
-        XCTAssertTrue(live.waitForExistence(timeout: 10), "no Connection and live values row")
+        let live = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Live data'")).firstMatch
+        XCTAssertTrue(live.waitForExistence(timeout: 10), "no Live data row")
         live.tap()
         let header = app.descendants(matching: .any).matching(identifier: "obdHeader").firstMatch
         XCTAssertTrue(header.waitForExistence(timeout: 10), "no car data page")

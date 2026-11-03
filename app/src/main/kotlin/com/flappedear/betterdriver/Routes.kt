@@ -42,6 +42,11 @@ object Routes {
 
     fun diagnostics(id: String) = "equipment/$id/diagnostics"
 
+    /** Live data of one equipment item without a session (FBBD-440): a receiver, a sensor or a GoPro. */
+    const val LiveDataPattern = "equipment/{id}/live"
+
+    fun liveData(id: String) = "equipment/$id/live"
+
     /** A car's page (UI-133 B): its live values when it is the next session's. */
     const val CarPagePattern = "car/{id}"
 

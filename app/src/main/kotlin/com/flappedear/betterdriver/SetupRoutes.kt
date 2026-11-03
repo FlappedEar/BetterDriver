@@ -37,6 +37,7 @@ import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdConnectionLabel
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
+import com.flappedear.betterdriver.setup.LivePage
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.WifiObdAddress
 import com.flappedear.betterdriver.shell.AddEquipmentScreen
@@ -82,6 +83,20 @@ internal fun NavGraphBuilder.setupDestinations(
                 PopIfShown(nav, e)
             } else {
                 RaceBoxDiagnosticsRoute(item, recorder, onBack = { nav.popBackStack() })
+            }
+        }
+    }
+    composable(
+        Routes.LiveDataPattern,
+        arguments = listOf(navArgument(Routes.EquipmentIdArg) { type = NavType.StringType }),
+    ) { e ->
+        val item = repo.setup.equipment(e.arguments?.getString(Routes.EquipmentIdArg).orEmpty())
+        val recorder = RecorderClient.get(LocalContext.current)
+        Box(Modifier.padding(padding)) {
+            if (item == null) {
+                PopIfShown(nav, e)
+            } else {
+                LiveDataRoute(item, recorder, onBack = { nav.popBackStack() })
             }
         }
     }
@@ -204,6 +219,15 @@ internal fun EquipmentRoute(nav: NavHostController, entry: NavBackStackEntry, re
         onChooseGoPro = { m -> repo.update { it.chooseGoPro(id, m) } },
         drives = if (item.model == EquipmentModel.DEMO_TRACK) rememberDemoDrives() else null,
         connection = remember(item.model, item.address) { obdConnectionLabel(context, item) },
+        onLiveData = { page ->
+            when (page) {
+                LivePage.SOURCE, LivePage.GOPRO -> nav.navigate(Routes.liveData(id))
+                LivePage.CAR_DATA -> nav.navigate(Routes.Obd)
+                LivePage.CAMERA_TEST -> nav.navigate(Routes.CameraTest)
+                LivePage.DIAGNOSTICS -> nav.navigate(Routes.diagnostics(id))
+                LivePage.NOTHING -> Unit
+            }
+        },
     )
 }
 

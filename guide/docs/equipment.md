@@ -16,6 +16,22 @@ reached now:
 
 Tap an item to rename it, choose its **Video** mode, open RaceBox **Diagnostics**, or remove it.
 
+## Live data
+
+Every item you can connect to has **Live data** on its page, to test it without a session:
+
+- a GPS receiver, heart-rate strap or tyre pressure bridge shows every value it sends (position,
+  speed, satellites, heart rate, tyre pressures and temperatures), how often it sends, and when it
+  connected or dropped;
+- a paired GoPro shows its battery, SD card, video time left and whether it records. The page only
+  reads: it never starts the camera or changes a setting;
+- an OBD-II adapter opens the car data page, the phone camera the camera test, and a RaceBox keeps
+  its **Diagnostics**.
+
+The page connects only while it is open and no session records; nothing is recorded. Starting a
+session hands the device back to the recording. On the iPhone, Live data covers the phone's GPS,
+the heart-rate strap, the tyre bridge, the GoPro and the demo receivers.
+
 ## Add equipment
 
 **Add equipment** groups what can be added:

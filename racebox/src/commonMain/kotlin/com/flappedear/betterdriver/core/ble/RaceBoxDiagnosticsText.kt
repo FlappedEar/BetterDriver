@@ -4,24 +4,6 @@ import com.flappedear.betterdriver.format.Minus
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 
-/** One value on the RaceBox diagnostics screen. */
-data class DiagRow(val label: String, val value: String)
-
-/**
- * A titled group of values (UI-39 option A: one live list). [note] is dim text under the rows;
- * [action] is the label of a button under them (calibration only), enabled when [actionEnabled].
- */
-data class DiagSection(
-    val title: String,
-    val rows: List<DiagRow>,
-    val note: String? = null,
-    val action: String? = null,
-    val actionEnabled: Boolean = false,
-)
-
-/** The top card's text: [ok] is a green dot, otherwise amber; a line and a detail line. */
-data class DiagHeaderText(val ok: Boolean, val title: String, val detail: String)
-
 /**
  * Turns what the RaceBox reported into the diagnostics screen's text (FBBD-89), the same on Android
  * and iOS (FBBD-371). Only reported values appear: a group the device has not answered yet is left
