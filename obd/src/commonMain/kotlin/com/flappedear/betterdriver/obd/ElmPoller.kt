@@ -483,9 +483,13 @@ class ElmPoller(
      * filter would hide every answer to a request, so listening is switched off for good.
      */
     private fun restoreFilter(): Boolean {
-        val restored = line.command("ATCRA", AT_TIMEOUT_MS)?.contains("OK") == true ||
-            line.command("ATAR", AT_TIMEOUT_MS)?.contains("OK") == true
-        if (!restored) {
+        val cra = line.command("ATCRA", AT_TIMEOUT_MS)
+        if (cra?.contains("OK") == true) return true
+        val ar = line.command("ATAR", AT_TIMEOUT_MS)
+        val restored = ar?.contains("OK") == true
+        // Only both refused is a filter that cannot be dropped; no answer is a stalled adapter (FBBD-271),
+        // whose line ends by itself, and listening must not end for good on a live one after a hiccup.
+        if (!restored && cra != null && ar != null) {
             filterStuck = true
             stopListening("receive filter not restored (AT CRA and AT AR refused)")
         }
@@ -566,11 +570,15 @@ class ElmPoller(
     @Suppress("ReturnCount") // Each early return is one way the adapter has no STN filters.
     private fun setStnFilters(ids: List<Int>): Boolean {
         if (stnFilters == false) return false
-        if (line.command("STFCP", AT_TIMEOUT_MS)?.contains("OK") != true) return noStn("STFCP not taken")
+        // No answer at all is a stalled adapter, not a refusal (FBBD-271): this listen is skipped, and the
+        // filters are tried again next time instead of falling back to one id at a time for good.
+        val clear = line.command("STFCP", AT_TIMEOUT_MS) ?: return false
+        if ("OK" !in clear) return noStn("STFCP not taken")
         for (id in ids) {
-            if (line.command("STFAP ${hex(id, CAN_ID_DIGITS)},7FF", AT_TIMEOUT_MS)?.contains("OK") != true) {
+            val added = line.command("STFAP ${hex(id, CAN_ID_DIGITS)},7FF", AT_TIMEOUT_MS)
+            if (added?.contains("OK") != true) {
                 line.command("STFCP", AT_TIMEOUT_MS)
-                return noStn("STFAP not taken")
+                return if (added == null) false else noStn("STFAP not taken")
             }
         }
         return true

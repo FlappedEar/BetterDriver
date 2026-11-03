@@ -63,6 +63,7 @@ class ObdConnector(
     private val scan: () -> Boolean = { false },
     private val lostRetryMs: Long = LOST_RETRY_MS,
     private val lostFastMs: Long = LOST_FAST_MS,
+    private val probeMs: Long = ElmPoller.DEFAULT_PROBE_MS,
 ) {
     @Volatile
     private var running: () -> Boolean = { false }
@@ -171,10 +172,11 @@ class ObdConnector(
         tracker.connecting(target.name)
         answered = false
         val reason = try {
-            ElmPoller(line, profile(), Poll(target), running, clock, pollSet = pollSet, scan = scan()).run()
+            ElmPoller(line, profile(), Poll(target), running, clock, pollSet = pollSet, probeMs = probeMs, scan = scan()).run()
         } catch (e: IOException) {
-            // The link dropped or a write failed: the usual way a connection ends.
-            "connection lost: ${e.message}"
+            // The link dropped or a write failed: the usual way a connection ends. An adapter that went
+            // silent with the link up ends the line itself (FBBD-271), said as the poller says it.
+            if (e.message == ElmLine.SILENT) ElmLine.SILENT else "connection lost: ${e.message}"
         } finally {
             open?.close()
             open = null
@@ -195,7 +197,7 @@ class ObdConnector(
     @Suppress("ReturnCount", "TooGenericExceptionCaught")
     private fun tryOpen(t: ObdTarget, errors: MutableList<String>): ElmLine? {
         lateinit var connection: ObdConnection
-        val line = ElmLine(write = { connection.write(it) })
+        val line = ElmLine(write = { connection.write(it) }, silentLimit = SILENT_WAITS)
         connection = try {
             t.open(object : ObdBytes {
                 override fun received(bytes: ByteArray) = line.feed(bytes)
@@ -295,6 +297,12 @@ class ObdConnector(
         internal fun isLinkLoss(reason: String) =
             reason.startsWith("connection lost") && !reason.endsWith(": closed") && !reason.endsWith(": interrupted") ||
                 reason == "adapter stopped answering"
+
+        /**
+         * Waits in a row with not one byte from the adapter before its line is taken as dead (FBBD-271):
+         * three commands, about 8 s of silence, where a live adapter answers each in well under a second.
+         */
+        const val SILENT_WAITS = 3
 
         /** How often a wait checks for [retryNow] and stopping. */
         const val WAIT_STEP_MS = 250L
