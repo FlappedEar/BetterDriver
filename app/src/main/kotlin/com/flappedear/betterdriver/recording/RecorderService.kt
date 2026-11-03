@@ -18,9 +18,6 @@ import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
-import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
-import com.flappedear.betterdriver.core.ble.obd.ObdSource
-import com.flappedear.betterdriver.core.ble.tpms.TpmsSource
 import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -393,20 +390,10 @@ class RecorderService : Service() {
             state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
             state.putBoolean(RecorderProtocol.KEY_COACH_DIM, coachStatus.dim)
         }
-        if (a != null) putSensors(state)
+        if (a != null) putSensorStatus(state)
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
-    }
-
-    /** The recording's OBD, heart-rate strap and TPMS bridge for the status strip. */
-    private fun putSensors(state: Bundle) {
-        ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
-        HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
-        TpmsSource.current?.status()?.let {
-            state.putString(RecorderProtocol.KEY_TYRES, it.value)
-            state.putBoolean(RecorderProtocol.KEY_TYRES_OK, it.ok)
-        }
     }
 
     override fun onDestroy() {
