@@ -77,6 +77,13 @@ object VboValidator {
             r.forEach { v -> check(v.toDoubleOrNull() != null) { "row $i: non-numeric '$v'" } }
             if (timeIdx >= 0) check(TIME.matches(r[timeIdx])) { "row $i: bad time '${r[timeIdx]}'" }
         }
+        // The time column only goes forward (FBBD-436); past midnight it starts again from 000000.
+        if (timeIdx >= 0) {
+            p.rows.map { it[timeIdx] }.zipWithNext().forEachIndexed { i, (a, b) ->
+                val wrapped = a.startsWith("23") && b.startsWith("00")
+                check(b.toDouble() > a.toDouble() || wrapped) { "row ${i + 1}: time $b is not after $a" }
+            }
+        }
         return p
     }
 }

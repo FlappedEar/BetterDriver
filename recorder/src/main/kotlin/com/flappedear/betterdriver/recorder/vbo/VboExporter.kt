@@ -11,7 +11,7 @@ import java.io.OutputStreamWriter
 object VboExporter {
 
     /** What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers. */
-    data class Written(val rows: Int, val fixes: Int)
+    data class Written(val rows: Int, val fixes: Int, val repeated: Int = 0)
 
     fun export(
         session: SessionData,
@@ -22,6 +22,6 @@ object VboExporter {
         val writer = OutputStreamWriter(out, Charsets.UTF_8)
         val written = VboExport.export(session, writer, video, derived)
         writer.flush()
-        return Written(written.rows, written.fixes)
+        return Written(written.rows, written.fixes, written.repeated)
     }
 }

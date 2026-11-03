@@ -351,7 +351,8 @@ private fun logExport(id: String, data: SessionData, export: () -> VboExporter.W
     val written = export()
     val ms = (System.nanoTime() - started) / NanosPerMilli
     val end = data.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
-    CheckLog.event(id, end, EventKinds.VBO_EXPORT, "rows=${written.rows} samples=${written.fixes} ms=$ms")
+    val text = "rows=${written.rows} samples=${written.fixes} repeated=${written.repeated} ms=$ms"
+    CheckLog.event(id, end, EventKinds.VBO_EXPORT, text)
 }
 
 private fun isVideoFile(f: File) =
