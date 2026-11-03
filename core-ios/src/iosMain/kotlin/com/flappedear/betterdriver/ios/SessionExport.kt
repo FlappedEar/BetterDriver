@@ -62,7 +62,7 @@ class SessionExport(
 
     /** Session [id] has a whole video file to export with. */
     fun hasVideo(id: String): Boolean = try {
-        clips(id).isNotEmpty()
+        wholeVideoClips(store, id).isNotEmpty()
     } catch (_: Exception) {
         false
     }
@@ -83,6 +83,11 @@ class SessionExport(
             val videos = names.filter { it.startsWith(ExportShare.videoPrefix(id)) }.sorted().map { "$folder/$it" }
             ExportShare.of(id, format, "$folder/${ExportShare.fileName(id, format)}", videos)
         }
+    }
+
+    /** Removes session [id]'s waiting export, so its video links do not keep a deleted session's video. */
+    fun forget(id: String) {
+        NSFileManager.defaultManager.removeItemAtPath("$outRoot/$id", null)
     }
 
     /** Bytes of the files of [share], for its log line. */
@@ -146,7 +151,7 @@ class SessionExport(
         val folder = "${freshDir(id)}/${ExportShare.baseName(id)}"
         mkdirs(folder)
         val data = store.read(id)
-        val clips = clips(id)
+        val clips = wholeVideoClips(store, id)
         val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
         TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use {
             VboExport.export(data, it, video, vboAccelerations(data))
@@ -164,15 +169,13 @@ class SessionExport(
         return folder
     }
 
-    private fun clips(id: String): List<VideoClip> = wholeVideoClips(store, id)
-
     /**
-     * An empty folder for this export of [id]. Only the newest export waits for the share sheet:
-     * earlier ones are removed, with their links to video a deleted session no longer has.
+     * An empty folder for this export of [id]: an earlier one of [id] is removed, never another
+     * session's, which may still be written or shared. Deleting a session removes its export ([forget]).
      */
     private fun freshDir(id: String): String {
         val dir = "$outRoot/$id"
-        NSFileManager.defaultManager.removeItemAtPath(outRoot, null)
+        NSFileManager.defaultManager.removeItemAtPath(dir, null)
         mkdirs(dir)
         return dir
     }

@@ -185,6 +185,7 @@ class Sessions private constructor(private val context: Context) {
      * video files next to it as `BetterDriver-<id>_0001.MP4` and on, as Circuit Tools expects them
      * (FBBD-25); phone video is used when there is any, else the first camera that has files. The
      * video files are hard links to the session's own, so the export takes no second copy of them.
+     * Exports run one at a time on the io thread.
      */
     fun export(id: String, format: ExportFormat) {
         exports[id] = ExportState.Running
@@ -192,9 +193,10 @@ class Sessions private constructor(private val context: Context) {
         io.execute {
             val share = try {
                 val data = store.read(id)
-                // Only the newest export waits: older ones (and their video links) are freed here.
-                exportsDir(context).deleteRecursively()
+                // An earlier export of this session is replaced; another session's may still be shared.
+                // Deleting a session removes its export, with the video links.
                 val dir = File(exportsDir(context), id)
+                dir.deleteRecursively()
                 if (!dir.mkdirs()) throw IOException("cannot create $dir")
                 val file = File(dir, ExportShare.fileName(id, format))
                 val videos = mutableListOf<String>()
