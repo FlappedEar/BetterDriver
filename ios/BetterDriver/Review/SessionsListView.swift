@@ -42,11 +42,10 @@ struct SessionsListView: View {
             ForEach(model.days) { day in
                 // The day as a section title, with the track when the day had one, then a Track day card
                 // for each track driven twice that day (FBBD-315, UI-308 A), as Android's DayHeading.
-                let tracks = Self.tracks(of: day.sessions)
                 VStack(alignment: .leading, spacing: 8) {
-                    HealthSectionTitle(tracks.count == 1 ? "\(dayLabel(day.day)) · \(tracks[0])" : dayLabel(day.day))
+                    HealthSectionTitle(day.title)
                     ForEach(TrackDayLink.of(day.sessions)) { link in
-                        trackDayCard(link, named: tracks.count > 1)
+                        trackDayCard(link, named: day.trackOnRows)
                     }
                 }
                 .padding(.top, 8)
@@ -56,7 +55,7 @@ struct SessionsListView: View {
                 // Two session cards a row (UI-308 A); the track on each when the day had more than one.
                 ForEach(Self.pairs(day.sessions), id: \.first!.id) { pair in
                     HStack(alignment: .top, spacing: 8) {
-                        ForEach(pair) { session in card(session, withTrack: tracks.count > 1) }
+                        ForEach(pair) { session in card(session, withTrack: day.trackOnRows) }
                         if pair.count < 2 { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
                     }
                     .listRowBackground(Palette.background)
@@ -205,43 +204,21 @@ struct SessionsListView: View {
         .accessibilityIdentifier("trackDayLink")
     }
 
-    /// The tracks a day's sessions were driven at, in name order.
-    private static func tracks(of sessions: [SessionRow]) -> [String] {
-        Array(Set(sessions.map(\.track).filter { !$0.isEmpty })).sorted()
-    }
-
     /// The day's sessions two by two, newest first, as Android's rows of cards.
     private static func pairs(_ sessions: [SessionRow]) -> [[SessionRow]] {
         stride(from: 0, to: sessions.count, by: 2).map { Array(sessions[$0..<min($0 + 2, sessions.count)]) }
     }
 
-    /// "Today", "Yesterday", else "Sun 19 Oct", as Android's day label.
-    private func dayLabel(_ day: Date) -> String {
-        let calendar = Calendar.current
-        if calendar.isDateInToday(day) { return "Today" }
-        if calendar.isDateInYesterday(day) { return "Yesterday" }
-        return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-    }
-
-    /// Android's delete question (UI-48 A): the session, what goes and how much space it frees.
+    /// Android's delete question (UI-48 A), from the shared core: the session, what goes and how much
+    /// space it frees.
     private func deleteText(_ session: SessionRow) -> String {
         let title = [session.start.formatted(date: .abbreviated, time: .shortened), session.track]
             .filter { !$0.isEmpty }.joined(separator: " · ")
         let (bytes, video) = ReviewBridge.footprint(session.id)
-        let what = video ? "its data and video" : "its data"
-        let size = bytes.map { " (\(sizeText($0)))" } ?? ""
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-        return "\(title): \(what)\(size) will be removed from this \(device). " +
-            "Files still on a GoPro stay there. This can't be undone."
-    }
-
-    /// "820 KB", "350 MB", "2.4 GB", as Android.
-    private func sizeText(_ bytes: Int64) -> String {
-        switch bytes {
-        case 1_000_000_000...: return String(format: "%.1f GB", Double(bytes) / 1e9)
-        case 1_000_000...: return "\(bytes / 1_000_000) MB"
-        default: return "\(max(1, bytes / 1_000)) KB"
-        }
+        return SessionsListKt.sessionDeleteText(
+            title: title, bytes: bytes.map { KotlinLong(value: $0) }, video: video, device: device
+        )
     }
 }
 
@@ -301,8 +278,9 @@ private struct SessionsCard: View {
     }
 
     private var title: String {
-        [session.start.formatted(date: .omitted, time: .shortened), withTrack ? session.track : ""]
-            .filter { !$0.isEmpty }.joined(separator: " · ")
+        SessionsListKt.sessionRowTitle(
+            time: session.start.formatted(date: .omitted, time: .shortened), track: session.track, withTrack: withTrack
+        )
     }
 
     private var detail: String {
