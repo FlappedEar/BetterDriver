@@ -25,6 +25,7 @@ final class StartListUiTests: XCTestCase {
         let goPro = app.switches["goProToggle"]
         XCTAssertTrue(goPro.waitForExistence(timeout: 5), "the GoPro's switch")
         if (goPro.value as? String) == "1" { goPro.tap() }
+        pickSimulated()
         for kind in ["CAR_DATA", "HEART_RATE", "TPMS"] {
             pick("start.\(kind).none")
         }
@@ -34,16 +35,17 @@ final class StartListUiTests: XCTestCase {
     func testRecordsWithTheSecondStrapAndEveryDeviceOn() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad has no Drive tab")
         openSheet()
+        pickSimulated()
+        // Top down, as the rows are listed: the sheet only scrolls up to them.
+        pick("start.CAR_DATA.Wi-Fi OBD-II adapter")
         // The strap added last is chosen as it is added (FBBD-445); Strap A is picked, then B again.
         pick("start.HEART_RATE.Strap A")
         pick("start.HEART_RATE.Strap B")
         pick("start.TPMS.Tyre bridge")
-        pick("start.CAR_DATA.Wi-Fi OBD-II adapter")
         record()
         // The choice is kept for the next session (UI-313 A).
         openSheet()
-        let strapB = row("start.HEART_RATE.Strap B")
-        XCTAssertTrue(strapB.waitForExistence(timeout: 10))
+        let strapB = reveal("start.HEART_RATE.Strap B")
         XCTAssertTrue(strapB.isSelected, "Strap B still chosen at the next START")
         XCTAssertFalse(row("start.HEART_RATE.Strap A").isSelected)
     }
@@ -61,22 +63,44 @@ final class StartListUiTests: XCTestCase {
 
     private func row(_ id: String) -> XCUIElement { app.buttons[id] }
 
-    /// Taps a row of the list and checks its radio is the one on.
-    private func pick(_ id: String) {
+    /// The row, scrolled up into view: car data, heart rate and tyres are below the sheet's first height.
+    private func reveal(_ id: String) -> XCUIElement {
         let element = row(id)
-        if !element.waitForExistence(timeout: 10) {
-            print("START LIST app:\n\(app.debugDescription)")
-            XCTFail("\(id) on the START sheet")
+        let sheet = app.scrollViews.firstMatch
+        for _ in 0..<8 {
+            if element.exists, element.isHittable { return element }
+            if sheet.exists { sheet.swipeUp() } else { app.swipeUp() }
         }
-        element.tap()
-        XCTAssertTrue(element.isSelected, "\(id) chosen")
+        if !element.waitForExistence(timeout: 5) || !element.isHittable {
+            print("START LIST app:\n\(app.debugDescription)")
+            XCTFail("\(id) on the START sheet; on screen: \(onScreen())")
+        }
+        return element
     }
 
-    /// Starts with the simulated receiver, records 10 s, stops with the 3 s hold.
-    private func record() {
+    /// Taps a row of the list and checks its radio is the one on.
+    private func pick(_ id: String) {
+        let element = reveal(id)
+        element.tap()
+        let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: element)
+        wait(for: [selected], timeout: 5)
+    }
+
+    /// The simulated receiver, at the top of the sheet: picked before the rows further down.
+    private func pickSimulated() {
         let simulated = app.buttons["receiver.simulated"]
         XCTAssertTrue(simulated.waitForExistence(timeout: 10), "the simulated receiver")
         simulated.tap()
+    }
+
+    /// The ids on screen, short enough for the failure text the CI log prints.
+    private func onScreen() -> String {
+        let elements = app.buttons.allElementsBoundByIndex + app.switches.allElementsBoundByIndex
+        return elements.prefix(60).map { "\($0.label)#\($0.identifier)" }.joined(separator: " | ")
+    }
+
+    /// Starts with the receiver picked, records 10 s, stops with the 3 s hold.
+    private func record() {
         let startSession = app.buttons["startSession"]
         XCTAssertTrue(startSession.waitForExistence(timeout: 10), "Start session")
         startSession.tap()
