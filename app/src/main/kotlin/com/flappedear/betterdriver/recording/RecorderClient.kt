@@ -105,7 +105,9 @@ class RecorderClient private constructor(private val context: Context) {
             timing = RecorderProtocol.timingFrom(msg.data),
             obd = RecorderProtocol.obdFrom(msg.data),
             heartRate = RecorderProtocol.heartRateFrom(msg.data),
-            tyres = RecorderProtocol.tyresFrom(msg.data),
+            tyres = msg.data.getString(RecorderProtocol.KEY_TYRES)?.let {
+                TpmsStatus(it, msg.data.getBoolean(RecorderProtocol.KEY_TYRES_OK))
+            },
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
                 CoachStatus(
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),

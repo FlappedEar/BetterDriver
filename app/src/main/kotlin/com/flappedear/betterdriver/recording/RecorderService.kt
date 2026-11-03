@@ -393,14 +393,20 @@ class RecorderService : Service() {
             state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
             state.putBoolean(RecorderProtocol.KEY_COACH_DIM, coachStatus.dim)
         }
-        if (a != null) {
-            ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
-            HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
-            TpmsSource.current?.status()?.let { RecorderProtocol.putTyres(state, it) }
-        }
+        if (a != null) putSensors(state)
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
+    }
+
+    /** The recording's OBD, heart-rate strap and TPMS bridge for the status strip. */
+    private fun putSensors(state: Bundle) {
+        ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
+        HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
+        TpmsSource.current?.status()?.let {
+            state.putString(RecorderProtocol.KEY_TYRES, it.value)
+            state.putBoolean(RecorderProtocol.KEY_TYRES_OK, it.ok)
+        }
     }
 
     override fun onDestroy() {

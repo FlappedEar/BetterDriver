@@ -147,12 +147,15 @@ fun tpmsStatus(streaming: Boolean, readings: List<TyreReading>): TpmsStatus? {
     val wheels = TpmsChannels.WHEELS
     val missing = readings.indices.filter { readings[it].bar == null }.map { wheels[it] }
     val stale = readings.indices.filter { readings[it].bar != null && readings[it].stale }.map { wheels[it] }
-    if (missing.isEmpty() && stale.isEmpty()) return TpmsStatus("${readings.size} tyres", ok = true)
-    val parts = listOfNotNull(
+    val faults = listOfNotNull(
         stale.takeIf { it.isNotEmpty() }?.let { "${it.joinToString(", ")} stale" },
         missing.takeIf { it.isNotEmpty() }?.let { "${it.joinToString(", ")} no data" },
     )
-    return TpmsStatus(parts.joinToString(" · "), ok = false)
+    return if (faults.isEmpty()) {
+        TpmsStatus("${readings.size} tyres", ok = true)
+    } else {
+        TpmsStatus(faults.joinToString(" · "), ok = false)
+    }
 }
 
 /**
