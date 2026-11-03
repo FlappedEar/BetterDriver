@@ -179,6 +179,12 @@ class SessionExport(
 
 }
 
+/**
+ * The export format named [name] as in Kotlin ("Vbo", "VboVideo", "Csv", "Gpx"), for Swift: the
+ * names Swift gives Kotlin enum entries are not spelled the same.
+ */
+fun exportFormat(name: String): ExportFormat = ExportFormat.valueOf(name)
+
 /** Bytes of the files of [share], for its log line (FBBD-443). */
 fun exportedBytes(share: ExportShare): Long = share.files.sumOf { path ->
     try {

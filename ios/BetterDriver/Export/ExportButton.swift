@@ -62,13 +62,13 @@ struct ExportButton: View {
     private enum Format {
         case vboWithVideo, vbo, csv, gpx
 
-        /// The shared core's format.
+        /// The shared core's format, by its Kotlin name.
         var core: ExportFormat {
             switch self {
-            case .vboWithVideo: return .vboVideo
-            case .vbo: return .vbo
-            case .csv: return .csv
-            case .gpx: return .gpx
+            case .vboWithVideo: return SessionExportKt.exportFormat(name: "VboVideo")
+            case .vbo: return SessionExportKt.exportFormat(name: "Vbo")
+            case .csv: return SessionExportKt.exportFormat(name: "Csv")
+            case .gpx: return SessionExportKt.exportFormat(name: "Gpx")
             }
         }
     }

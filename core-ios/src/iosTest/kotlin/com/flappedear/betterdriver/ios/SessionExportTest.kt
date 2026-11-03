@@ -179,6 +179,7 @@ class SessionExportTest {
         assertEquals("*/*", withVideo.mimeType)
         withVideo.files.forEach { assertTrue(NSFileManager.defaultManager.fileExistsAtPath(it), it) }
         assertTrue(exportedBytes(withVideo) > 0)
+        assertEquals(ExportFormat.entries, ExportFormat.entries.map { exportFormat(it.name) })
         for ((format, name) in listOf(
             ExportFormat.Vbo to "BetterDriver-$id.vbo",
             ExportFormat.Csv to "BetterDriver-$id.csv",
