@@ -74,6 +74,10 @@ final class DemoTrackTests: XCTestCase {
         XCTAssertTrue(receiver.waitForExistence(timeout: 20), "no Demo track on the START sheet")
         keep("START sheet")
         receiver.tap()
+        // A row picks; the sheet's own button starts (FBBD-446).
+        let startSession = app.buttons["startSession"]
+        XCTAssertTrue(startSession.waitForExistence(timeout: 10), "Start session on the START sheet")
+        startSession.tap()
         allowSystemAlerts()
 
         let screen = app.descendants(matching: .any).matching(identifier: "trackScreen").firstMatch

@@ -59,6 +59,10 @@ final class SmokeTests: XCTestCase {
             XCTFail("the simulated receiver; on screen: \(onScreen())")
         }
         simulated.tap()
+        // A row picks; the sheet's own button starts (FBBD-446).
+        let startSession = app.buttons["startSession"]
+        XCTAssertTrue(startSession.waitForExistence(timeout: 10), "Start session on the START sheet")
+        startSession.tap()
         allowSystemAlerts()
 
         // The screen's id reaches its children too: the first match is the screen itself.
