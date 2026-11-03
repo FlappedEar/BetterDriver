@@ -98,6 +98,15 @@ final class StartListTests: XCTestCase {
         XCTAssertNotNil(RecordingController.strap(model.setup.active()))
     }
 
+    /// The car data page outside a session reaches every listed adapter, even with None at START.
+    func testTheCarDataPageSeesEveryAdapterWhateverStartChose() {
+        let model = fullSetup()
+        model.update { $0.chooseAtStart(kind: StartKind.carData, id: nil, on: true) }
+        let page = model.setup.chooseCarData(id: nil)
+        XCTAssertEqual(ObdLink.adapters(page).bluetooth.map { $0.id.uuidString }, [obdA, obdB])
+        XCTAssertFalse(ObdLink.anyListed(model.setup), "the session still reads none")
+    }
+
     func testAGoProOnAndOff() {
         let model = fullSetup()
         model.update { $0.chooseAtStart(kind: StartKind.camera, id: "gp", on: false) }
