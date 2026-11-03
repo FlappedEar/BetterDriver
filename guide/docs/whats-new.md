@@ -13,6 +13,12 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.30.1
+
+- **Watch video**, the **Video** tab and **Realistic optimal video** are left out for a session
+  without video, instead of showing greyed out or opening an empty player (iPhone and iPad session
+  menu too).
+
 ## 1.30.0
 
 - iPhone and iPad: Android's look, with dark cards, amber headings and Android's tab icons; Drive's
