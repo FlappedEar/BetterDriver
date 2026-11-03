@@ -19,6 +19,7 @@ The full notes of every release are on
 - Every page in **Settings › Equipment** shows live data without a session (Android and iPhone).
 - A tyre whose value has not changed keeps recording its last reading.
 - Session export (VBO, VBO with video, CSV, GPX) opens the share sheet, as **Share log** does (Android and iPhone).
+- VBO exports never go back in time (the iPhone's cached first GPS fix and repeated fixes are left out).
 - iPhone and iPad: deleting a track also deletes its coach files, as on Android.
 
 ## 1.31.0
