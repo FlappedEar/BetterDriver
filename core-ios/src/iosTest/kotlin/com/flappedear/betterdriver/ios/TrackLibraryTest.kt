@@ -2,6 +2,10 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.coach.CoachPicksStore
+import com.flappedear.betterdriver.coach.CornerPick
+import com.flappedear.betterdriver.coach.SessionFocusRecord
+import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -158,6 +162,19 @@ class TrackLibraryTest {
         assertNull(library.here(gnss.centerLat, gnss.centerLon, CircuitList.Empty).track)
         val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
         assertTrue(library.editorSessions(track).isEmpty())
+    }
+
+    @Test
+    fun aDeletedTrackTakesItsCoachPicksAndFocusWithItAsOnAndroid() {
+        val made = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val picks = CoachPicksStore("$base/coach/picks")
+        val focus = SessionFocusStore("$base/coach/focus")
+        picks.save(made.id, listOf(CornerPick("Corner 1", listOf(gnss.centerLat), listOf(gnss.centerLon), "s1")))
+        focus.save(SessionFocusRecord(trackId = made.id, sessionId = "s1", sessionStartUtcMillis = 1L, algorithm = "test"))
+        assertTrue(library.delete(made.id))
+        assertNull(library.get(made.id))
+        assertTrue(picks.get(made.id).isEmpty())
+        assertNull(focus.get(made.id, "s1"))
     }
 
     @Test

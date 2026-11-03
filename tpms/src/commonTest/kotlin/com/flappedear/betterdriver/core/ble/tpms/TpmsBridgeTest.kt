@@ -108,7 +108,26 @@ class TpmsBridgeTest {
     }
 
     @Test
-    fun `a wheel repeating the same reading for 5 min is stale until it changes`() {
+    fun `the summary gives each wheel's values and the seconds since a change and staleness`() {
+        val sink = Sink()
+        val decoder = TpmsDecoder(sink)
+        assertEquals("FL -, FR -, RL -, RR -", decoder.summary(0))
+        sink.now = 10_000_000
+        decoder.feed(pressure(1, 231))
+        decoder.feed(temp(8, 24))
+        decoder.feed(pressure(4, 5))
+        sink.now = 320_000_000
+        decoder.feed(pressure(1, 231))
+        assertEquals(
+            "FL 2.31 bar 24 °C 310 s stale, FR -, RL -, RR 0.05 bar - °C 310 s",
+            decoder.summary(sink.now),
+        )
+        assertEquals("2.00", formatBar(2.0))
+        assertEquals("0.07", formatBar(0.069))
+    }
+
+    @Test
+    fun `a wheel repeating the same reading for 5 min is stale until it changes and keeps recording`() {
         val sink = Sink()
         val decoder = TpmsDecoder(sink)
         fun second(s: Long, centibar: Int, c: Int) {
@@ -121,15 +140,16 @@ class TpmsBridgeTest {
         assertTrue(sink.events.isEmpty())
         second(300, 230, 40)
         assertEquals(listOf(TpmsEvents.STALE to "wheel=FL"), sink.events)
-        // The repeats of a stale wheel are left out.
+        assertEquals(602, sink.sets.size)
+        // The last reading of a stale wheel keeps being recorded (Arek, 3 Nov).
         second(301, 230, 40)
-        assertEquals(600, sink.sets.size)
+        assertEquals(604, sink.sets.size)
         assertTrue(decoder.readings()[0].stale)
-        // Only the temperature changes: fresh again, recorded again.
+        // Only the temperature changes: fresh again.
         second(302, 230, 41)
         assertEquals(TpmsEvents.FRESH to "wheel=FL", sink.events.last())
         assertFalse(decoder.readings()[0].stale)
-        assertEquals(601, sink.sets.size)
+        assertEquals(606, sink.sets.size)
     }
 
     @Test

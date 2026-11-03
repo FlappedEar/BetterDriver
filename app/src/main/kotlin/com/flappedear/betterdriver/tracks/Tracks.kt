@@ -13,14 +13,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
-import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachReferences
-import com.flappedear.betterdriver.coach.coachPicks
-import com.flappedear.betterdriver.coach.coachReferencesDir
-import com.flappedear.betterdriver.coach.coachingHistoryStore
-import com.flappedear.betterdriver.coach.dayPlanStore
-import com.flappedear.betterdriver.coach.linePlanStore
-import com.flappedear.betterdriver.coach.sessionFocusStore
+import com.flappedear.betterdriver.coach.TrackCoachFiles
+import com.flappedear.betterdriver.coach.coachDir
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -243,26 +238,11 @@ class Tracks private constructor(private val context: Context) {
      * re-created with the same id never picks up stale ones. [onDone] gets false when any is left.
      */
     fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
-        val references = CoachReferenceStore(coachReferencesDir(context).path)
-        val picks = coachPicks(context)
-        val focus = sessionFocusStore(context)
-        val history = coachingHistoryStore(context)
-        val lines = linePlanStore(context)
-        val days = dayPlanStore(context)
+        val coach = TrackCoachFiles(coachDir(context).path)
         // Waits for a restore (FBBD-156), so the delete is not lost in its swap.
         val gone = AppDataGate.write {
-            references.delete(id)
-            try {
-                picks.save(id, emptyList())
-            } catch (e: IOException) {
-                DebugLog.w(Tag, "deleting coach picks for $id failed", e)
-            }
-            val focusGone = focus.delete(id)
-            val historyGone = history.delete(id)
-            val lineGone = lines.delete(id)
-            val dayGone = days.delete(id)
-            val coachGone = references.get(id) == null && picks.get(id).isEmpty() && focusGone && historyGone &&
-                lineGone && dayGone
+            // The coach files first, shared with iOS (TrackCoachFiles).
+            val coachGone = coach.delete(id) { what, e -> DebugLog.w(Tag, "deleting $what for $id failed", e) }
             if (coachGone) store.delete(id)
             coachGone && store.get(id) == null
         }

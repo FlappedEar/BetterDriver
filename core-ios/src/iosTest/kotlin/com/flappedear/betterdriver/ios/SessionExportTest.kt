@@ -5,6 +5,7 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import kotlinx.cinterop.addressOf
@@ -163,6 +164,31 @@ class SessionExportTest {
         assertTrue(Mp4Files.isComplete("$base/whole.mp4"))
         for (name in cases.drop(1).map { it.first } + "missing") {
             assertFalse(Mp4Files.isComplete("$base/$name.mp4"), name)
+        }
+    }
+
+    @Test
+    fun eachExportIsSharedAsTheShareSheetGetsIt() {
+        val id = record()
+        val export = SessionExport("$base/sessions", "$base/tracks", "$base/out")
+        val withVideo = export.share(id, ExportFormat.VboVideo)
+        assertEquals(
+            listOf("BetterDriver-$id.vbo", "BetterDriver-${id}_0001.MP4"),
+            withVideo.files.map { it.substringAfterLast('/') },
+        )
+        assertEquals("*/*", withVideo.mimeType)
+        withVideo.files.forEach { assertTrue(NSFileManager.defaultManager.fileExistsAtPath(it), it) }
+        assertTrue(exportedBytes(withVideo) > 0)
+        assertEquals(ExportFormat.entries, ExportFormat.entries.map { exportFormat(it.name) })
+        for ((format, name) in listOf(
+            ExportFormat.Vbo to "BetterDriver-$id.vbo",
+            ExportFormat.Csv to "BetterDriver-$id.csv",
+            ExportFormat.Gpx to "BetterDriver-$id.gpx",
+        )) {
+            val share = export.share(id, format)
+            assertEquals(listOf(name), share.files.map { it.substringAfterLast('/') }, format.name)
+            assertEquals(format.mimeType, share.mimeType)
+            assertTrue(NSFileManager.defaultManager.fileExistsAtPath(share.files.single()))
         }
     }
 }

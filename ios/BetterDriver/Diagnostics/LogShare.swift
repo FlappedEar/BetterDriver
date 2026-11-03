@@ -70,21 +70,28 @@ enum LogShare {
 
     /// The share sheet for [url], over whatever is on screen; on iPad as a popover from its middle.
     @MainActor
-    static func share(_ url: URL) {
+    static func share(_ url: URL) { share([url]) }
+
+    /// The share sheet for several files at once, as a session's VBO + video (FBBD-443): saving them
+    /// to Files puts them side by side in the folder picked.
+    @MainActor
+    static func share(_ urls: [URL]) {
+        guard let first = urls.first else { return }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         guard var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController else {
-            AppLog.w(tag, "no window to show the share sheet for \(url.lastPathComponent)")
+            AppLog.w(tag, "no window to show the share sheet for \(first.lastPathComponent)")
             return
         }
         while let shown = top.presentedViewController { top = shown }
-        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let sheet = UIActivityViewController(activityItems: urls, applicationActivities: nil)
         if let popover = sheet.popoverPresentationController {
             popover.sourceView = top.view
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
             popover.permittedArrowDirections = []
         }
         top.present(sheet, animated: true)
-        AppLog.i(tag, "share sheet shown for \(url.lastPathComponent)")
+        let more = urls.count > 1 ? " and \(urls.count - 1) more" : ""
+        AppLog.i(tag, "share sheet shown for \(first.lastPathComponent)\(more)")
     }
 
     private static let tag = "DebugLogs"

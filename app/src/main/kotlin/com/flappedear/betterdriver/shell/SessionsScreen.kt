@@ -55,7 +55,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
-import com.flappedear.betterdriver.recording.ExportFormat
+import com.flappedear.betterdriver.recorder.export.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.sharing.TransferState
 import java.io.File
@@ -272,7 +272,7 @@ private fun rowStatus(
     videoExport.running == s.id -> "Rendering video with data…"
     goPro.work[s.id] != null -> "Getting GoPro video…"
     goPro.sessions[s.id]?.cameras?.any { it.onCamera } == true -> "GoPro video still on the camera"
-    // How the last export or delete ended ("Saved", "Export failed"), as the sheet says it.
+    // How the last export or delete ended ("Exported", "Export failed"), as the sheet says it.
     else -> cardStatus(deleting.states[s.id], export).first.ifEmpty { null }
 }
 

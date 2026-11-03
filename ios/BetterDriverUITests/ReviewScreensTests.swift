@@ -139,8 +139,8 @@ final class ReviewScreensTests: XCTestCase {
     }
 
     func testCsvAndGpxExportsAreWrittenWithoutAFailure() {
-        // One launch per format: Files' Save sheet runs out of the app, so the test leaves it open
-        // and starts again. Kotlin's DemoSessionsTest checks what the files hold.
+        // One launch per format: the share sheet (FBBD-443) is left open and the test starts again.
+        // Kotlin's DemoSessionsTest checks what the files hold.
         for (index, format) in ["CSV", "GPX"].enumerated() {
             app.launchArguments = index == 0 ? ["-freshInstall", "-demoSessions"] : ["-demoSessions"]
             app.launch()
@@ -168,7 +168,7 @@ final class ReviewScreensTests: XCTestCase {
             }
             XCTAssertTrue(item.isHittable, "no \(format) in the export menu")
             item.tap()
-            // A failed export says so in an alert; a written one goes on to Files.
+            // A failed export says so in an alert; a written one goes on to the share sheet.
             let failed = app.alerts.firstMatch.waitForExistence(timeout: 15)
             XCTAssertFalse(failed, "\(format): \(app.alerts.firstMatch.label)")
             keep("Export \(format)")
