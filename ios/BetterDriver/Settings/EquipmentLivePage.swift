@@ -133,8 +133,14 @@ final class LiveDataModel: ObservableObject {
         case ModelName.phoneGps:
             let link = PhoneGpsLink(sink: feed) { [weak self] state in
                 MainActor.assumeIsolated {
-                    if state == .notAllowed {
+                    // Allowed again in Settings while the page is open: the link resumes, so does the page.
+                    switch state {
+                    case .notAllowed:
                         self?.unavailable = "Location access is off. Allow it in Settings › BetterDriver › Location."
+                    case .searching, .fix:
+                        self?.unavailable = nil
+                    case .off:
+                        break
                     }
                 }
             }
