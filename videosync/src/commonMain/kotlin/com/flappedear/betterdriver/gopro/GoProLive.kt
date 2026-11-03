@@ -200,14 +200,12 @@ object GoProLiveText {
     fun header(name: String, s: GoProLiveSnapshot): DiagHeaderText = when {
         s.connected && s.polls > 0 -> {
             val recording = s.statuses[GoProLive.ENCODING]?.let { it != 0L } == true
-            DiagHeaderText(true, if (recording) "Connected · Recording" else "Connected", detail(name, s))
+            val detail = listOfNotNull(name, s.info?.modelName?.takeIf { it.isNotBlank() }).distinct()
+            DiagHeaderText(true, if (recording) "Connected · Recording" else "Connected", detail.joinToString(" · "))
         }
         s.error != null -> DiagHeaderText(false, "Trying again", "$name · ${s.error}")
         else -> DiagHeaderText(false, "Connecting…", "$name · wake the camera if it sleeps")
     }
-
-    private fun detail(name: String, s: GoProLiveSnapshot): String =
-        listOfNotNull(name, s.info?.modelName?.takeIf { it.isNotBlank() }).distinct().joinToString(" · ")
 
     fun sections(s: GoProLiveSnapshot): List<DiagSection> = buildList {
         s.info?.let { i ->
