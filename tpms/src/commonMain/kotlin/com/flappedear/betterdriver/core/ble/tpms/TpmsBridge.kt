@@ -137,11 +137,13 @@ private const val MicrosPerSecond = 1_000_000L
 
 /** [bar] with two decimals ("2.31"), without platform formatting. */
 internal fun formatBar(bar: Double): String {
-    val centi = kotlin.math.round(bar * 100).toLong()
+    val centi = kotlin.math.round(bar * CentiPerUnit).toLong()
     val sign = if (centi < 0) "-" else ""
     val a = kotlin.math.abs(centi)
-    return "$sign${a / 100}.${(a % 100).toString().padStart(2, '0')}"
+    return "$sign${a / CentiPerUnit}.${(a % CentiPerUnit).toString().padStart(2, '0')}"
 }
+
+private const val CentiPerUnit = 100
 
 /** A wheel's latest values for a status display; null where the bridge has sent none yet. */
 data class TyreReading(val bar: Double?, val celsius: Double?, val stale: Boolean)
