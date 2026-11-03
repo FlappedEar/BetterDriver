@@ -102,4 +102,21 @@ class SettingsCoreTest {
         assertSame(earlier, SettingsCore.withEarlierWifiObd(earlier, "again"))
         assertTrue(earlier.removeEquipment("wifi").active().obdWifi.isEmpty())
     }
+
+    @Test
+    fun wifiGpsReceiversAreAddedAnyNumberOfTimesWithTheirTypedAddress() {
+        val fresh = SettingsCore.freshSetup("cam")
+        val offered = SettingsCore.withoutBluetooth(fresh)
+        // Android's order: after the phone GPS, before the Wi-Fi OBD-II adapter (FBBD-374).
+        assertTrue(offered.indexOf(EquipmentModel.TCP_GNSS) > offered.indexOf(EquipmentModel.PHONE_GPS))
+        assertTrue(offered.indexOf(EquipmentModel.TCP_GNSS) < offered.indexOf(EquipmentModel.OBD_WIFI))
+        assertEquals("192.168.4.1:10110", SettingsCore.tcpAddress(" 192.168.4.1 ", "10110"))
+        assertNull(SettingsCore.tcpAddress("192.168.4.1", "70000"))
+        assertNull(SettingsCore.tcpAddress("", "10110"))
+        val added = SettingsCore.addEquipment(fresh, EquipmentModel.TCP_GNSS, "Wi-Fi GPS", "192.168.4.1:10110", "gps")
+        assertEquals("192.168.4.1:10110", added.equipment("gps")?.address)
+        assertTrue(EquipmentModel.TCP_GNSS in SettingsCore.withoutBluetooth(added))
+        // Without an address nothing is added.
+        assertSame(fresh, SettingsCore.addEquipment(fresh, EquipmentModel.TCP_GNSS, "Wi-Fi GPS", null, "gps"))
+    }
 }

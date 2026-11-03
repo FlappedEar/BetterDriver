@@ -28,7 +28,8 @@ fun nmeaChecksum(body: CharSequence): Int {
 }
 
 /** A complete sentence with `$`, checksum and CR LF, for tests and simulators. */
-fun nmeaSentence(body: String): String = "$" + body + "*%02X\r\n".format(nmeaChecksum(body))
+fun nmeaSentence(body: String): String =
+    "$" + body + "*" + nmeaChecksum(body).toString(HexRadix).uppercase().padStart(2, '0') + "\r\n"
 
 /**
  * Cuts a Bluetooth byte stream into checked NMEA sentences. A read from the socket can end in the
@@ -57,7 +58,7 @@ class NmeaLineReader(private val maxChars: Int = MaxNmeaSentenceChars) {
 
     /** Drops a partial sentence, e.g. after the link reconnects. */
     fun reset() {
-        line.setLength(0)
+        line.clear()
         inSentence = false
     }
 
@@ -65,7 +66,7 @@ class NmeaLineReader(private val maxChars: Int = MaxNmeaSentenceChars) {
         when {
             c == Dollar -> {
                 if (inSentence) discarded++
-                line.setLength(0)
+                line.clear()
                 inSentence = true
             }
             c == Cr || c == Lf -> if (inSentence) {
@@ -103,7 +104,7 @@ class NmeaLineReader(private val maxChars: Int = MaxNmeaSentenceChars) {
  * Bytes in, one [NmeaEpoch] per receiver fix out: [NmeaLineReader], then [parseNmeaSentence],
  * then [NmeaEpochAssembler]. RaceChrono DIY `$RC2`/`$RC3` lines in the same stream (FBBD-115) go
  * to [parseRcLine] instead and come out one by one, outside the epochs. Pure Kotlin, so it is
- * tested on the JVM. Not thread-safe.
+ * tested on the JVM and iOS. Not thread-safe.
  */
 class NmeaParser {
     private val reader = NmeaLineReader()

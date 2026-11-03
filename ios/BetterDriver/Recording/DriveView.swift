@@ -191,8 +191,9 @@ private struct StartButton: View {
     }
 }
 
-/// The sheet at START (UI-285 B): RaceBoxes in range as they advertise, the one used last on top,
-/// and the phone's own GPS; then the cameras, each with its switch as on Android's "This session".
+/// The sheet at START (UI-285 B): RaceBoxes in range as they advertise, the one used last on top, the
+/// other receivers listed in Settings › Equipment, and the phone's own GPS; then the cameras, each with
+/// its switch as on Android's "This session".
 struct ReceiverSheet: View {
     @EnvironmentObject private var settings: SettingsModel
     let lastUsed: String
@@ -234,6 +235,11 @@ struct ReceiverSheet: View {
                     Text("Looking for RaceBoxes").foregroundStyle(Palette.onSurfaceVariant)
                 }
                 .padding(.vertical, 12)
+            }
+            // Wi-Fi GPS, Bluetooth LE GPS and RaceChrono DIY receivers added in Settings › Equipment (FBBD-374).
+            ForEach(settings.setup.equipment.filter { ListedReceivers.models.contains($0.modelName) }, id: \.id) { item in
+                row(item.name, ListedReceivers.detail(item), ok: true) { onPick(.listed(item)) }
+                    .accessibilityIdentifier("receiver.\(item.modelName)")
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
             // The Demo track once added in Settings › Equipment, with what it drives (FBBD-373).
@@ -349,4 +355,19 @@ final class PlaceFinder: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
+
+/// The receivers other than the RaceBox that a session can record from on the iPhone (FBBD-374), as
+/// listed in Settings › Equipment. Bluetooth Classic ones (NMEA over SPP, VBOX Sport) cannot connect
+/// on iOS, and the Dragy is not ported yet.
+enum ListedReceivers {
+    static let models: Set<String> = [ModelName.tcpGnss, ModelName.lnsGnss, ModelName.diyGnss]
+
+    static func detail(_ item: Equipment) -> String {
+        switch item.modelName {
+        case ModelName.tcpGnss: "Wi-Fi · \(item.address ?? "")"
+        case ModelName.diyGnss: "RaceChrono DIY"
+        default: "Bluetooth LE"
+        }
+    }
 }

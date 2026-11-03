@@ -13,6 +13,8 @@ enum Receiver: Equatable {
     case simulated
     /// The Demo track in Settings › Equipment (FBBD-373): a made-up car drives its chosen drive.
     case demoTrack
+    /// A Wi-Fi GPS, Bluetooth LE GPS or RaceChrono DIY receiver listed in Settings › Equipment (FBBD-374).
+    case listed(Equipment)
 
     var name: String {
         switch self {
@@ -20,6 +22,7 @@ enum Receiver: Equatable {
         case .phone: "Phone GPS"
         case .simulated: "Simulated GPS"
         case .demoTrack: "Demo track"
+        case .listed(let item): item.name
         }
     }
 
@@ -70,6 +73,8 @@ final class RecordingController: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var raceBoxState: RaceBoxLinkState = .off
     @Published private(set) var phoneState: PhoneGpsState = .off
+    /// A listed receiver's link (FBBD-374), as the shared link reports it.
+    @Published private(set) var listedState: LinkState?
     @Published private(set) var cameraStatus: CameraStatus?
 
     private var receiver: Receiver?
@@ -77,6 +82,8 @@ final class RecordingController: ObservableObject {
     private var phone: PhoneGpsLink?
     private var simulated: SimulatedGpsLink?
     private var demoTrack: DemoTrackLink?
+    private var tcpGps: GnssTcpLink?
+    private var bleGps: GnssBleLink?
     private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
     /// The GNSS state at the last refresh, for the lost and back sounds.
@@ -214,6 +221,9 @@ final class RecordingController: ObservableObject {
                 stop()
                 self.error = "Could not start the Demo track: \(error.localizedDescription)"
             }
+        case .listed(let item):
+            lastReceiverName = item.name
+            startListed(item, live)
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
@@ -253,6 +263,33 @@ final class RecordingController: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
+    }
+
+    /// A receiver from Settings › Equipment (FBBD-374): Wi-Fi by its "host:port", Bluetooth LE by the
+    /// iPhone's identifier for it. One whose address cannot be used ends the session and says why.
+    private func startListed(_ item: Equipment, _ live: LiveSession) {
+        let report: (LinkState) -> Void = { [weak self] state in self?.listedState = state }
+        switch item.modelName {
+        case ModelName.tcpGnss:
+            if let link = GnssTcpLink(sink: live, address: item.address ?? "", name: item.name, onState: report) {
+                tcpGps = link
+                link.start()
+                return
+            }
+        case ModelName.lnsGnss, ModelName.diyGnss:
+            if let id = item.address.flatMap(UUID.init(uuidString:)) {
+                let kind: GnssBleLink.Kind = item.modelName == ModelName.lnsGnss ? .lns : .diy
+                let link = GnssBleLink(kind: kind, sink: live, listed: (id, item.name), onState: report)
+                bleGps = link
+                link.start()
+                return
+            }
+        default:
+            break
+        }
+        AppLog.e("Recording", "receiver \(item.name) \(item.modelName) address \(item.address ?? "none") not usable")
+        stop()
+        error = "\(item.name) cannot be used on this iPhone. Remove it in Settings › Equipment and add it again."
     }
 
     /// The session's OBD-II connection as the car data page shows it (FBBD-261), nil while none records.
@@ -327,6 +364,8 @@ final class RecordingController: ObservableObject {
         phone?.stop()
         simulated?.stop()
         demoTrack?.stop()
+        tcpGps?.stop()
+        bleGps?.stop()
         imu?.stop()
         camera?.stop()
         obd?.stop()
@@ -356,6 +395,9 @@ final class RecordingController: ObservableObject {
         phone = nil
         simulated = nil
         demoTrack = nil
+        tcpGps = nil
+        bleGps = nil
+        listedState = nil
         imu = nil
         camera?.stop()
         camera = nil
@@ -401,6 +443,8 @@ final class RecordingController: ObservableObject {
             raceBox?.stop()
             phone?.stop()
             simulated?.stop()
+            tcpGps?.stop()
+            bleGps?.stop()
             imu?.stop()
             obd?.stop()
             heartRate?.stop()

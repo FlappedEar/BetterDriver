@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupFormatException
 import com.flappedear.betterdriver.setup.SetupJson
+import com.flappedear.betterdriver.setup.TcpAddress
 import com.flappedear.betterdriver.setup.WifiObdAddress
 
 /**
@@ -49,13 +50,14 @@ object SettingsCore {
     /**
      * What Add equipment offers without a scan, in Android's order: the phone camera, the phone's GPS
      * and the Wi-Fi OBD-II adapter once, cameras run by hand (their files added after the session,
-     * FBBD-343) any number of times.
+     * FBBD-343) and Wi-Fi GPS receivers (FBBD-374) any number of times.
      */
     fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
         if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
         add(EquipmentModel.GOPRO_FILES)
         add(EquipmentModel.CAMERA_FILES)
         if (setup.equipment.none { it.model == EquipmentModel.PHONE_GPS }) add(EquipmentModel.PHONE_GPS)
+        add(EquipmentModel.TCP_GNSS)
         if (setup.equipment.none { it.model == EquipmentModel.OBD_WIFI }) add(EquipmentModel.OBD_WIFI)
     }
 
@@ -78,6 +80,12 @@ object SettingsCore {
      */
     fun tryTheApp(setup: Setup): List<EquipmentModel> = listOf(EquipmentModel.DEMO_TRACK)
         .filter { m -> setup.equipment.none { it.model == m } }
+
+    /**
+     * A Wi-Fi GPS receiver's address as Android's dialog makes it (FBBD-374): "host:port" from a
+     * [host] and [port] typed apart, or null while either is not usable.
+     */
+    fun tcpAddress(host: String, port: String): String? = TcpAddress.parse(host, port)?.toString()
 
     /** The model named [name] (its Kotlin name, "RACEBOX"), or null. */
     fun model(name: String): EquipmentModel? = EquipmentModel.entries.firstOrNull { it.name == name }

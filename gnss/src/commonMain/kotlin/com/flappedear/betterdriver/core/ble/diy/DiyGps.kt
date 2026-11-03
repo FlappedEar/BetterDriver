@@ -1,16 +1,12 @@
 package com.flappedear.betterdriver.core.ble.diy
 
-import com.flappedear.betterdriver.core.ble.GattProfile
-import com.flappedear.betterdriver.core.ble.bluetoothUuid
-import java.time.DateTimeException
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.util.UUID
+import com.flappedear.betterdriver.core.ble.utcEpochMillis
 
 /**
  * The RaceChrono BLE DIY API (FBBD-118), as specified in the README of
  * https://github.com/aollin/racechrono-ble-diy-device ("RaceChrono BLE DIY APIs"). One service,
- * 0x1FF8; all values big-endian and unsigned unless noted.
+ * 0x1FF8; all values big-endian and unsigned unless noted. The ids are 16-bit Bluetooth numbers
+ * as text, as CoreBluetooth takes them; Android's DiyGatt makes UUIDs of them.
  *
  * Only the GPS feature is used: GPS main (0x0003) and GPS time (0x0004), both READ and NOTIFY.
  * Not used yet: CAN-Bus main (0x0001, a little-endian 32-bit packet id and 1 to 16 payload bytes)
@@ -18,18 +14,12 @@ import java.util.UUID
  * in Phase 5; and the Monitor API (0x0005 configuration, 0x0006 values), with which a device
  * displays values the app computes.
  */
-object DiyGatt {
-    val SERVICE: UUID = bluetoothUuid(0x1FF8)
-    val CAN_MAIN: UUID = bluetoothUuid(0x0001)
-    val CAN_FILTER: UUID = bluetoothUuid(0x0002)
-    val GPS_MAIN: UUID = bluetoothUuid(0x0003)
-    val GPS_TIME: UUID = bluetoothUuid(0x0004)
-
-    /**
-     * GPS main is required. GPS time is subscribed to when it can notify; RaceChrono itself reads
-     * (polls) it when needed, so the source reads it too ([DiyGpsDecoder] asks).
-     */
-    val PROFILE = GattProfile("diy-ble-link", SERVICE, listOf(GPS_MAIN, GPS_TIME), optional = setOf(GPS_TIME))
+object DiyIds {
+    const val SERVICE = "1FF8"
+    const val CAN_MAIN = "0001"
+    const val CAN_FILTER = "0002"
+    const val GPS_MAIN = "0003"
+    const val GPS_TIME = "0004"
 }
 
 /**
@@ -127,11 +117,7 @@ fun parseDiyGpsTime(b: ByteArray): DiyGpsTime? {
     val month = hours % HoursPerYear / HoursPerMonth + 1
     val day = hours % HoursPerMonth / HoursPerDay + 1
     val hour = hours % HoursPerDay
-    val start = try {
-        LocalDate.of(year, month, day).atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli() + hour * MsPerHour
-    } catch (_: DateTimeException) {
-        null
-    }
+    val start = utcEpochMillis(year, month, day, 0, 0, 0)?.let { it + hour * MsPerHour }
     return DiyGpsTime(head ushr SyncShift, start)
 }
 

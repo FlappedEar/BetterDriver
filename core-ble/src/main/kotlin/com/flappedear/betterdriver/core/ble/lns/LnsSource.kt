@@ -4,8 +4,8 @@ import android.content.Context
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.GattNotifyLink
 import com.flappedear.betterdriver.core.ble.GattNotifySpec
+import com.flappedear.betterdriver.core.ble.GnssReceiverSession
 import com.flappedear.betterdriver.core.ble.LinkState
-import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
@@ -42,21 +42,11 @@ class LnsSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = LnsDecoder(sink)
-        decoder.defineChannels()
-        sink.event(LnsEvents.DEVICE, "address=$address name=$deviceName")
-        // onState runs on the link's one thread, so this needs no lock.
-        var wasStreaming = false
-        link = GattNotifyLink(context, address, LnsSpec, onData = decoder::feed, onState = { s ->
-            logLink(address, s, wasStreaming)
-            val streaming = s is LinkState.Streaming
-            if (streaming && !wasStreaming) sink.event(LnsEvents.CONNECTED, address)
-            if (s is LinkState.Reconnecting) {
-                if (wasStreaming) sink.event(LnsEvents.DISCONNECTED, s.reason)
-                decoder.reset()
-            }
-            if (streaming || s is LinkState.Reconnecting) wasStreaming = streaming
-        }).also { it.start() }
+        // The same session as the iPhone's (FBBD-374); onState runs on the link's one thread.
+        val session = GnssReceiverSession.lns(sink, address, deviceName)
+        session.start()
+        link = GattNotifyLink(context, address, LnsSpec, onData = session::feed, onState = session::linkChanged)
+            .also { it.start() }
     }
 
     override fun stop() {

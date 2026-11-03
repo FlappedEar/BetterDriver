@@ -2,9 +2,7 @@ package com.flappedear.betterdriver.core.ble.lns
 
 import com.flappedear.betterdriver.core.ble.LeReader
 import com.flappedear.betterdriver.core.ble.TruncatedValue
-import java.time.DateTimeException
-import java.time.LocalDateTime
-import java.time.ZoneOffset
+import com.flappedear.betterdriver.core.ble.utcEpochMillis
 
 /** Bits of the Flags field (uint16). */
 private const val SpeedPresent = 1 shl 0
@@ -127,11 +125,7 @@ data class LocationAndSpeed(
             val minute = r.uint8()
             val second = r.uint8()
             if (year == 0 || month == 0 || day == 0) return null
-            return try {
-                LocalDateTime.of(year, month, day, hour, minute, second).toInstant(ZoneOffset.UTC).toEpochMilli()
-            } catch (_: DateTimeException) {
-                null
-            }
+            return utcEpochMillis(year, month, day, hour, minute, second)
         }
     }
 }

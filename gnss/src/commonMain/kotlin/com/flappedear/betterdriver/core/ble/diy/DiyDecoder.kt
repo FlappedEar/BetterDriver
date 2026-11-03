@@ -1,11 +1,12 @@
 package com.flappedear.betterdriver.core.ble.diy
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
-import java.util.UUID
+import kotlin.concurrent.Volatile
 
 /**
  * RaceChrono DIY BLE channels beyond the shared [GnssChannels]. Ids 510 to 519; 500 to 599 are
@@ -78,14 +79,19 @@ class DiyGpsDecoder(private val sink: SampleSink, private val requestTime: () ->
         DiyChannels.ALL.forEach(sink::defineChannel)
     }
 
-    /** A notification or read result of [uuid]. Other characteristics are ignored. */
-    @Synchronized
-    fun feed(uuid: UUID, bytes: ByteArray) {
+    /** A notification of GPS main ([DiyIds.GPS_MAIN]). */
+    @JvmSynchronized
+    fun feedMain(bytes: ByteArray) {
         val now = sink.nowMicros()
-        when (uuid) {
-            DiyGatt.GPS_MAIN -> parseDiyGpsMain(bytes)?.let { pending.addLast(Pending(it, now)) }
-            DiyGatt.GPS_TIME -> parseDiyGpsTime(bytes)?.let(::addTime)
-        }
+        parseDiyGpsMain(bytes)?.let { pending.addLast(Pending(it, now)) }
+        drain(now)
+    }
+
+    /** A notification or read result of GPS time ([DiyIds.GPS_TIME]). */
+    @JvmSynchronized
+    fun feedTime(bytes: ByteArray) {
+        val now = sink.nowMicros()
+        parseDiyGpsTime(bytes)?.let(::addTime)
         drain(now)
     }
 
@@ -93,7 +99,7 @@ class DiyGpsDecoder(private val sink: SampleSink, private val requestTime: () ->
      * After a drop: passes on held main values without UTC and forgets the time values, as the
      * sync bits may have moved on before the reconnect.
      */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         while (pending.isNotEmpty()) submit(pending.removeFirst(), null)
         times.clear()
