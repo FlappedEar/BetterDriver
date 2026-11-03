@@ -26,6 +26,7 @@ import kotlinx.cinterop.usePinned
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLock
 import platform.Foundation.NSLocale
 import platform.Foundation.NSString
 import platform.Foundation.NSTimeZone
@@ -129,19 +130,7 @@ class SessionExport(
         return folder
     }
 
-    /**
-     * The clips of the camera the export uses, from the session's events and its clip index
-     * (clips.json, which wins, as on Android); a file cut off before it was finished (no moov) is left out.
-     */
-    private fun clips(id: String): List<VideoClip> {
-        val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
-        val index = NSString.stringWithContentsOfFile("$videoDir/$ClipIndexFile", NSUTF8StringEncoding, null)
-            ?.let(::indexedClips).orEmpty()
-        val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
-        val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
-        val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
-        return present.filter { it.camera == camera }
-    }
+    private fun clips(id: String): List<VideoClip> = wholeVideoClips(store, id)
 
     /** An empty folder for this export of [id]: an earlier one is removed. */
     private fun freshDir(id: String): String {
@@ -158,11 +147,6 @@ class SessionExport(
     }
 
     private fun baseName(id: String) = "BetterDriver-$id"
-
-    private companion object {
-        /** The session's clip index in its video folder (Android's VideoIndex). */
-        const val ClipIndexFile = "clips.json"
-    }
 }
 
 /**
@@ -244,6 +228,64 @@ private class TextFile(private val path: String) : Appendable, AutoCloseable {
     }
 }
 
+/**
+ * The clips of the camera session [id]'s video uses, from its events and its clip index (clips.json,
+ * which wins, as on Android); a file cut off before it was finished (no moov) is left out. Empty: the
+ * session has no video to play or export (FBBD-426).
+ */
+internal fun wholeVideoClips(store: SessionStore, id: String): List<VideoClip> {
+    val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
+    val index = NSString.stringWithContentsOfFile("$videoDir/$SessionClipIndexFile", NSUTF8StringEncoding, null)
+        ?.let(::indexedClips).orEmpty()
+    val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
+    val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
+    val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
+    return present.filter { it.camera == camera }
+}
+
+/**
+ * Whether each session has a whole video file ([wholeVideoClips]), remembered until the files in its
+ * video folder change (their names and sizes): the session list asks on every reload, and finding a
+ * session's clips reads its recording for the video events. A session with no file in its video
+ * folder is answered without reading anything. Thread-safe.
+ */
+internal class VideoPresence(private val store: SessionStore) {
+    private val lock = NSLock()
+    private val known = HashMap<String, Pair<String, Boolean>>()
+
+    fun has(id: String): Boolean {
+        val key = filesKey(id) ?: return false
+        lock.lock()
+        val cached = known[id]?.takeIf { it.first == key }?.second
+        lock.unlock()
+        return cached ?: read(id).also { has ->
+            lock.lock()
+            known[id] = key to has
+            lock.unlock()
+        }
+    }
+
+    /** The session's video files with their sizes, "name:size|…"; null when it has none. */
+    private fun filesKey(id: String): String? {
+        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
+        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null)
+            ?.filterIsInstance<String>().orEmpty().filter { it != SessionClipIndexFile }.sorted()
+        return names.takeIf { it.isNotEmpty() }?.joinToString("|") { "$it:${sizeOf("$dir/$it")}" }
+    }
+
+    private fun read(id: String): Boolean = try {
+        wholeVideoClips(store, id).isNotEmpty()
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun sizeOf(path: String): Long = try {
+        PosixMp4Source(path).use { it.length }
+    } catch (_: IoProblem) {
+        -1L
+    }
+}
+
 /** MP4 files as the recorder leaves them. */
 internal object Mp4Files {
     /**
@@ -257,3 +299,6 @@ internal object Mp4Files {
         false
     }
 }
+
+/** A session's clip index in its video folder (Android's VideoIndex). */
+private const val SessionClipIndexFile = "clips.json"

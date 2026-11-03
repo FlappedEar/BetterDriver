@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.sessionDeleteText
 import com.flappedear.betterdriver.analysis.review.sessionSizeText
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -106,11 +107,11 @@ internal fun SessionActions(
 
 /**
  * Watch video (FBBD-341), for any session with video, with or without laps: a commute's video can be
- * watched too. Not while it records; off while it is being deleted.
+ * watched too. Left out without video or while it records (FBBD-426); off while it is being deleted.
  */
 @Composable
 private fun WatchButton(s: SessionSummary, video: Boolean, delete: DeleteState?, onWatch: () -> Unit) {
-    if (!video || s.state == SessionState.RECORDING) return
+    if (!offersVideo(video, recording = s.state == SessionState.RECORDING)) return
     FilledTonalButton(
         onClick = onWatch,
         enabled = delete != DeleteState.Running,

@@ -151,6 +151,8 @@ private struct SummaryConfidence: View {
 struct SummaryTimesCard: View {
     let ui: AnalysisUi
     let sessionId: String
+    /// The session has video to play (FBBD-426); without, no "Realistic optimal video" row, as Android.
+    let video: Bool
 
     var body: some View {
         Card {
@@ -182,7 +184,7 @@ struct SummaryTimesCard: View {
                 if ui.theoreticalMillis != nil { Dim(ProvenanceMarkKt.ProvenanceLegendText) }
             }
             .accessibilityIdentifier("lapTimes")
-            LapTimesOptimalVideo(sessionId: sessionId)
+            if video { LapTimesOptimalVideo(sessionId: sessionId) }
         }
     }
 }

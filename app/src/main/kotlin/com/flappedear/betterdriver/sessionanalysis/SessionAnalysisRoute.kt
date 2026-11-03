@@ -35,6 +35,7 @@ import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.map.driveMap
 import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
@@ -74,6 +75,7 @@ import com.flappedear.betterdriver.feature.track.editor.KeepGoogleSession
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionTitle
@@ -329,6 +331,8 @@ internal fun SessionAnalysisRoute(
     // The session as Sessions lists it, for the title: its start and track, read or not.
     val sessions = remember { Sessions.get(context) }
     val listed = sessions.list.firstOrNull { it.id == id }
+    // Video entry points only with video to play (FBBD-426): hidden, not greyed out, without.
+    val offers = offersVideo(id in sessions.withVideo, recording = listed?.state == SessionState.RECORDING)
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
     // The satellite photo under the perfect lap in 3D once a key is entered on the editor's map
     // (UI-201 B): Google's (FBBD-412), else MapTiler's. Made again when its credit grows.
@@ -354,11 +358,11 @@ internal fun SessionAnalysisRoute(
                         onCoachReview = { nav.navigate(Routes.cueReview(id)) },
                     )
                 },
-                optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
+                optimalVideo = if (offers) optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo) else null,
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
                 // The Video tab, only for a session with video (FBBD-392), as on iOS.
-                video = if (id in sessions.withVideo) {
+                video = if (offers) {
                     {
                         SessionVideoTab(id, listed?.let(::sessionTitle).orEmpty()) { part, handle ->
                             nav.navigate(Routes.watchVideo(id, part, handle))

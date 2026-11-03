@@ -53,6 +53,9 @@ struct SessionView: View {
     /// The player came from the sheet, so closing it opens the sheet again; from the Video tab it returns there.
     @State private var fromSheet = false
     @State private var hasVideo = false
+    /// Counts the session changes, so [hasVideo] is read again after each: a phone video finishing
+    /// after the session was opened turns its video entry points on (FBBD-426).
+    @State private var videoCheck = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,9 +97,16 @@ struct SessionView: View {
         .fullScreenCover(item: $everyPass) { EveryPassScreen(link: $0) }
         .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
-        .task(id: session.id) {
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in videoCheck += 1 }
+        .task(id: "\(session.id)#\(videoCheck)") {
             let id = session.id
-            hasVideo = await Task.detached { Exports.make().hasVideo(id: id) }.value
+            // Video entry points only with a whole video to play (FBBD-426), the shared core's rule.
+            hasVideo = await Task.detached {
+                VideoOfferKt.offersVideo(
+                    hasVideo: Exports.make().hasVideo(id: id),
+                    recording: PhoneVideoFinishing.shared.busy(sessionId: id)
+                )
+            }.value
         }
     }
 
@@ -112,7 +122,7 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary:
-                SummaryTab(summary: summary, sessionId: session.id, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
+                SummaryTab(summary: summary, sessionId: session.id, video: hasVideo, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
             case .compare: CompareTab(compare: compare, summary: summary, states: screen?.compare)
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
@@ -221,6 +231,8 @@ private struct TabRow: View {
 private struct SummaryTab: View {
     let summary: SessionSummary
     let sessionId: String
+    /// The session offers its video (FBBD-426): the realistic optimal video under the lap times only then.
+    let video: Bool
     let screen: AnalysisUi?
     let compare: (Int) -> Void
     let openLine: () -> Void
@@ -236,7 +248,7 @@ private struct SummaryTab: View {
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr, laps: ui.laps) }
                 // Highlights: this session against the earlier ones at its track (FBBD-122), with its title once read.
                 ProgressionSummaryCard(summary: summary, sessionId: sessionId)
-                SummaryTimesCard(ui: ui, sessionId: sessionId)
+                SummaryTimesCard(ui: ui, sessionId: sessionId, video: video)
                 // The conditions the lap times were driven in (FBBD-403), under them as on Android.
                 SummaryWeatherCard(sessionId: sessionId)
                 // What came of the last focus (FBBD-180, FBBD-364): the loop closed, under the lap times as on Android.

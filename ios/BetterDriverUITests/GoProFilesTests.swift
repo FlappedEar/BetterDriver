@@ -47,7 +47,7 @@ final class GoProFilesTests: XCTestCase {
 
         // Once it has video, the camera offers Add no more.
         rows.element(boundBy: 0).press(forDuration: 1.2)
-        XCTAssertTrue(app.buttons["Watch video"].firstMatch.waitForExistence(timeout: 10), "no session menu")
+        XCTAssertTrue(app.buttons["Share"].firstMatch.waitForExistence(timeout: 10), "no session menu")
         XCTAssertFalse(add.exists, "Add is still offered")
     }
 
