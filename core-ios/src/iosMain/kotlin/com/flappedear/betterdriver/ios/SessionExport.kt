@@ -148,7 +148,9 @@ class SessionExport(
         val data = store.read(id)
         val clips = clips(id)
         val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
-        TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use { VboExport.export(data, it, video, vboAccelerations(data)) }
+        TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use {
+            VboExport.export(data, it, video, vboAccelerations(data))
+        }
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
         video?.orderedClips?.forEachIndexed { i, clip ->
             val to = "$folder/${video.fileName(i)}"
