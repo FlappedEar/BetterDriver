@@ -2,8 +2,10 @@
 
 package com.flappedear.betterdriver.ios
 
-import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
+import com.flappedear.betterdriver.coach.TrackCoachFiles
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.recorder.log.CoreLog
+import com.flappedear.betterdriver.recorder.log.logLine
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.Circuit
@@ -38,6 +40,8 @@ private const val MaxScannedSessions = 40
 
 private const val MillisPerSecond = 1000.0
 
+private const val TracksTag = "Tracks"
+
 /** Closer than this, the place is "here" on the Tracks screen. */
 private const val HereMeters = 100.0
 private const val MetersPerKm = 1000.0
@@ -71,8 +75,8 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     private val lock = NSRecursiveLock()
     private val store = iosTrackStore(tracksDir)
 
-    /** The coaching history (FBBD-180) beside the tracks; it goes with its track, as on Android. */
-    private val history = CoachingHistoryStore(coachingHistoryDir(tracksDir.substringBeforeLast('/')))
+    /** The coach's files of each track (coach/ beside the tracks); they go with their track, as on Android. */
+    private val coach = TrackCoachFiles(tracksDir.substringBeforeLast('/') + "/coach")
 
     /** Every readable track, by name. */
     fun list(): List<Track> = locked { TrackFiles.read(store) }
@@ -141,14 +145,19 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     fun validName(name: String): Boolean = name.trim().let { it.isNotEmpty() && it.length <= Track.MaxNameChars }
 
     /**
-     * Deletes track [id] with its coaching history, as Android, so a track made again under its id
-     * never inherits it; sessions recorded there keep their data and track name. True when it is gone.
+     * Deletes track [id] with its coach reference, picked corners, session focus records, coaching
+     * history and line and day plans, by the core Android uses (TrackCoachFiles), so a track made again
+     * under its id never inherits them; sessions recorded there keep their data and track name. True
+     * when it is gone.
      */
     @Suppress("TooGenericExceptionCaught") // A delete that fails says so, never a crash.
     fun delete(id: String): Boolean = locked {
         if (!validId(id)) return@locked false
         try {
-            if (!history.delete(id)) return@locked false
+            val coachGone = coach.delete(id) { what, e ->
+                logLine(CoreLog.LevelWarn, TracksTag, "deleting $what for $id failed", e)
+            }
+            if (!coachGone) return@locked false
             store.delete(id)
             store.get(id) == null
         } catch (_: Exception) {
