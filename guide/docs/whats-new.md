@@ -24,6 +24,8 @@ The full notes of every release are on
 - Track editor: lines fit the track's real width, with **Width −/+** to change it.
 - Saved perfect-lap videos keep MapTiler's satellite photo when a MapTiler key is entered.
 - Google's satellite photos stop at 2,500 tiles a day per device, inside Google's free tier.
+- iPhone: the Car tab shows the whole drive for a session without laps, and tyre pressures no
+  longer mix into car channels such as coolant and RPM.
 
 ## 1.29.0
 
