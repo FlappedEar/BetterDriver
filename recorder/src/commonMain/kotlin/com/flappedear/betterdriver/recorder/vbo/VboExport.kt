@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.vbo
 
+import com.flappedear.betterdriver.math.roundHalfUp
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -25,6 +26,11 @@ private const val MaxInterpolationGapMicros = 1_000_000L
  * reads as a line rather than steps. Before a channel's first value the first value is used; a
  * channel with no values at all is left out.
  * If a fix has no GNSS UTC time, session start time plus elapsed time is used.
+ * The time column only goes forward (FBBD-436): a fix whose time is not after the row before it is
+ * left out, such as the cached fix iOS Core Location hands over at the start (stamped seconds before
+ * the fixes already written) or the same fix delivered twice. Circuit Tools and Overlays read the
+ * rows as a time series; [Written.fixes] counts only the fixes with a new time, so a left-out repeat
+ * is not reported as a lost sample, and [Written.repeated] says how many were left out.
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
  * The data then starts at the first video's start: Circuit Tools plays video file 1 from the first
  * data row and ignores its avisynctime offset (FBBD-51, checked by Arek with sync kit variant E).
@@ -46,8 +52,11 @@ object VboExport {
         GnssChannels.ALT_M to VboColumn("height", "height", "", VboWriter::height),
     )
 
-    /** What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers. */
-    data class Written(val rows: Int, val fixes: Int)
+    /**
+     * What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers;
+     * [repeated] fixes were left out because their time was not after the row before (FBBD-436).
+     */
+    data class Written(val rows: Int, val fixes: Int, val repeated: Int = 0)
 
     /** Writes [session] as VBO text to [out]; the JVM's VboExporter writes it to a stream as UTF-8. */
     fun export(
@@ -60,7 +69,9 @@ object VboExport {
         // The sort is stable: sets with equal times keep their file order.
         val sets = session.sampleSets.sortedBy { it.tMicros }
         val from = video?.startMicros ?: Long.MIN_VALUE
-        val fixes = sets.count { isFix(it) && it.tMicros >= from }
+        val written = forwardFixes(session, sets, from)
+        val fixes = written.size
+        val repeated = sets.count { isFix(it) && it.tMicros >= from } - fixes
         var rows = 0
         val firstValue = HashMap<Int, Double>()
         for (set in sets) for (v in set.values) if (v.channelId !in firstValue) firstValue[v.channelId] = v.value
@@ -79,11 +90,41 @@ object VboExport {
                 gates = gates(session),
                 aviBaseName = video?.baseName,
                 aviExtension = video?.takeIf { it.extensionLine }?.extension,
-                rows = rows(session, sets, extra, firstValue, derivedHere, video).onEach { rows++ },
+                rows = rows(session, sets, extra, firstValue, derivedHere, video, written).onEach { rows++ },
             ),
         )
-        return Written(rows, fixes)
+        return Written(rows, fixes, repeated)
     }
+
+    /**
+     * The fixes in [sets] at or after [from] that get a row, as indices into [sets]: each one's time
+     * is after the time of the one before it (see the class comment, FBBD-436).
+     */
+    private fun forwardFixes(session: SessionData, sets: List<SampleSet>, from: Long): Set<Int> {
+        val kept = HashSet<Int>()
+        var last = Double.NEGATIVE_INFINITY
+        var utc: Double? = null
+        sets.forEachIndexed { i, set ->
+            set.values.lastOrNull { it.channelId == GnssChannels.UTC_MS.id }?.let { utc = it.value }
+            if (isFix(set) && set.tMicros >= from) {
+                // Compared as written, to the millisecond: two fixes within one ms would print the same time.
+                val time = roundHalfUp(rowTime(session, set, utc)).toDouble()
+                if (time > last) {
+                    kept += i
+                    last = time
+                }
+            }
+        }
+        return kept
+    }
+
+    /** The time column of [set]'s row: its GNSS UTC time, or session start plus elapsed time without one. */
+    private fun rowTime(session: SessionData, set: SampleSet, latestUtc: Double?): Double =
+        if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {
+            session.info.startUtcMillis + set.tMicros / MicrosPerMilli
+        } else {
+            latestUtc ?: 0.0
+        }
 
     private fun extraColumns(extra: List<ChannelDef>, derived: List<VboDerivedChannel>): List<VboColumn> {
         // Unique against standard header and column names, so a custom channel can never pose as a standard one,
@@ -139,6 +180,7 @@ object VboExport {
         firstValue: Map<Int, Double>,
         derived: List<VboDerivedChannel>,
         video: VboVideo?,
+        written: Set<Int>,
     ) = sequence {
         val extraIds = extra.map { it.id }
         val width = STANDARD.size + extraIds.size + derived.size + if (video != null) 2 else 0
@@ -146,10 +188,9 @@ object VboExport {
         val lines = extra.filter { it.source == ObdSource }.associate { it.id to Readings.of(sets, it.id) }
         // Sample-and-hold like the recorded channels: the newest derived value at or before each fix.
         val next = IntArray(derived.size)
-        for (set in sets) {
+        for ((index, set) in sets.withIndex()) {
             set.values.forEach { latest[it.channelId] = it.value }
-            val beforeVideo = video?.startMicros?.let { set.tMicros < it } ?: false
-            if (isFix(set) && !beforeVideo) {
+            if (index in written) {
                 val row = DoubleArray(width)
                 STANDARD.forEachIndexed { i, (ch, _) -> row[i] = latest[ch.id] ?: 0.0 }
                 if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {
