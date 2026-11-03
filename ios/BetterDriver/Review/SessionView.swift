@@ -117,7 +117,7 @@ struct SessionView: View {
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
             case .corners: CornersTab(screen: screen)
-            case .car: CarTab(car: screen?.car)
+            case .car: CarTab(car: screen?.car ?? summary.whole.car)
             case .video: DataVideoPanel(sessionId: session.id, title: title) { playing = $0 }
             }
         } else {
@@ -228,15 +228,19 @@ private struct SummaryTab: View {
     var body: some View {
         CardColumn {
             if let ui = screen, !summary.laps.isEmpty {
+                // As Apple Health (UI-307 A, FBBD-421), as Android: Pinned, then Highlights, then the rest.
+                HealthSectionTitle("Pinned")
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
+                SummaryBestLapCard(ui: ui)
+                // Heart rate under the best lap, only when the session recorded it (UI-107 A, UI-109).
+                if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr, laps: ui.laps) }
+                // Highlights: this session against the earlier ones at its track (FBBD-122), with its title once read.
+                ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 SummaryTimesCard(ui: ui, sessionId: sessionId)
-                if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
                 // The conditions the lap times were driven in (FBBD-403), under them as on Android.
                 SummaryWeatherCard(sessionId: sessionId)
                 // What came of the last focus (FBBD-180, FBBD-364): the loop closed, under the lap times as on Android.
                 CoachingHistoryCard(summary: summary)
-                // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
-                ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, summary: summary, compare: compare) }
             } else if summary.laps.isEmpty {
                 if summary.trackName == nil {

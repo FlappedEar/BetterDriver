@@ -224,6 +224,12 @@ final class AppEvents: NSObject, MXMetricManagerSubscriber {
                 if now { log.writeNow(level, "App", text) } else { log.write(level, "App", text) }
             }
         }
+        // Which files the app holds as it may be suspended (FBBD-430: macOS killed it for a lock).
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { OpenFiles.logOnBackground(log) }
+        })
         MXMetricManager.shared.add(self)
     }
 

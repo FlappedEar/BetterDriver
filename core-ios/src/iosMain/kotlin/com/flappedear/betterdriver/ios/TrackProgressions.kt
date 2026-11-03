@@ -6,9 +6,11 @@ import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.coaching.keepCoachingHistory
 import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
+import com.flappedear.betterdriver.analysis.progression.AddResult
 import com.flappedear.betterdriver.analysis.progression.CornerMapping
 import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
+import com.flappedear.betterdriver.analysis.progression.addNewest as scanNewest
 import com.flappedear.betterdriver.analysis.progression.systemDayZone
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.savedTrackId
@@ -24,12 +26,6 @@ import com.flappedear.betterdriver.timing.track.Track
 import platform.Foundation.NSDate
 import platform.Foundation.NSRecursiveLock
 import platform.Foundation.timeIntervalSince1970
-
-/** At most this many of the track's sessions are analysed for the progression each time it opens, newest first. */
-internal const val MaxProgressionAdds = 20
-
-/** Of at most this many of the track's sessions, newest first; sessions at other tracks are not counted. */
-internal const val MaxProgressionScan = 120
 
 private const val MillisPerSecond = 1000.0
 
@@ -81,30 +77,24 @@ class TrackProgressions internal constructor(
         val kept = records(trackId).filter { it.algorithm == CoachingHistoryAlgorithm }
             .map { it.sessionId }.toMutableSet()
         fun triedHere(id: String) = locked { "$trackId/$id" in tried }
-        val pending = sessions.count { it !in kept && !triedHere(it) }
-        var passed = 0
-        var seen = 0
-        var tries = 0
-        for (id in sessions) {
-            if (seen >= MaxProgressionScan || tries >= MaxProgressionAdds) break
-            if (id in kept) {
-                seen++
-            } else if (!triedHere(id)) {
-                left(minOf(pending - passed, MaxProgressionAdds - tries))
-                passed++
-                val result = add(trackId, id, saved)
-                if (result != Added.Elsewhere) {
-                    seen++
-                    tries++
+        // The scan and its limits are Android's, from the shared core (FBBD-360).
+        return scanNewest(
+            sessions,
+            current = { it in kept },
+            tried = ::triedHere,
+            add = { id ->
+                when (add(trackId, id, saved)) {
+                    Added.Kept -> {
+                        kept += id
+                        added()
+                        AddResult.Added
+                    }
+                    Added.Elsewhere -> AddResult.Elsewhere
+                    Added.Analysed, Added.Failed -> AddResult.Failed
                 }
-                if (result == Added.Kept) {
-                    kept += id
-                    added()
-                }
-            }
-        }
-        left(0)
-        return tries
+            },
+            left = left,
+        )
     }
 
     /**

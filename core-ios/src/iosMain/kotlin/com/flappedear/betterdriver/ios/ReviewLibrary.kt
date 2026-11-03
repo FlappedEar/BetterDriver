@@ -2,7 +2,6 @@
 
 package com.flappedear.betterdriver.ios
 
-import com.flappedear.betterdriver.analysis.weather.WeatherUi
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.DayPlanStore
@@ -13,28 +12,40 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.LapVideoReview
 import com.flappedear.betterdriver.analysis.review.PickerSession
 import com.flappedear.betterdriver.analysis.review.PickerTrack
-import com.flappedear.betterdriver.analysis.review.pickerSession
-import com.flappedear.betterdriver.analysis.review.pickerTracks
-import com.flappedear.betterdriver.analysis.review.sessionVideoSource
 import com.flappedear.betterdriver.analysis.review.ReviewedSession
 import com.flappedear.betterdriver.analysis.review.TrackProposal
 import com.flappedear.betterdriver.analysis.review.indexedClips
+import com.flappedear.betterdriver.analysis.review.pickerSession
+import com.flappedear.betterdriver.analysis.review.pickerTracks
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
+import com.flappedear.betterdriver.analysis.review.sessionVideoSource
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.analysis.review.trackProposal as proposeFromSession
+import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.weather.WeatherUi
 import com.flappedear.betterdriver.coach.CoachPicksStore
+import com.flappedear.betterdriver.coach.DrivePinned
+import com.flappedear.betterdriver.coach.PinnedSession
+import com.flappedear.betterdriver.coach.driveFocus
+import com.flappedear.betterdriver.coach.lastTimeHere
 import com.flappedear.betterdriver.coach.CueCountsText
 import com.flappedear.betterdriver.coach.CueReview
+import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.coach.card
+import com.flappedear.betterdriver.coach.coachCandidates
+import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.focusRecord
 import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.coach.rememberCueCounts
-import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.feature.analysis.CoachingCardUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.recorder.log.CoreLog
+import com.flappedear.betterdriver.recorder.log.logInfo
+import com.flappedear.betterdriver.recorder.log.logLine
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -56,6 +67,8 @@ import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterMediumStyle
 import platform.Foundation.NSDateFormatterShortStyle
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSTimeZone
+import platform.Foundation.localTimeZone
 import platform.Foundation.NSLock
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
@@ -78,6 +91,7 @@ class ReviewLibrary(base: String) {
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
     private val plans = LinePlanStore(linePlansDir(base))
     private val days = DayPlanStore(dayPlansDir(base))
+    private val focus = SessionFocusStore(sessionFocusDir(base))
     private val trackFiles = TrackLibrary(tracksRoot, sessionsRoot)
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
     private val cueCountsFile = "$base/coach/cues.txt"
@@ -91,6 +105,9 @@ class ReviewLibrary(base: String) {
      * measured, with each failure, from the report kept beside it as on Android; null when there is none.
      */
     fun quality(id: String): QualityUi? = quality.card(id)
+
+    /** Every check of session [id] as `id=VERDICT value`, for the UI tests' gates (FBBD-376); null with no report. */
+    fun qualityChecks(id: String): String? = quality.checks(id)
 
     private val weather = SessionWeatherCards(sessionsRoot)
 
@@ -110,7 +127,19 @@ class ReviewLibrary(base: String) {
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
 
     /** Deletes session [id] with everything in its folder, its video included, as Android (FBBD-90). */
-    fun delete(id: String): DeleteResult = store.delete(id)
+    fun delete(id: String): DeleteResult = store.delete(id).also { r ->
+        if (r == DeleteResult.DELETED || r == DeleteResult.NOT_FOUND) forgetFocus(id)
+    }
+
+    /** Deletes session [id]'s next-session focus with it, as Android does, so the coach never works from it. */
+    @Suppress("TooGenericExceptionCaught") // A focus left behind is logged; the session is gone either way.
+    private fun forgetFocus(id: String) {
+        try {
+            if (!focus.deleteSession(id)) logLine(CoreLog.LevelWarn, FocusTag, "session focus of $id not deleted")
+        } catch (e: Exception) {
+            logLine(CoreLog.LevelWarn, FocusTag, "session focus of $id not deleted", e)
+        }
+    }
 
     /**
      * Writes session [id] as a .bdsession under [outRoot] to share, as Android's Share: its files,
@@ -148,7 +177,30 @@ class ReviewLibrary(base: String) {
         }
         val reviewed = reviewSession(store.read(id), saved, keep) { track -> lineSessions(id, track, saved) }
         reviewed.linePlan?.let(::savePlan)
+        keepFocus(reviewed, id)
         return reviewed
+    }
+
+    /**
+     * Keeps what session [id] recommends working on next (FBBD-20, FBBD-424), as Android's analysis
+     * keeps it: the next coached session at its track works on it first, and the Drive tab's Next
+     * session here shows it. Written only when it changed; one that cannot be saved is logged.
+     */
+    @Suppress("TooGenericExceptionCaught") // A focus that cannot be kept only leaves the coach without it.
+    private fun keepFocus(reviewed: ReviewedSession, id: String) {
+        val track = reviewed.review.track
+        val plan = reviewed.focusPlan
+        val start = reviewed.startUtcMillis
+        if (track == null || plan == null || start == null) return
+        val corners = if (coaches(track)) coachCandidates(reviewed.flaggableCorners, id) else emptyMap()
+        val record = focusRecord(track.id, id, start, plan, corners)
+        try {
+            if (focus.save(record)) {
+                logInfo("SessionFocus", "session focus of $id: ${record.targets.joinToString { it.name }}")
+            }
+        } catch (e: Exception) {
+            logLine(CoreLog.LevelWarn, FocusTag, "session focus of $id not saved", e)
+        }
     }
 
     // A plan that cannot be saved only leaves the next coached session without it.
@@ -337,6 +389,29 @@ class ReviewLibrary(base: String) {
     /** Each listed session's row, as Android's (UI-139 C): its detail line and best lap. Off the main thread. */
     fun sessionRows(): Map<String, SessionRowFacts> = rows.read(sessions())
 
+    /**
+     * Drive's Pinned cards (UI-308 A, FBBD-421) at the saved track [trackId] the phone is at, named
+     * [track] on screen: the focus the last session there kept for the next one (FBBD-20) and the last
+     * day there, worked out by the shared core as on Android. Nothing while the track is unknown or
+     * when it cannot be read. Reads the sessions' laps: off the main thread.
+     */
+    @Suppress("TooGenericExceptionCaught") // Swift cannot catch a Kotlin exception; the cards are only left out.
+    fun drivePinned(trackId: String?, track: String?): DrivePinned = try {
+        val listed = sessions()
+        val ids = listed.map { it.id }.toSet()
+        val next = trackId?.let { driveFocus(focus.latest(it, kept = { id -> id in ids })) }
+        val zone = NSTimeZone.localTimeZone
+        val pinned = listed.map { s ->
+            val start = s.info.startUtcMillis
+            val at = NSDate.dateWithTimeIntervalSince1970(start / MillisPerSecond)
+            val offset = zone.secondsFromGMTForDate(at) * MillisPerSecondLong
+            PinnedSession(s.id, s.info.track, start, (start + offset).floorDiv(MillisPerDay), recording = false)
+        }
+        DrivePinned(next, lastTimeHere(pinned, rows.facts(listed), track))
+    } catch (_: Exception) {
+        DrivePinned()
+    }
+
     private val pickerLock = NSLock()
     private val pickerCache = HashMap<String, Pair<PickerStamp, Pair<String, PickerSession>?>>()
 
@@ -392,6 +467,12 @@ class ReviewLibrary(base: String) {
             }
         } catch (e: Exception) {
             lines += "recovery stopped: ${e.message}"
+        }
+        // A drive imported twice before FBBD-427 is listed once again; its extra imported copies go.
+        try {
+            store.removeCopies().forEach { lines += "$it removed: a copy of a drive listed twice" }
+        } catch (e: Exception) {
+            lines += "removing copies stopped: ${e.message}"
         }
         return lines
     }
@@ -503,6 +584,9 @@ private const val MillisPerSecond = 1000.0
 /** The session's clip index in its video folder (Android's VideoIndex). */
 private const val ClipIndexFile = "clips.json"
 
+/** The log tag of the next-session focus, as Android's. */
+private const val FocusTag = "SessionFocus"
+
 private fun fileExists(path: String): Boolean = NSFileManager.defaultManager.fileExistsAtPath(path)
 
 private fun readSmall(path: String): String? = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
@@ -515,3 +599,6 @@ internal fun sessionLabel(startUtcMillis: Long): String = NSDateFormatter().appl
 
 /** What became of a received session: added to the list, or the one already here kept. */
 enum class ImportOutcome { ADDED, KEPT }
+
+private const val MillisPerSecondLong = 1000L
+private const val MillisPerDay = 86_400_000L

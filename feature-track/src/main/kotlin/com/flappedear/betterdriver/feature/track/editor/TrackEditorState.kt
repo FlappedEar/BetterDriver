@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.timing.edit.LapPath
 import com.flappedear.betterdriver.timing.edit.LineRef
 import com.flappedear.betterdriver.timing.edit.line
 import com.flappedear.betterdriver.timing.edit.sectorsInLapOrder
+import com.flappedear.betterdriver.timing.edit.widened
 import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
@@ -246,6 +247,16 @@ class TrackEditorState(
         val ref = selected ?: return
         val l = track.line(ref) ?: return
         track = track.withLine(ref, if (left) l.copy(left = to) else l.copy(right = to))
+    }
+
+    /** The selected line's width in whole metres, or 0 when it is not placed (FBBD-438). */
+    val selectedWidthMeters: Int get() = selectedLine?.widthMeters?.let { kotlin.math.round(it).toInt() } ?: 0
+
+    /** Makes the selected line [steps] steps of 2 m wider, or narrower when negative (FBBD-438). */
+    fun widen(steps: Int) {
+        val ref = selected ?: return
+        val l = track.line(ref) ?: return
+        track = track.withLine(ref, l.widened(steps))
     }
 
     /** Turns the selected line round, for the other direction of travel. */

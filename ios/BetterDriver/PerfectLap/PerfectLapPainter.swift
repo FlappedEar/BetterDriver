@@ -57,6 +57,8 @@ final class PerfectLapPainter {
         guard let tiles else { return 0 }
         var drawn = 0
         for t in pieces {
+            // Stop on the video ends the frame's waits at once; its caller then throws.
+            if waitForTiles, Task.isCancelled { break }
             let image = waitForTiles ? tiles.load(z: t.z, x: t.x, y: t.y) : tiles.tile(z: t.z, x: t.x, y: t.y)
             if let image, piece(cg, t, image) { drawn += 1 }
         }

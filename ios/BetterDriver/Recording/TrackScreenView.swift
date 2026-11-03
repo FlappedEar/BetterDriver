@@ -158,6 +158,10 @@ enum OrientationLock {
     static var mask = normal
 
     static func set(_ wanted: UIInterfaceOrientationMask) {
+        // The iPad is not turned (FBBD-435): with windowed apps (iPadOS 26 on) an asked orientation
+        // resizes the app's window instead, and the ask back to portrait left the whole app in a
+        // phone-sized window after the video. The video itself is drawn landscape either way.
+        if UIDevice.current.userInterfaceIdiom == .pad { return }
         mask = wanted == .portrait ? normal : wanted
         turn(wanted, retry: true)
     }
@@ -167,6 +171,8 @@ enum OrientationLock {
     /// refusal is asked again once it has settled.
     private static func turn(_ wanted: UIInterfaceOrientationMask, retry: Bool) {
         guard mask == (wanted == .portrait ? normal : wanted) else { return }
+        // A Mac window does not turn, and macOS refuses every ask (12 lines a Mac session).
+        if ProcessInfo.processInfo.isiOSAppOnMac { return }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         var controller = scene?.keyWindow?.rootViewController
         while let c = controller {

@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryAlgorithm
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.coaching.originOf
+import com.flappedear.betterdriver.analysis.progression.AddResult
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -14,12 +15,6 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.Collections
-
-/** At most this many of the track's sessions are analysed for the progression each time it opens, newest first. */
-internal const val MaxProgressionAdds = 20
-
-/** Of at most this many of the track's sessions, newest first; sessions at other tracks are not counted. */
-internal const val MaxProgressionScan = 120
 
 /** Sessions already tried for a track since the app started ("track/session"), so none is analysed twice in vain. */
 private val tried: MutableSet<String> = Collections.synchronizedSet(HashSet())
@@ -34,46 +29,6 @@ internal fun readHistory(store: CoachingHistoryStore, trackId: String): List<Ses
 
 /** Whether session [sessionId] was tried for the progression at track [trackId] since the app started. */
 internal fun triedAt(trackId: String, sessionId: String): Boolean = "$trackId/$sessionId" in tried
-
-/**
- * Goes through [candidates] (session ids, newest first) for the progression (FBBD-181), analysing
- * with [add] those whose record is missing or older than this app's ([current] says whether one is
- * current), not tried already ([tried]). [add] says what came of each: only sessions at other tracks
- * ([AddResult.Elsewhere]) leave the limits as they are, so they never use them up, while a session
- * that could not be read or analysed counts as tried. It stops after [maxScan] of the track's sessions
- * (a current record says one is) or [maxAdds] tried. [left] hears, before each [add], how many more may
- * be tried at most. Returns how many were tried.
- */
-@Suppress("LongParameterList") // What to go through, how, and its limits.
-internal suspend fun addNewest(
-    candidates: List<String>,
-    current: (String) -> Boolean,
-    tried: (String) -> Boolean,
-    add: suspend (String) -> AddResult,
-    left: (Int) -> Unit = {},
-    maxScan: Int = MaxProgressionScan,
-    maxAdds: Int = MaxProgressionAdds,
-): Int {
-    val pending = candidates.count { !current(it) && !tried(it) }
-    var passed = 0
-    var seen = 0
-    var added = 0
-    for (id in candidates) {
-        if (seen >= maxScan || added >= maxAdds) break
-        if (current(id)) {
-            seen++
-        } else if (!tried(id)) {
-            left(minOf(pending - passed, maxAdds - added))
-            passed++
-            if (add(id) != AddResult.Elsewhere) {
-                seen++
-                added++
-            }
-        }
-    }
-    left(0)
-    return added
-}
 
 /**
  * The sessions to go through for the progression at track [trackId] (FBBD-181), newest first: every
@@ -110,18 +65,6 @@ internal fun addToHistory(
         DebugLog.w(Tag, "session ${summary.id} not added to the progression", e)
         AddResult.Failed
     }
-}
-
-/** What came of a session tried for the progression ([addToHistory]). */
-internal enum class AddResult {
-    /** Analysed at the track, its record kept. */
-    Added,
-
-    /** Not read or not analysed: it may be the track's, so it counts as tried. */
-    Failed,
-
-    /** Another track's session, or one at no track: it leaves the limits as they are. */
-    Elsewhere,
 }
 
 /**

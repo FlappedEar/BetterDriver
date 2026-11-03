@@ -6,7 +6,11 @@ import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoPosition
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
+import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.Lap
+import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.replay.LapTrace
+import com.flappedear.betterdriver.timing.replay.TracePoint
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -14,6 +18,9 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 // Two laps with their videos for the iPad review (FBBD-331), as Android's lap review (FBBD-93):
 // the same clips, the same placing on the session clock, the same TraceComparison.
@@ -106,3 +113,27 @@ private fun clipOf(o: JsonObject): VideoClip? {
 private fun JsonObject.text(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
 
 private const val MicrosPerMilli = 1_000L
+
+/**
+ * Two made-up laps of an oval with [fixesPerLap] fixes each and no video, lap B 2 s slower: the
+ * lap review's frame-time test on the iPad and iPhone simulators (FBBD-429) plays it to measure
+ * what the review costs a display frame. 2 750 fixes is a 1:50 lap at 25 Hz.
+ */
+@Suppress("MagicNumber") // The made-up oval's size, speeds and lap times.
+fun syntheticLapVideoReview(fixesPerLap: Int = 2_750): LapVideoReview {
+    fun lap(number: Int, seconds: Double): VideoLap {
+        val micros = (seconds * 1e6).toLong()
+        val start = number * 200_000_000L
+        val radius = 300.0
+        val points = List(fixesPerLap) { i ->
+            val u = i.toDouble() / (fixesPerLap - 1)
+            val angle = u * 2 * PI
+            val xy = Xy(radius * cos(angle) * 1.6, radius * sin(angle))
+            val t = (u * micros).toLong()
+            TracePoint(start + t, t, 0.0, 0.0, xy, u * 2_500.0, 80.0 + 60.0 * sin(angle * 6))
+        }
+        val lap = Lap(number, LapKind.Timed, start, start + micros, emptyList())
+        return VideoLap(LapTrace("synthetic", lap, points), null)
+    }
+    return LapVideoReview(lap(1, 110.0), lap(2, 112.0))
+}

@@ -2,36 +2,48 @@ import BetterDriverCore
 import CoreLocation
 import SwiftUI
 
-/// The Drive tab on the iPhone (UI-282 B): the Android app's amber START under a large title. START
-/// opens the sheet of receivers nearby (UI-285 B); picking one starts the session and the track screen.
+/// The Drive tab on the iPhone (UI-282 B; cards since UI-308 A, FBBD-421), as Android's Drive: a large
+/// title, the amber START ring with the place the phone is at, then Pinned cards in the session
+/// summary's style: what to work on next time here and how the last day here went (each only with
+/// data, worked out by the shared core), and the devices this session uses. START opens the sheet of
+/// receivers nearby (UI-285 B); picking one starts the session and the track screen.
 struct DriveView: View {
     @EnvironmentObject private var recorder: RecordingController
+    @EnvironmentObject private var settings: SettingsModel
     @StateObject private var place = PlaceFinder()
     @State private var picking = false
     @State private var camera = true
     @State private var videoMode = PhoneVideoMode.standard
+    @State private var pinned = DrivePinned(focus: nil, lastTime: nil)
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
-                Spacer()
-                StartButton(place: place.name) { picking = true }
-                if !recorder.lastReceiverName.isEmpty {
-                    Chip(text: recorder.lastReceiverName)
+            ScrollView {
+                VStack(spacing: 10) {
+                    StartButton(place: place.name) { picking = true }
+                        .padding(.vertical, 4)
+                    if let error = recorder.error {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(TrackColors.loss)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("recordingError")
+                    }
+                    HealthSectionTitle("Pinned").padding(.top, 4)
+                    if let focus = pinned.focus { NextSessionHereCard(focus: focus, track: place.name) }
+                    if let last = pinned.lastTime { LastTimeHereCard(last: last) }
+                    ThisSessionCard(setup: settings.setup, receiver: recorder.lastReceiverName, phoneCamera: camera) {
+                        picking = true
+                    }
                 }
-                if let error = recorder.error {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(TrackColors.loss)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("recordingError")
-                }
-                Spacer()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .frame(maxWidth: 700)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 18)
-            .frame(maxWidth: .infinity)
             .background(Palette.background)
             .navigationTitle("Drive")
+            .navigationBarTitleDisplayMode(.large)
         }
         .sheet(isPresented: $picking) {
             ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera, videoMode: $videoMode) { receiver in
@@ -55,10 +67,107 @@ struct DriveView: View {
             // The UI test runs without location access and its prompt.
             if !UITestMode.on { place.find() }
         }
+        // Read again at a new place and after each session, off the main thread (it reads the sessions' laps).
+        .task(id: "\(place.trackId ?? "")|\(place.name ?? "")|\(recorder.isRecording)") {
+            guard !recorder.isRecording else { return }
+            let (id, name) = (place.trackId, place.name)
+            pinned = await Task.detached(priority: .utility) {
+                ReviewBridge.library.drivePinned(trackId: id, track: name)
+            }.value
+        }
     }
 }
 
-/// The 230 point amber START with the place the phone is at (UI-282 B, as on Android).
+/// "Next session here": the corners the last session here left to work on, and their time a lap.
+private struct NextSessionHereCard: View {
+    let focus: DriveFocus
+    let track: String?
+
+    var body: some View {
+        HealthCard(title: "Next session here", icon: .coach, trailing: track) {
+            HealthValue(value: DrivePinnedKt.focusCornersText(focus: focus), size: 22)
+            HealthDetail(DrivePinnedKt.focusDetailText(focus: focus))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("driveNextSession")
+    }
+}
+
+/// "Last time here": the last day's best lap in purple, and each session's best as a bar.
+private struct LastTimeHereCard: View {
+    let last: LastTimeHere
+
+    var body: some View {
+        HealthCard(title: "Last time here", icon: .laps, trailing: driveDayLabel(last.epochDay)) {
+            HealthValueRow {
+                HealthValue(value: CoreBridge.lapTime(millis: last.bestMillis), color: Palette.best)
+                HealthDetail(DrivePinnedKt.lastTimeDetailText(last: last))
+            } chart: {
+                HealthMiniBars(values: last.sessionBests.map { Double(truncating: $0) })
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("driveLastTime")
+    }
+}
+
+/// "Today", "Yesterday", else "Sun 19 Oct", as Android's day label, for a day counted from 1970 here.
+private func driveDayLabel(_ epochDay: Int64) -> String {
+    let now = Date()
+    let offset = Int64(TimeZone.current.secondsFromGMT(for: now))
+    let today = Int64(floor(Double(Int64(now.timeIntervalSince1970) + offset) / 86_400))
+    if epochDay == today { return "Today" }
+    if epochDay == today - 1 { return "Yesterday" }
+    let format = DateFormatter()
+    format.timeZone = TimeZone(identifier: "UTC")
+    format.setLocalizedDateFormatFromTemplate("EEE d MMM")
+    return format.string(from: Date(timeIntervalSince1970: Double(epochDay) * 86_400))
+}
+
+/// The devices this session uses (UI-308 A): how many and their names, and the cameras, with Change,
+/// which opens START's sheet, where iOS picks the receiver and the cameras. Names, not whether they answer.
+private struct ThisSessionCard: View {
+    @EnvironmentObject private var recorder: RecordingController
+    let setup: Setup
+    let receiver: String
+    let phoneCamera: Bool
+    let change: () -> Void
+
+    var body: some View {
+        let names = deviceNames
+        HealthCard(title: "This session", icon: .device, trailing: setup.active().car?.name ?? "No car") {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HealthValue(value: "\(names.count)", unit: SessionDevicesKt.devicesUnit(count: Int32(names.count)))
+                    if !names.isEmpty { HealthDetail(names.joined(separator: " · ")) }
+                    HealthDetail(SessionDevicesKt.camerasLine(cameras: cameras))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !recorder.isRecording {
+                    Button("Change", action: change)
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("driveChange")
+                }
+            }
+        }
+        .accessibilityIdentifier("driveThisSession")
+    }
+
+    /// The shared list, with the receiver used last and the phone camera when START's sheet turned it on.
+    private var deviceNames: [String] {
+        var names = SessionDevicesKt.sessionDeviceNames(setup: setup, receiver: receiver.isEmpty ? nil : receiver)
+        if phoneCamera && !names.contains("Phone camera") { names.append("Phone camera") }
+        return names
+    }
+
+    /// The phone camera as START's sheet sets it, then each Open GoPro camera with its switch.
+    private var cameras: [CameraSwitch] {
+        [CameraSwitch(name: "Phone camera", on: phoneCamera)] +
+            OpenGoPros.companion.listed(setup: setup).map { CameraSwitch(name: $0.name, on: $0.on) }
+    }
+}
+
+/// The 170 point amber START ring with the place the phone is at (UI-308 A, as on Android).
 private struct StartButton: View {
     let place: String?
     let action: () -> Void
@@ -66,39 +175,25 @@ private struct StartButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                Text("START").font(TrackFonts.number(44))
+                Text("START").font(TrackFonts.number(38))
                 if let place {
-                    Text(place).font(TrackFonts.text(15)).lineLimit(1).padding(.horizontal, 24)
+                    Text(place).font(TrackFonts.text(14)).lineLimit(1).padding(.horizontal, 20)
                 }
             }
             .foregroundStyle(Palette.onAccent)
-            .frame(width: 230, height: 230)
+            .frame(width: 154, height: 154)
             .background(Circle().fill(Palette.accent))
-            .padding(6)
-            .overlay(Circle().stroke(Palette.accent, lineWidth: 2))
+            .padding(8)
+            .overlay(Circle().stroke(Palette.accent.opacity(0.25), lineWidth: 8).padding(4))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("startButton")
     }
 }
 
-private struct Chip: View {
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Palette.onSurfaceVariant).frame(width: 8, height: 8)
-            Text(text).font(.footnote)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Palette.surface, in: Capsule())
-        .foregroundStyle(Palette.onBackground)
-    }
-}
-
 /// The sheet at START (UI-285 B): RaceBoxes in range as they advertise, the one used last on top, the
-/// other receivers listed in Settings › Equipment, and the phone's own GPS; then the cameras, each with its switch as on Android's "This session".
+/// other receivers listed in Settings › Equipment, and the phone's own GPS; then the cameras, each with
+/// its switch as on Android's "This session".
 struct ReceiverSheet: View {
     @EnvironmentObject private var settings: SettingsModel
     let lastUsed: String
@@ -222,6 +317,8 @@ struct ReceiverSheet: View {
 @MainActor
 final class PlaceFinder: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var name: String?
+    /// The saved track the phone is at, for Drive's Pinned cards (FBBD-421); nil at none.
+    @Published private(set) var trackId: String?
     private let manager = CLLocationManager()
 
     override init() {
@@ -250,7 +347,11 @@ final class PlaceFinder: NSObject, ObservableObject, CLLocationManagerDelegate {
         let found = TrackFiles.shared.placeAt(
             lat: at.latitude, lon: at.longitude, tracks: tracks, circuits: BundledCircuits.list
         )
-        Task { @MainActor in self.name = found }
+        let id = TrackFiles.shared.savedTrackIdAt(lat: at.latitude, lon: at.longitude, tracks: tracks)
+        Task { @MainActor in
+            self.name = found
+            self.trackId = id
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}

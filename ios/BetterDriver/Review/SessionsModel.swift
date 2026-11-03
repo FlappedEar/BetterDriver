@@ -321,24 +321,58 @@ final class SessionsModel {
         let id = session.id
         Task {
             let failure = await Task.detached { ReviewBridge.delete(id) }.value
+            // As Android's "delete <id>: <result>", so a log shows each delete (FBBD-427).
+            AppLog.i("Sessions", "delete \(id): \(failure ?? "deleted")")
             if let failure { message = failure }
             revision += 1
             reload()
         }
     }
 
-    /// The sessions of one day.
+    /// One day of the list, as the shared core groups it (analysis SessionsList, FBBD-360): its
+    /// [title] ("Today · Silesia Ring"), its sessions newest first, its tracks, and whether each card
+    /// names its track ([trackOnRows], only when the day had more than one).
     struct Day: Identifiable {
-        let day: Date
+        let localDay: Int64
+        let title: String
         let sessions: [SessionRow]
-        var id: Date { day }
+        let tracks: [String]
+        let trackOnRows: Bool
+        var id: Int64 { localDay }
     }
 
-    /// Sessions by the day they were driven, newest day first.
+    /// Sessions by the day they were driven, newest day first, grouped and titled by the shared core
+    /// as on Android; only the date ("Sun 19 Oct") is formatted here, in the device's language.
     var days: [Day] {
-        let calendar = Calendar.current
-        let grouped = Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.start) }
-        return grouped.keys.sorted(by: >).map { day in Day(day: day, sessions: grouped[day]!.sorted { $0.start > $1.start }) }
+        let sorted = sessions.sorted { $0.start > $1.start }
+        let byId = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let entries = sorted.map { SessionListEntry(id: $0.id, localDay: Self.localDay($0.start), track: $0.track) }
+        let listed = SessionsListKt.sessionListDays(entries: entries, today: Self.localDay(Date())) { day in
+            Self.dateText(day.int64Value)
+        }
+        return listed.map { day in
+            Day(
+                localDay: day.localDay,
+                title: day.title,
+                sessions: day.ids.compactMap { byId[$0] },
+                tracks: day.tracks,
+                trackOnRows: day.trackOnRows
+            )
+        }
+    }
+
+    /// Days since 1970-01-01 in the device's time zone, as Android's LocalDate.toEpochDay().
+    static func localDay(_ date: Date) -> Int64 {
+        let local = date.timeIntervalSince1970 + Double(TimeZone.current.secondsFromGMT(for: date))
+        return Int64((local / 86_400).rounded(.down))
+    }
+
+    /// "Sun 19 Oct" for a local day.
+    private static func dateText(_ day: Int64) -> String {
+        let noon = Date(timeIntervalSince1970: Double(day) * 86_400 + 43_200)
+        var style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
+        style.timeZone = TimeZone(identifier: "UTC")!
+        return noon.formatted(style)
     }
 
     /// Imports [urls] one after the other, in file-name order (the recorder names files by time, UI-193 A).
@@ -357,10 +391,11 @@ final class SessionsModel {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 if ReviewBridge.isForeign(url) {
-                    // A VBO or RaceChrono CSV becomes a new session with a new id: nothing to ask.
-                    try ReviewBridge.importForeign(url) { read, total in
+                    // A VBO or RaceChrono CSV becomes a new session with a new id; a drive already here is refused (FBBD-427).
+                    let id = try ReviewBridge.importForeign(url) { read, total in
                         Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
                     }
+                    AppLog.i("Imports", "imported \(name) as \(id)")
                     await self.imported()
                 } else {
                     let received = try ReviewBridge.receive(url) { read, total in
@@ -425,6 +460,7 @@ final class SessionsModel {
 
     private func failed(_ name: String, _ error: Error) {
         importing = nil
+        AppLog.w("Imports", "\(name) not imported: \(error.localizedDescription)")
         message = "\(name) was not imported: \(error.localizedDescription)"
         next()
     }

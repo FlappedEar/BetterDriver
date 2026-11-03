@@ -149,10 +149,10 @@ class OverlaysExportTest {
 
     @Test
     fun `the TPMS bridge's tyres reach Overlays as tyre_pressure and tyre_temp columns`() {
-        // core-ble TpmsChannels (FBBD-224): ids 800 to 807, bar and °C, about once a second.
+        // core-ble TpmsChannels (FBBD-224): ids 900 to 907, bar and °C, about once a second.
         val wheels = listOf("fl", "fr", "rl", "rr")
-        val pressures = wheels.mapIndexed { i, w -> ChannelDef(800 + i, "tyre_pressure_$w", "bar", "tpms", 2) }
-        val temps = wheels.mapIndexed { i, w -> ChannelDef(804 + i, "tyre_temp_$w", "°C", "tpms", 0) }
+        val pressures = wheels.mapIndexed { i, w -> ChannelDef(900 + i, "tyre_pressure_$w", "bar", "tpms", 2) }
+        val temps = wheels.mapIndexed { i, w -> ChannelDef(904 + i, "tyre_temp_$w", "°C", "tpms", 0) }
         val base = circle(accelerometer = true)
         val tyres = (0 until base.sampleSets.last().tMicros.toInt() / 1_000_000).map { s ->
             SampleSet(

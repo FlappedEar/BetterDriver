@@ -59,4 +59,23 @@ class QualityUiTest {
         assertEquals("-53.9 ms", valueText(-53.9, "ms"))
         assertEquals("1.5 s", valueText(1.5, "s"))
     }
+
+    @Test
+    fun `the checks line gives each check id verdict and value for the UI tests`() {
+        val report = QualityReport(
+            sessionId = "s",
+            sessionState = "FINISHED",
+            computedAtUtcMillis = 0,
+            sections = listOf(
+                QualitySection(
+                    "Screen",
+                    listOf(
+                        metric("Frame", 16.0, "ms", Verdict.PASS),
+                        metric("Start", null, "ms", Verdict.NOT_MEASURED, Basis.NONE),
+                    ),
+                ),
+            ),
+        )
+        assertEquals("frame=PASS 16.0; start=NOT_MEASURED -", qualityChecks(report))
+    }
 }

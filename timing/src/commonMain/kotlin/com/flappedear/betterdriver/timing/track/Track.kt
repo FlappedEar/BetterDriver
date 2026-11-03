@@ -19,6 +19,26 @@ data class TrackLine(val left: GeoPoint, val right: GeoPoint) {
     /** The same line for the opposite direction of travel. */
     fun flipped() = TrackLine(right, left)
 
+    /** How wide the line is, end to end, in metres. */
+    val widthMeters: Double
+        get() {
+            val frame = LocalFrame(left)
+            return frame.toXy(right).length()
+        }
+
+    /**
+     * The same line [widthMeters] wide (kept within [MinLineWidthMeters]..[MaxLineWidthMeters]): same
+     * centre, same direction (FBBD-438).
+     */
+    fun withWidth(widthMeters: Double): TrackLine {
+        val frame = LocalFrame(GeoPoint((left.lat + right.lat) / 2, (left.lon + right.lon) / 2))
+        val half = frame.toXy(left)
+        val now = half.length()
+        if (now == 0.0) return this
+        val scaled = half * (widthMeters.coerceIn(MinLineWidthMeters, MaxLineWidthMeters) / 2 / now)
+        return TrackLine(frame.toGeo(scaled), frame.toGeo(scaled * -1.0))
+    }
+
     companion object {
         /**
          * A line [widthMeters] wide, centred on [center], square to a car heading [headingDeg]
@@ -37,8 +57,18 @@ data class TrackLine(val left: GeoPoint, val right: GeoPoint) {
     }
 }
 
-/** Width of a line placed by heading: wide enough for any track, narrow enough to miss a parallel pit lane. */
+/**
+ * Width of a line placed by heading alone, centred on one pass of the car: wide enough for any
+ * line across the track, narrow enough to miss a parallel pit lane. The track editor fits its lines
+ * to the passes instead (FBBD-438); the provisional start/finish (FBBD-335) still uses this.
+ */
 const val DefaultLineWidthMeters = 30.0
+
+/** The narrowest line the editor makes (FBBD-438), metres. */
+const val MinLineWidthMeters = 4.0
+
+/** The widest line the editor makes (FBBD-438), metres. */
+const val MaxLineWidthMeters = 60.0
 
 /** How a track is timed (FBBD-155). */
 @Serializable

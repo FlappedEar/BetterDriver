@@ -12,8 +12,11 @@ import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import platform.Foundation.NSLock
 
-/** A session's row in Sessions, as Android's (UI-139 C): "Corolla · 22 min · 14 laps · OBD" and its best lap. */
-class SessionRowFacts(val detail: String, val best: String?)
+/**
+ * A session's card in Sessions, as Android's (UI-139 C, UI-308 A): "Corolla · 22 min · 14 laps · OBD",
+ * its best lap, and the best lap's time for the day's Track day card ([bestMillis]).
+ */
+class SessionRowFacts(val detail: String, val best: String?, val bestMillis: Long? = null)
 
 /**
  * Reads each listed session's [SessionFacts] with the shared core, as Android's ReviewLaps: its laps
@@ -31,7 +34,16 @@ internal class SessionRows(
     /** What a session's facts were read against: its length and every saved track's revision. */
     private data class Stamp(val durationMicros: Long?, val tracks: Map<String, Int>)
 
-    fun read(listed: List<StoredSession>): Map<String, SessionRowFacts> {
+    fun read(listed: List<StoredSession>): Map<String, SessionRowFacts> = facts(listed).let { all ->
+        listed.associate { s ->
+            val facts = all.getValue(s.id)
+            val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, hasVideo(s.id))
+            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis)
+        }
+    }
+
+    /** Each of [listed]'s [SessionFacts], from the cache when its length and the tracks are unchanged. */
+    fun facts(listed: List<StoredSession>): Map<String, SessionFacts> {
         lock.lock()
         try {
             val saved = tracks().filter { it.timeable }
@@ -41,8 +53,7 @@ internal class SessionRows(
                 val stamp = Stamp(s.durationMicros, revisions)
                 val facts = cache[s.id]?.takeIf { it.first == stamp }?.second ?: facts(s, saved)
                 cache[s.id] = stamp to facts
-                val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, hasVideo(s.id))
-                s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime))
+                s.id to facts
             }
         } finally {
             lock.unlock()

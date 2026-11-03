@@ -172,6 +172,12 @@ enum ReviewBridge {
         library.quality(id: id)
     }
 
+    /// Every check of the session's report as `id=VERDICT value`, for the UI tests' gates (FBBD-376).
+    /// Not on the main thread, as quality(id:).
+    static func qualityChecks(id: String) -> String? {
+        library.qualityChecks(id: id)
+    }
+
     /// The session's Weather card (FBBD-403), as Android's; nil when it has none. May fetch the weather
     /// the first time: not on the main thread.
     static func weather(id: String) -> WeatherUi? {
@@ -385,10 +391,12 @@ extension ReviewBridge {
 
     /// Imports the VBO or RaceChrono CSV file at [url] as a new session, as Android does (FBBD-164);
     /// [progress] gets bytes read and the file's size.
-    static func importForeign(_ url: URL, progress: @escaping (Int64, Int64) -> Void) throws {
-        _ = try library.importForeign(path: url.path) { read, total in
+    /// Returns the new session's id.
+    @discardableResult
+    static func importForeign(_ url: URL, progress: @escaping (Int64, Int64) -> Void) throws -> String {
+        try library.importForeign(path: url.path) { read, total in
             progress(read.int64Value, total.int64Value)
-        }
+        }.id
     }
 
     static func clearStaging() { _ = library.clearStaging() }
@@ -451,6 +459,8 @@ extension ReviewBridge {
         var demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
         // A second Jastrząb session an hour later the same day, for the track day (FBBD-315).
         if arguments.contains("-demoTrackDay") { demos.append(("jastrzab", 1_787_994_009_000)) }
+        // The Jastrząb demo twice with the same start, as a drive stored twice (FBBD-427): delete takes one.
+        if arguments.contains("-demoTwin") { demos.append(("jastrzab", 1_787_990_409_000)) }
         // -demoCues: the Jastrząb demo driven with the spoken coach on, for its Coach review (FBBD-99).
         let coached = arguments.contains("-demoCues")
         for (name, start) in demos {

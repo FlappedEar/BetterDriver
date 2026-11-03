@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.SessionListDay
+import com.flappedear.betterdriver.analysis.review.SessionListEntry
+import com.flappedear.betterdriver.analysis.review.sessionListDays
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.HealthCard
 import com.flappedear.betterdriver.core.ui.component.HealthDetail
@@ -19,7 +22,9 @@ import com.flappedear.betterdriver.core.ui.component.SectionTitle
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * A day's heading (UI-308 A): "Today", "Yesterday" or "Fri 29 Aug", with the track when the day had
@@ -29,16 +34,15 @@ import java.time.LocalDate
  */
 @Composable
 internal fun DayHeading(
-    day: LocalDate,
+    day: SessionListDay,
     list: List<SessionSummary>,
     onTrackDay: (List<String>) -> Unit,
     facts: Map<String, SessionFacts> = emptyMap(),
 ) {
     val days = trackDays(list)
-    val tracks = list.map { it.info.track }.filter { it.isNotBlank() }.distinct()
     Column(Modifier.padding(top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle(tracks.singleOrNull()?.let { "${dayLabel(day)} · $it" } ?: dayLabel(day))
-        days.forEach { TrackDayCard(it, facts, named = tracks.size > 1, onTrackDay) }
+        SectionTitle(day.title)
+        days.forEach { TrackDayCard(it, facts, named = day.trackOnRows, onTrackDay) }
     }
 }
 
@@ -88,3 +92,16 @@ internal fun trackDays(sessions: List<SessionSummary>): List<TrackDayLinkUi> =
         .filterValues { it.size >= 2 }
         .map { (track, list) -> TrackDayLinkUi(track, list.sortedBy { it.info.startUtcMillis }.map { it.id }) }
         .sortedByDescending { it.ids.size }
+
+/** The Sessions list's days (shared with iOS, FBBD-360), in the phone's time zone, newest first as listed. */
+internal fun sessionDays(
+    sessions: List<SessionSummary>,
+    zone: ZoneId = ZoneId.systemDefault(),
+    today: LocalDate = LocalDate.now(zone),
+): List<SessionListDay> = sessionListDays(
+    sessions.map {
+        val day = Instant.ofEpochMilli(it.info.startUtcMillis).atZone(zone).toLocalDate()
+        SessionListEntry(it.id, day.toEpochDay(), it.info.track)
+    },
+    today.toEpochDay(),
+) { DayFormat.format(LocalDate.ofEpochDay(it)) }

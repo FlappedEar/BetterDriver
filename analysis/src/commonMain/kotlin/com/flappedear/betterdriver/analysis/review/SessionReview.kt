@@ -9,33 +9,37 @@ import com.flappedear.betterdriver.analysis.coaching.keepCoachingHistory
 import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LineSession
+import com.flappedear.betterdriver.analysis.line.analyzeLine
+import com.flappedear.betterdriver.analysis.line.linePlan
+import com.flappedear.betterdriver.analysis.map.DriveMap
+import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.driveMap
+import com.flappedear.betterdriver.analysis.map.sessionGg
+import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.FlaggableCorner
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners as cornersToFlag
-import com.flappedear.betterdriver.analysis.data.TelemetrySession
-import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
-import com.flappedear.betterdriver.analysis.line.LineSession
-import com.flappedear.betterdriver.analysis.line.analyzeLine
-import com.flappedear.betterdriver.analysis.line.LinePlan
-import com.flappedear.betterdriver.analysis.line.linePlan
-import com.flappedear.betterdriver.analysis.map.DriveMap
-import com.flappedear.betterdriver.analysis.map.driveMap
-import com.flappedear.betterdriver.analysis.map.GgTrace
-import com.flappedear.betterdriver.analysis.map.sessionGg
-import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
-import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
-import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.analysis.summary.EarlierSessions
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.progressAgainst
+import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
+import com.flappedear.betterdriver.feature.analysis.CarUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
-import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
+import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.feature.analysis.mapUi
+import com.flappedear.betterdriver.feature.analysis.wholeDriveCar
 import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.recorder.RecorderEvent
@@ -48,7 +52,6 @@ import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackRevision
-
 import com.flappedear.betterdriver.timing.track.trackAlong
 
 /** The saved track id a session's "track" event names ("saved <id> rev <n> <name>"), or null. */
@@ -83,16 +86,27 @@ fun sessionFixes(data: SessionData): List<Fix> =
  * What the summary shows of the whole session, laps or not, as Android's analysis loads it: the
  * quickest acceleration runs (FBBD-154) and the G-G diagram of the whole session, each null without.
  * [drive] is the whole drive on the map with its speed and figures when the session has no timed lap
- * (FBBD-342); null with laps or without positions.
+ * (FBBD-342); null with laps or without positions. [car] is the Car tab over the whole drive (UI-162 A),
+ * as Android's analysis shows it for a session without a counted lap; null when nothing was recorded.
  */
-data class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?, val drive: DriveMap? = null)
+data class WholeSession(
+    val acceleration: AccelerationUi?,
+    val gForces: GgTrace?,
+    val drive: DriveMap? = null,
+    val car: CarUi? = null,
+)
 
 /** The heart rate strap a session names ("address=<address> name=<name>"), or null. */
 fun heartRateStrap(events: List<RecorderEvent>): String? =
     events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }?.text?.substringAfter("name=", "")?.ifEmpty { null }
 
-private fun wholeSession(session: TelemetrySession, drive: DriveMap?) =
-    WholeSession(accelerationUi(findAccelerationRuns(session)), sessionGg(session), drive)
+private fun wholeSession(session: TelemetrySession, drive: DriveMap?, data: SessionData) =
+    WholeSession(
+        accelerationUi(findAccelerationRuns(session)),
+        sessionGg(session),
+        drive,
+        wholeDriveCar(session, heartRateStrap(data.events)),
+    )
 
 /** One timed lap as the review lists it. */
 data class ReviewLap(
@@ -169,6 +183,12 @@ class ReviewedSession internal constructor(
 
     /** The session's events (coach cues and focus among them); none when it was not read. */
     val events: List<RecorderEvent> get() = data?.events.orEmpty()
+
+    /** What the session recommends working on next (FBBD-20), as Android keeps it; null without laps. */
+    val focusPlan: NextSessionPlan? get() = analysis?.let { nextSessionPlan(it) }
+
+    /** When the session started, UTC; null when it was not read. */
+    val startUtcMillis: Long? get() = data?.info?.startUtcMillis
 
     /**
      * Keeps this session's record in the coaching history [store] (FBBD-180), as Android's analysis
@@ -336,7 +356,7 @@ fun reviewSession(
         val untimed = telemetrySessionOf(data, null)
         return ReviewedSession(
             SessionReview(null, emptyList(), null, null), null, null,
-            whole = wholeSession(untimed, driveMap(untimed)),
+            whole = wholeSession(untimed, driveMap(untimed), data),
         )
     }
     val session = telemetrySessionOf(data, track)
@@ -366,5 +386,5 @@ fun reviewSession(
     )
     // A session at the track with no complete lap is still seen on the map (FBBD-342).
     val drive = if (laps.isEmpty()) driveMap(session) else null
-    return ReviewedSession(review, analysis, session, data, plan, wholeSession(session, drive))
+    return ReviewedSession(review, analysis, session, data, plan, wholeSession(session, drive, data))
 }

@@ -37,9 +37,13 @@ lap, following the car from behind and above, with your best lap as a ghost.
 - The line is a car-wide band coloured by the pedals, with BRAKE and GAS bars across the road.
 - Play and pause, full or half speed, jump to a corner.
 - Pinch to move the camera nearer or farther (0.5 to 3 times); double tap puts it back.
-- With a MapTiler key (see [Tracks](drive.md#satellite-map)) the ground is the satellite photo,
-  else the drawn track. On iPhone and iPad the player shows Apple Maps satellite imagery with no
-  key; the saved video there keeps the drawn track (Apple's terms do not allow storing their imagery).
+- With a Google or MapTiler key (see [Tracks](drive.md#satellite-map)) the ground is the satellite
+  photo, else the drawn track. On iPhone and iPad the player shows Apple Maps satellite imagery with no
+  key.
+- A saved video shows MapTiler's photo whenever a MapTiler key is entered, with MapTiler's credit:
+  MapTiler's terms allow its maps in videos, while Google's and Apple's terms do not allow storing
+  their imagery. Without a MapTiler key the video keeps the drawn track, and a line under **Save
+  video** says so.
 - **Save video** writes a 1920×1080, 30 fps MP4 to *Movies/BetterDriver*; **Send** shares it.
 
 ## Next session: did it work?

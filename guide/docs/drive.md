@@ -55,7 +55,8 @@ save it. A loop has to be 0.8 to 30 km long, so an ordinary road drive gets no l
 The editor shows your recorded lap on a map.
 
 - **Start / finish**: tap your lap where the line goes; it is placed square to the way you drove,
-  30 m wide. Drag its ends to the track edges. The arrow shows the direction; crossings the other
+  as wide as your passes there plus 4 m each side (12 to 30 m). **Width −/+** changes it in 2 m
+  steps (4 to 60 m), or drag its ends to the track edges. The arrow shows the direction; crossings the other
   way never count. **Flip direction** turns it round.
 - **+ Add sector line** adds sector lines. **Pit entry** and **Pit exit** lines let the coach go
   quiet in the pit lane.
@@ -71,9 +72,21 @@ The editor shows your recorded lap on a map.
 ### Satellite map
 
 Without a key the editor shows OpenStreetMap. To see satellite imagery, tap **Map** at the bottom
-right of the map, choose **Add MapTiler key…** and paste your own [MapTiler](https://www.maptiler.com/)
-key. The key stays on the device; add it once on the phone and once on the tablet. The same key
-draws the ground under the [perfect lap in 3D](getting-faster.md#perfect-lap-in-3d).
+right of the map and choose **Add Google key…** or **Add MapTiler key…**, then paste your own key.
+Google's photos were the only ones that showed the Silesia Ring's new track (checked 2026-11-01); with both keys
+Google comes first and **Map** still lets you pick another. A key stays on the device; add it once
+on the phone and once on the tablet. The same key draws the ground under the
+[perfect lap in 3D](getting-faster.md#perfect-lap-in-3d).
+
+The Google key is a [Map Tiles API](https://developers.google.com/maps/documentation/tile) key from
+Google Cloud. On Android, limit it to the Map Tiles API and to Android apps with the package and
+SHA-1 the **Google key** dialog shows; a key limited to iOS apps works on iPhone and iPad only.
+To stay inside Google's free tier (100,000 tiles a month), each device fetches at most 2,500
+Google tiles a day; after that the map shows MapTiler, OpenStreetMap or Apple until the next day
+(UTC). For a hard stop, also set the Map Tiles API's daily quota to 3,000 in Google Cloud
+(**APIs & Services › Map Tiles API › Quotas**).
+Google's tiles are not kept on the device: at a circuit without signal, pick MapTiler or
+OpenStreetMap under **Map** to see the tiles the device loaded before.
 
 On iPhone and iPad the editor opens on Apple Maps satellite imagery, no key needed. **Map** at the
 bottom right switches between **Satellite** and **Map**. At a circuit without signal only what

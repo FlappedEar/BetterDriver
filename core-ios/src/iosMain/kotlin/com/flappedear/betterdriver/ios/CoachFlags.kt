@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.review.ReviewedSession
 import com.flappedear.betterdriver.coach.CoachPicksStore
 import com.flappedear.betterdriver.coach.CornerPick
+import com.flappedear.betterdriver.coach.coachCandidates
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.toggled
@@ -16,6 +17,9 @@ import com.flappedear.betterdriver.feature.analysis.firstCornerRows
 
 /** Where the picked corners (CoachPicksStore, shared with Android) are kept under the app's folder [base]. */
 internal fun coachPicksDir(base: String) = "$base/coach/picks"
+
+/** Each analysed session's next-session focus (FBBD-20), as Android keeps it under its coach folder. */
+internal fun sessionFocusDir(base: String) = "$base/coach/focus"
 
 /**
  * The corners of a reviewed session that carry a coach flag ([pickable], by segment id) and those
@@ -51,9 +55,7 @@ internal class SessionCoachFlags(private val store: CoachPicksStore, reviewed: R
     private val candidates: Map<String, CornerPick> = if (trackId == null) {
         emptyMap()
     } else {
-        reviewed.flaggableCorners.associate {
-            it.id to CornerPick(it.name, it.lats, it.lons, sessionId, it.cornerId, it.identityRevision)
-        }
+        coachCandidates(reviewed.flaggableCorners, sessionId)
     }
 
     fun flags(): CoachFlags {
