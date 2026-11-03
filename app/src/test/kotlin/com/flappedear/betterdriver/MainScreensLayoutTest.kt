@@ -32,6 +32,12 @@ import com.flappedear.betterdriver.obd.ObdReading
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.ChannelDef
+import com.flappedear.betterdriver.recorder.ChannelValue
+import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.live.EquipmentLiveData
+import com.flappedear.betterdriver.recorder.live.EquipmentLiveText
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.ExportState
@@ -50,7 +56,12 @@ import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.CarPage
 import com.flappedear.betterdriver.shell.CarPidsPage
 import com.flappedear.betterdriver.shell.CarScanState
+import com.flappedear.betterdriver.shell.DeviceState
+import com.flappedear.betterdriver.shell.DiagHeader
+import com.flappedear.betterdriver.shell.DiagnosticsView
+import com.flappedear.betterdriver.shell.EquipmentScreen
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsScreen
 import com.flappedear.betterdriver.shell.ObdAdapterLabel
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
@@ -143,6 +154,49 @@ abstract class MainScreensLayoutTest(private val device: String) {
             ),
             title = "Track car",
             onBack = {},
+        )
+    }
+
+    /** An item's page with its Live data row (FBBD-440). */
+    @Test
+    fun equipmentItem() = checkScreen("equipment_heart_rate", Routes.Settings) {
+        val strap = Setup().addEquipment(EquipmentModel.HEART_RATE, "Polar H10 A1B2C3D4", "DD", { "hr" })
+            .equipment.last()
+        EquipmentScreen(item = strap, onRename = {}, onRemove = {}, onBack = {})
+    }
+
+    /** An item's live data (FBBD-440): a Bluetooth GPS receiver's values, rate and link events. */
+    @Test
+    fun liveData() = checkScreen("live_data", Routes.Settings) {
+        var now = 0L
+        val feed = EquipmentLiveData { now }
+        GnssChannels.ALL.forEach(feed::defineChannel)
+        feed.defineChannel(ChannelDef(202, "nmea_hdop", "", "nmea", 2))
+        feed.event("nmea_connected", "address=00:1C:88:31:AA:7F name=Qstarz BT-Q818XT")
+        repeat(11) { i ->
+            feed.submit(
+                SampleSet(
+                    0,
+                    listOf(
+                        ChannelValue(GnssChannels.LAT.id, 50.0 + i / 1e5),
+                        ChannelValue(GnssChannels.LON.id, 19.9),
+                        ChannelValue(GnssChannels.SPEED_KMH.id, 118.4),
+                        ChannelValue(GnssChannels.SATS.id, 12.0),
+                        ChannelValue(202, 0.8),
+                    ),
+                ),
+            )
+            now += 100
+        }
+        val s = feed.snapshot()
+        val h = EquipmentLiveText.header("Qstarz BT-Q818XT", s)
+        RaceBoxDiagnosticsScreen(
+            DiagnosticsView.Live(
+                DiagHeader(DeviceState.Ready, h.title, h.detail),
+                EquipmentLiveText.sections(s) { "12:30:05.2" },
+            ),
+            onBack = {},
+            text = LiveText,
         )
     }
 

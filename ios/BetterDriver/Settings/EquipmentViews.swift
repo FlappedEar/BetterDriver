@@ -115,19 +115,15 @@ struct EquipmentItemPage: View {
                     if let mode = item.videoMode {
                         ListRow("Video", value: mode.label) { choosingVideo = true }
                     }
-                    // Android's RaceBox diagnostics (FBBD-89) and OBD page (FBBD-261).
+                    // Android's RaceBox diagnostics (FBBD-89), and every other item's live data (FBBD-440):
+                    // its own page, the OBD page (FBBD-261) or the camera test (FBBD-278).
                     if item.modelName == ModelName.raceBox {
                         NavigationLink { RaceBoxDiagnosticsPage(item: item) } label: {
-                            ListRow("Diagnostics", value: "Live", chevron: true)
+                            ListRow("Diagnostics", value: EquipmentLive.shared.ROW_VALUE, chevron: true)
                         }
                         .buttonStyle(.plain)
                     }
-                    if item.kindName == KindName.carData {
-                        NavigationLink { ObdPage() } label: {
-                            ListRow("Connection and live values", chevron: true)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    liveRow(item)
                     // What the Demo track drives (FBBD-235 on Android, FBBD-373).
                     if item.modelName == ModelName.demoTrack {
                         ListRow("Drives", value: driveLabel) { choosingDrive = true }
@@ -153,6 +149,21 @@ struct EquipmentItemPage: View {
 
     private func readDrive() {
         driveLabel = DemoTrackCore.shared.chosenLabel(filesDir: AppFolders.base.path)
+    }
+
+    /// The item's Live data row (FBBD-440), to the page EquipmentLive names for its model, as on Android.
+    @ViewBuilder
+    private func liveRow(_ item: Equipment) -> some View {
+        let page = EquipmentLive.shared.page(model: item.model)
+        let row = ListRow(EquipmentLive.shared.ROW, value: EquipmentLive.shared.ROW_VALUE, chevron: true)
+            .accessibilityIdentifier("liveData")
+        if page == LivePage.source || page == LivePage.gopro {
+            NavigationLink { EquipmentLivePage(item: item) } label: { row }.buttonStyle(.plain)
+        } else if page == LivePage.carData {
+            NavigationLink { ObdPage() } label: { row }.buttonStyle(.plain)
+        } else if page == LivePage.cameraTest {
+            NavigationLink { CameraTestPage() } label: { row }.buttonStyle(.plain)
+        }
     }
 }
 

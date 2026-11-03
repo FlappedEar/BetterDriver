@@ -35,8 +35,10 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentKind
+import com.flappedear.betterdriver.setup.EquipmentLive
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
+import com.flappedear.betterdriver.setup.LivePage
 import com.flappedear.betterdriver.setup.VideoMode
 
 /** "GNSS" or "Camera", under an item in the equipment list while its reach is not known. */
@@ -83,7 +85,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
  * camera the app sets (UI-39), and Remove (UI-33). A paired RaceBox also has Diagnostics (FBBD-89).
  * A GoPro's model can be changed (FBBD-105): a paired one reports it, one started by hand is
  * whatever generation Arek picks. An OBD-II adapter (UI-105 C) shows its kind, how it is reached
- * ([connection], "Paired · Classic" or "Bluetooth LE") or a Wi-Fi one's address.
+ * ([connection], "Paired · Classic" or "Bluetooth LE") or a Wi-Fi one's address. Every item that can be
+ * connected to has Live data (FBBD-440): [onLiveData] opens its page ([EquipmentLive.page]).
  */
 @Suppress("LongParameterList") // One callback per thing Arek can change.
 @Composable
@@ -97,6 +100,7 @@ fun EquipmentScreen(
     onChooseGoPro: (GoProModel) -> Unit = {},
     drives: DemoDrives? = null,
     connection: String? = null,
+    onLiveData: (LivePage) -> Unit = {},
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     var choosingDrive by rememberSaveable { mutableStateOf(false) }
@@ -110,7 +114,11 @@ fun EquipmentScreen(
                 ModelRows(item, connection, onPickGoPro = { choosingGoPro = true })
                 if (item.videoMode != null) ListRow("Video", videoLabel(item), onClick = { choosingVideo = true })
                 if (item.model == EquipmentModel.RACEBOX && item.address != null) {
-                    ListRow("Diagnostics", "Live", onClick = onDiagnostics)
+                    ListRow("Diagnostics", EquipmentLive.ROW_VALUE, onClick = onDiagnostics)
+                }
+                val live = EquipmentLive.page(item.model)
+                if (live != LivePage.DIAGNOSTICS && live != LivePage.NOTHING) {
+                    ListRow(EquipmentLive.ROW, EquipmentLive.ROW_VALUE, onClick = { onLiveData(live) })
                 }
                 drives?.let { ListRow("Drives", it.current.label, onClick = { choosingDrive = true }) }
             }

@@ -105,6 +105,43 @@ final class DemoTrackTests: XCTestCase {
     /// The track screen's frame times on the simulator, from the session's shared quality report, as
     /// Android's ReplayDriveTest gates them on the emulator (FBBD-376, FBBD-266): the p95 after the first
     /// 90 s within [drivingFramesMillis], the first 90 s within [startUpFramesMillis].
+    /// The Demo track's Live data (FBBD-440): its item page links to the page, which runs the same link
+    /// a recording does, without a session, and shows the made-up car's position as it drives.
+    func testTheDemoTrackShowsLiveDataWithoutASession() throws {
+        // Equipment is on the iPhone: the iPad is for analysis only.
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad has no Equipment")
+        app.launch()
+        tab("Settings").tap()
+        app.buttons["settings.equipment"].firstMatch.tap()
+        let addEquipment = app.buttons["addEquipment"].firstMatch
+        XCTAssertTrue(addEquipment.waitForExistence(timeout: 10), "no Add equipment")
+        addEquipment.tap()
+        allowSystemAlerts()
+        let addDemo = element("add.DEMO_TRACK", labelStart: "Demo track")
+        XCTAssertTrue(addDemo.waitForExistence(timeout: 10), "no Demo track under Try the app")
+        addDemo.tap()
+        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Demo track'")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 10), "the Demo track is not in the equipment list")
+        item.tap()
+
+        let live = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Live data'")).firstMatch
+        XCTAssertTrue(live.waitForExistence(timeout: 10), "no Live data row")
+        live.tap()
+        let header = app.descendants(matching: .any).matching(identifier: "liveData.header").firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 10), "no live data page")
+        let receiving = NSPredicate(format: "label CONTAINS 'Receiving'")
+        expectation(for: receiving, evaluatedWith: header)
+        waitForExpectations(timeout: 15)
+        for label in ["Latitude", "Speed", "Updates received"] {
+            XCTAssertTrue(
+                app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", label))
+                    .firstMatch.exists,
+                "no \(label) row"
+            )
+        }
+        keep("Live data")
+    }
+
     private func checkFrameTimes() {
         let line = app.staticTexts["qualityChecks"]
         XCTAssertTrue(line.waitForExistence(timeout: 90), "no quality report for the session")

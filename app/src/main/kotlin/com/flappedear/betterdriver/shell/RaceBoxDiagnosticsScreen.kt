@@ -25,25 +25,49 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**
+ * What differs between the RaceBox diagnostics page and an Equipment page's live data (FBBD-440),
+ * which share its look: the title, the Bluetooth notice, the recording card and the closing note.
+ */
+data class LivePageText(
+    val title: String,
+    val permission: String,
+    val recording: String,
+    val recordingNote: String,
+    val note: String,
+)
+
+/** The RaceBox diagnostics page's own text. */
+val RaceBoxPageText = LivePageText(
+    title = RaceBoxDiagnosticsTitle,
+    permission = "Allow Nearby devices for BetterDriver in Android settings to connect to the RaceBox.",
+    recording = "Recording. Showing what the recorder receives.",
+    recordingNote = "Everything else is shown when no session is recording.",
+    note = DiagNotReported,
+)
+
+/**
  * RaceBox diagnostics (UI-39 option A): every value the RaceBox reports, in one live list. While a
  * session records, only what the recorder receives (UI-40 option B).
- * The screen only reads; it never changes a RaceBox setting.
+ * The screen only reads; it never changes a RaceBox setting. An Equipment page's live data
+ * (FBBD-440) is the same screen with its own [text].
  */
 @Composable
-fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit, onCalibrate: () -> Unit = {}) {
+fun RaceBoxDiagnosticsScreen(
+    view: DiagnosticsView,
+    onBack: () -> Unit,
+    onCalibrate: () -> Unit = {},
+    text: LivePageText = RaceBoxPageText,
+) {
     Column(Modifier.fillMaxSize()) {
-        ShellTopBar(RaceBoxDiagnosticsTitle, onBack = onBack)
+        ShellTopBar(text.title, onBack = onBack)
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (view) {
-                is DiagnosticsView.Recording -> Recording(view)
-                DiagnosticsView.NoPermission -> Notice(
-                    "Bluetooth access needed",
-                    "Allow Nearby devices for BetterDriver in Android settings to connect to the RaceBox.",
-                )
-                is DiagnosticsView.Live -> Live(view, onCalibrate)
+                is DiagnosticsView.Recording -> Recording(view, text)
+                DiagnosticsView.NoPermission -> Notice("Bluetooth access needed", text.permission)
+                is DiagnosticsView.Live -> Live(view, onCalibrate, text.note)
             }
         }
     }
@@ -58,22 +82,22 @@ private fun Notice(title: String, text: String) {
 }
 
 @Composable
-private fun Recording(view: DiagnosticsView.Recording) {
+private fun Recording(view: DiagnosticsView.Recording, text: LivePageText) {
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(10.dp).background(TrackTheme.colors.loss, CircleShape))
-            Text("Recording. Showing what the recorder receives.", style = MaterialTheme.typography.bodyMedium)
+            Text(text.recording, style = MaterialTheme.typography.bodyMedium)
         }
     }
     if (view.rows.isNotEmpty()) {
         SectionLabel("From the recording", Modifier.padding(top = 8.dp, start = 4.dp))
         ShellCard { view.rows.forEachIndexed { i, row -> ListRow(row.label, row.value, divider = i > 0) } }
     }
-    DimText("Everything else is shown when no session is recording.", Modifier.padding(top = 8.dp, start = 4.dp))
+    DimText(text.recordingNote, Modifier.padding(top = 8.dp, start = 4.dp))
 }
 
 @Composable
-private fun Live(view: DiagnosticsView.Live, onCalibrate: () -> Unit) {
+private fun Live(view: DiagnosticsView.Live, onCalibrate: () -> Unit, note: String) {
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatusDot(view.header.state)
@@ -96,7 +120,7 @@ private fun Live(view: DiagnosticsView.Live, onCalibrate: () -> Unit) {
             }
         }
     }
-    if (view.sections.isNotEmpty()) DimText(DiagNotReported, Modifier.padding(top = 8.dp, start = 4.dp))
+    if (view.sections.isNotEmpty()) DimText(note, Modifier.padding(top = 8.dp, start = 4.dp))
 }
 
 @Preview(widthDp = 411, heightDp = 914)

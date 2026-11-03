@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.gopro.CameraDateTime
 import com.flappedear.betterdriver.gopro.GoProClient
 import com.flappedear.betterdriver.gopro.GoProException
 import com.flappedear.betterdriver.gopro.GoProLink
+import com.flappedear.betterdriver.gopro.GoProLive
 import com.flappedear.betterdriver.gopro.GoProRecording
 import com.flappedear.betterdriver.gopro.GoProRecordingsJson
 import com.flappedear.betterdriver.gopro.GoProVideo
@@ -287,6 +288,12 @@ class OpenGoPros {
                 result.fold({ done(it, null) }, { done(null, "Pairing failed: ${it.message}") })
             }
         }
+
+        /**
+         * A camera's read-only live status for its Equipment page (FBBD-440), over [link] on the main
+         * queue, as Android's: call start and stop, read snapshot.
+         */
+        fun live(link: IosGoProLink): GoProLive = GoProLive(link, CoroutineScope(SupervisorJob() + Dispatchers.Main))
 
         private const val PairTimeoutMillis = 45_000L
     }
