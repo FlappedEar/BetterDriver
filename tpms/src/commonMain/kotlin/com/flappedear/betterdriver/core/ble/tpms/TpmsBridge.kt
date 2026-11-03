@@ -138,23 +138,19 @@ data class TpmsStatus(val value: String, val ok: Boolean)
 /**
  * What the track screen's status strip shows for the TPMS bridge (FBBD-444). As OBD and the heart
  * rate, only while data arrives: null while the link is not [streaming] or before any wheel's
- * pressure. Fine while all four wheels have a pressure that is not stale; otherwise the wheels at
- * fault, for example "RR stale" or "RL, RR no data" (sensors sleep in a parked car and wake one by
- * one as it rolls), so the driver sees a dead or missing sensor before the session ends.
+ * pressure. Fine while all four wheels have a pressure; a stale wheel (the same reading for 5 min)
+ * counts as fine, as a steady tyre is not a fault (Arek, 2026-11-03). Otherwise the wheels never
+ * heard, for example "RL, RR no data" (sensors sleep in a parked car and wake one by one as it
+ * rolls), so the driver sees a missing sensor before the session ends.
  */
 fun tpmsStatus(streaming: Boolean, readings: List<TyreReading>): TpmsStatus? {
     if (!streaming || readings.none { it.bar != null }) return null
     val wheels = TpmsChannels.WHEELS
     val missing = readings.indices.filter { readings[it].bar == null }.map { wheels[it] }
-    val stale = readings.indices.filter { readings[it].bar != null && readings[it].stale }.map { wheels[it] }
-    val faults = listOfNotNull(
-        stale.takeIf { it.isNotEmpty() }?.let { "${it.joinToString(", ")} stale" },
-        missing.takeIf { it.isNotEmpty() }?.let { "${it.joinToString(", ")} no data" },
-    )
-    return if (faults.isEmpty()) {
+    return if (missing.isEmpty()) {
         TpmsStatus("${readings.size} tyres", ok = true)
     } else {
-        TpmsStatus(faults.joinToString(" · "), ok = false)
+        TpmsStatus("${missing.joinToString(", ")} no data", ok = false)
     }
 }
 

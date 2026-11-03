@@ -165,16 +165,13 @@ class TpmsBridgeTest {
     }
 
     @Test
-    fun `stale and missing wheels show in amber`() {
+    fun `stale wheels are fine and missing wheels show in amber`() {
         val fresh = TyreReading(2.3, 40.0, stale = false)
         val stale = TyreReading(2.3, 40.0, stale = true)
         val none = TyreReading(null, null, stale = false)
         val tempOnly = TyreReading(null, 30.0, stale = false)
-        assertEquals(TpmsStatus("RR stale", ok = false), tpmsStatus(true, listOf(fresh, fresh, fresh, stale)))
-        assertEquals(
-            TpmsStatus("FL stale · RL no data", ok = false),
-            tpmsStatus(true, listOf(stale, fresh, tempOnly, fresh)),
-        )
+        assertEquals(TpmsStatus("4 tyres", ok = true), tpmsStatus(true, listOf(fresh, fresh, fresh, stale)))
+        assertEquals(TpmsStatus("RL no data", ok = false), tpmsStatus(true, listOf(stale, fresh, tempOnly, fresh)))
         assertNull(tpmsStatus(true, listOf(none, tempOnly, none, none)))
         assertNull(tpmsStatus(false, listOf(fresh, fresh, fresh, fresh)))
     }

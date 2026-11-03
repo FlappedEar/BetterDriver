@@ -53,9 +53,9 @@ final class TpmsStatusTests: XCTestCase {
             model.status.last,
             TrackScreenModel.Status(label: "Tyres", value: "4 tyres", ok: true, icon: TrackScreenModel.tyreIcon)
         )
-        let stale = TrackScreenModel(live.screen(), receiverHasG: false, tyres: TpmsStatus(value: "RR stale", ok: false))
-        XCTAssertEqual(stale.status.last?.ok, false)
-        XCTAssertEqual(stale.status.last?.value, "RR stale")
+        let missing = TrackScreenModel(live.screen(), receiverHasG: false, tyres: TpmsStatus(value: "RR no data", ok: false))
+        XCTAssertEqual(missing.status.last?.ok, false)
+        XCTAssertEqual(missing.status.last?.value, "RR no data")
         let none = TrackScreenModel(live.screen(), receiverHasG: false, tyres: nil)
         XCTAssertFalse(none.status.contains { $0.label == "Tyres" })
         XCTAssertTrue(live.stop())

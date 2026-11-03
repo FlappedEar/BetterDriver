@@ -235,8 +235,8 @@ class LiveUiTest {
             status(TpmsStatus("4 tyres", ok = true)),
         )
         assertEquals(
-            listOf(StatusItem("Tyres", "RR stale", ok = false, icon = StatusIcon.Tyre)),
-            status(TpmsStatus("RR stale", ok = false)),
+            listOf(StatusItem("Tyres", "RR no data", ok = false, icon = StatusIcon.Tyre)),
+            status(TpmsStatus("RR no data", ok = false)),
         )
         assertEquals(emptyList<StatusItem>(), status(null))
     }
