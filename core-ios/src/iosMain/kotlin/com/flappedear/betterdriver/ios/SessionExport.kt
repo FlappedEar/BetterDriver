@@ -98,7 +98,7 @@ class SessionExport(
     @Throws(Exception::class)
     fun vbo(id: String): String {
         val dir = freshDir(id)
-        val path = "$dir/${baseName(id)}.vbo"
+        val path = "$dir/${ExportShare.fileName(id, ExportFormat.Vbo)}"
         val data = store.read(id)
         TextFile(path).use { VboExport.export(data, it, derived = vboAccelerations(data)) }
         return path
@@ -107,7 +107,7 @@ class SessionExport(
     /** Writes session [id] as CSV, with lap columns at a saved track, as Android does; returns its path. */
     @Throws(Exception::class)
     fun csv(id: String): String {
-        val path = "${freshDir(id)}/${baseName(id)}.csv"
+        val path = "${freshDir(id)}/${ExportShare.fileName(id, ExportFormat.Csv)}"
         val data = store.read(id)
         val time = IsoTimes()
         TextFile(path).use { CsvWriter.write(data, it, laps(data), time::local) }
@@ -117,7 +117,7 @@ class SessionExport(
     /** Writes session [id] as GPX 1.1, one segment per lap at a saved track, as Android does; returns its path. */
     @Throws(Exception::class)
     fun gpx(id: String): String {
-        val path = "${freshDir(id)}/${baseName(id)}.gpx"
+        val path = "${freshDir(id)}/${ExportShare.fileName(id, ExportFormat.Gpx)}"
         val data = store.read(id)
         val time = IsoTimes()
         TextFile(path).use { GpxWriter.write(data, it, laps(data), time::utc) }
@@ -143,12 +143,12 @@ class SessionExport(
      */
     @Throws(Exception::class)
     fun vboWithVideo(id: String): String {
-        val folder = "${freshDir(id)}/${baseName(id)}"
+        val folder = "${freshDir(id)}/${ExportShare.baseName(id)}"
         mkdirs(folder)
         val data = store.read(id)
         val clips = clips(id)
         val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
-        TextFile("$folder/${baseName(id)}.vbo").use { VboExport.export(data, it, video, vboAccelerations(data)) }
+        TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use { VboExport.export(data, it, video, vboAccelerations(data)) }
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
         video?.orderedClips?.forEachIndexed { i, clip ->
             val to = "$folder/${video.fileName(i)}"
@@ -181,7 +181,6 @@ class SessionExport(
         }
     }
 
-    private fun baseName(id: String) = ExportShare.baseName(id)
 }
 
 /**
