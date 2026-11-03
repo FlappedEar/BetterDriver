@@ -26,13 +26,13 @@ import com.flappedear.betterdriver.core.ui.labelStyle
 import com.flappedear.betterdriver.core.ui.textStyle
 
 /** Icons a status item can show instead of its dot and label (UI-110 B). */
-enum class StatusIcon { Car, Heart, Tyre }
+enum class StatusIcon { Track, Gnss, Camera, Car, Heart, Tyre }
 
 /**
- * One source in the status strip. [ok] false shows a warning-coloured dot and the value in amber.
+ * One source in the status strip. [ok] false shows a warning-coloured dot or icon.
  * With an [icon], the icon in the dot's colour replaces the dot and the label; the label is then only
- * read out by TalkBack. While [ok], the quiet strip (UI-141 B) leaves out the value unless
- * [keepValue], as for the heart rate.
+ * read out by TalkBack. The strip shows the value only with [keepValue], as for the heart rate
+ * (Arek 2026-11-03: icons only, no words); the value is still read out.
  */
 @Immutable
 data class StatusItem(
@@ -44,10 +44,13 @@ data class StatusItem(
 )
 
 /**
- * Material Icons, Round style (UI-19 option B): directions_car and favorite; the tyre is the car
- * dashboard's tyre pressure symbol drawn in the same round style (FBBD-444).
+ * Material Icons, Round style (UI-19 option B): flag, gps_fixed, videocam, directions_car and favorite; the
+ * tyre is the car dashboard's tyre pressure symbol drawn in the same round style (FBBD-444).
  */
 private fun statusIcon(icon: StatusIcon): ImageVector = when (icon) {
+    StatusIcon.Track -> TrackIcon
+    StatusIcon.Gnss -> GnssIcon
+    StatusIcon.Camera -> CameraIcon
     StatusIcon.Car -> CarIcon
     StatusIcon.Heart -> HeartIcon
     StatusIcon.Tyre -> TyreIcon
@@ -67,6 +70,26 @@ private val HeartIcon = vector(
     "M13.35 20.13c-.76.69-1.93.69-2.69-.01l-.11-.1C5.3 15.27 1.87 12.16 2 8.28c.06-1.7.93-3.33 2.34-4.29" +
         "c2.64-1.8 5.9-.96 7.66 1.1 1.76-2.06 5.02-2.91 7.66-1.1 1.41.96 2.28 2.59 2.34 4.29" +
         ".14 3.88-3.3 6.99-8.55 11.76l-.1.09z",
+)
+
+private val TrackIcon = vector(
+    "Track",
+    "M14.4 6l-.24-1.2c-.09-.46-.5-.8-.98-.8H6c-.55 0-1 .45-1 1v15c0 .55.45 1 1 1s1-.45 1-1v-6h5.6l.24 1.2" +
+        "c.09.47.5.8.98.8H19c.55 0 1-.45 1-1V7c0-.55-.45-1-1-1h-4.6z",
+)
+
+private val GnssIcon = vector(
+    "GNSS",
+    "M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V2" +
+        "c0-.55-.45-1-1-1s-1 .45-1 1v1.06C6.83 3.52 3.52 6.83 3.06 11H2c-.55 0-1 .45-1 1s.45 1 1 1h1.06" +
+        "c.46 4.17 3.77 7.48 7.94 7.94V22c0 .55.45 1 1 1s1-.45 1-1v-1.06c4.17-.46 7.48-3.77 7.94-7.94H22" +
+        "c.55 0 1-.45 1-1s-.45-1-1-1h-1.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z",
+)
+
+private val CameraIcon = vector(
+    "Camera",
+    "M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l2.29 2.29" +
+        "c.63.63 1.71.18 1.71-.71V8.91c0-.89-1.08-1.34-1.71-.71L17 10.5z",
 )
 
 /** A tyre in section with an exclamation mark and three tread blocks, as on a car's TPMS warning light. */
@@ -130,7 +153,8 @@ fun StatusStrip(
                     Dot(tint)
                     Text(item.label, style = textStyle(13.dp, FontWeight.Medium), color = c.textDim, maxLines = 1)
                 }
-                if (!item.ok || item.keepValue) {
+                // Only the heart rate keeps its value (Arek 2026-11-03): the rest are icons, amber when wrong.
+                if (item.keepValue) {
                     NumberText(
                         item.value,
                         size = 15.dp,

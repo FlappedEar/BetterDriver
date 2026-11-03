@@ -20,8 +20,10 @@ final class TpmsStatusTests: XCTestCase {
         Data([pid, 0, 0, 0, UInt8(centibar >> 8), UInt8(centibar & 0xFF)])
     }
 
-    func testTheSymbolExists() {
-        XCTAssertNotNil(UIImage(systemName: TrackScreenModel.tyreIcon))
+    func testTheSymbolsExist() {
+        for name in [TrackScreenModel.tyreIcon, TrackScreenModel.gnssIcon, "video.fill", "flag.fill"] {
+            XCTAssertNotNil(UIImage(systemName: name), name)
+        }
     }
 
     func testTheStripShowsTheTyresWhileTheBridgeStreams() throws {

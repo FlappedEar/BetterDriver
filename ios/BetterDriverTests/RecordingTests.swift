@@ -63,7 +63,10 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(model.bestMillis, 40_000)
         XCTAssertEqual(model.lastMillis, 40_000)
         XCTAssertNil(model.alert)
-        XCTAssertEqual(model.status, [TrackScreenModel.Status(label: "GNSS", value: "25 Hz · 14 sats", ok: true)])
+        XCTAssertEqual(
+            model.status,
+            [TrackScreenModel.Status(label: "GNSS", value: "25 Hz · 14 sats", ok: true, icon: TrackScreenModel.gnssIcon)]
+        )
         // Speed, then four empty slots: the phone gives no G, so its tile is left out (UI-126 B).
         XCTAssertEqual(model.tiles.count, 5)
         XCTAssertEqual(model.tiles.first??.label, "Speed")

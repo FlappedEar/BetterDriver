@@ -246,7 +246,7 @@ class LiveUiTest {
         val road = liveTrackState(RecorderState(connected = true, live = live, place = "Tor Kielce"), tiles, true)
         assertEquals(listOf("GNSS"), road.status.map { it.label })
         val untimed = RecorderState(connected = true, live = live, place = "Tor Kielce", placeSaved = true)
-        assertEquals(StatusItem("Track", "Tor Kielce", ok = false), liveTrackState(untimed, tiles, true).status.first())
+        assertEquals(StatusItem("Track", "Tor Kielce", ok = false, icon = StatusIcon.Track), liveTrackState(untimed, tiles, true).status.first())
     }
 
     @Test

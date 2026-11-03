@@ -474,7 +474,7 @@ struct TrackScreenModel: Equatable {
         let ok: Bool
         /// An SF Symbol in place of the dot and the label (UI-110 B); the label is then only read out.
         var icon: String? = nil
-        /// The value stays on the quiet strip while ok, as for the heart rate (UI-141 B).
+        /// The value is shown on the strip, only for the heart rate; the rest are icons (Arek 2026-11-03).
         var keepValue = false
         var id: String { label }
     }
@@ -550,6 +550,8 @@ struct TrackScreenModel: Equatable {
     static let radarColumns = 3
 
     static let noValue = TrackTiles.shared.NO_VALUE
+    /// Android's StatusIcon.Gnss (gps_fixed): a crosshair.
+    static let gnssIcon = "scope"
     /// The car dashboard's tyre pressure symbol, as Android's StatusIcon.Tyre (FBBD-444).
     static let tyreIcon = "exclamationmark.tirepressure"
     /// A fresh install's main screen: speed, G and four empty slots.
@@ -567,13 +569,16 @@ struct TrackScreenModel: Equatable {
     ) {
         let live = s.live
         let gnss: Status = switch s.gnss {
-        case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false)
-        case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false)
-        default: Status(label: "GNSS", value: "\(s.shownRateHz) Hz · \(live.sats.map { "\($0.intValue)" } ?? Self.noValue) sats", ok: true)
+        case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false, icon: Self.gnssIcon)
+        case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false, icon: Self.gnssIcon)
+        default: Status(
+            label: "GNSS", value: "\(s.shownRateHz) Hz · \(live.sats.map { "\($0.intValue)" } ?? Self.noValue) sats", ok: true,
+            icon: Self.gnssIcon
+        )
         }
         // The quiet strip (UI-141 B) names the track only when a saved track has no timing.
         let place = s.place.flatMap { name in
-            s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
+            s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false, icon: "flag.fill") : nil
         }
         let obd = obdConnected ? Status(label: "OBD", value: "Connected", ok: true, icon: "car.fill") : nil
         // Heart rate (FBBD-268): shown only while it arrives, the strap's last value, never older than 5 s.
@@ -583,7 +588,7 @@ struct TrackScreenModel: Equatable {
         // The TPMS bridge (FBBD-444): the tyre icon while values arrive, amber with the wheels at fault.
         let tyre = tyres.map { Status(label: "Tyres", value: $0.value, ok: $0.ok, icon: Self.tyreIcon) }
         // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
-        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
+        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok, icon: "video.fill") }
         status = [place, gnss, video, obd, heart, tyre].compactMap { $0 }
         coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
