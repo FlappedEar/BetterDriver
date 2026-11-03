@@ -81,6 +81,8 @@ internal class ObdGattSetup(
                 connected = true
                 awaitingMtu = true
                 mtuAskedAtNs = System.nanoTime()
+                // [await] may already wait until the 15 s deadline: it must now wake at the MTU's.
+                lock.notifyAll()
             }
             if (!calls.requestMtu()) {
                 synchronized(lock) { awaitingMtu = false }

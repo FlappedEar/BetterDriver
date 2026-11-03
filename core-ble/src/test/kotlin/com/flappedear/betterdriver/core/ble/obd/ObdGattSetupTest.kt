@@ -122,6 +122,29 @@ class ObdGattSetupTest {
     }
 
     @Test
+    fun `an MTU that never answers after the wait began, the services are still looked up after the MTU wait`() {
+        // Codex on #533: open() waits before Android reports the connection; the connected callback then
+        // sets the MTU deadline and must wake the waiter, else it sleeps until its 15 s timeout.
+        val a = Adapter()
+        val s = ObdGattSetup(a, mtuAnswerMs = 100L)
+        a.onDiscover = {
+            thread {
+                s.servicesDiscovered(Ok)
+                s.descriptorWritten(Ok)
+            }
+        }
+        val began = System.nanoTime()
+        var line: BleSerialConnection? = null
+        val waiter = thread { line = s.await(15_000L) }
+        Thread.sleep(50)
+        s.connectionState(Ok, Connected)
+        waiter.join(5_000L)
+        val tookMs = (System.nanoTime() - began) / 1_000_000L
+        assertNotNull(line)
+        assertTrue("took $tookMs ms", tookMs < 2_000L)
+    }
+
+    @Test
     fun `a late MTU answer and repeated callbacks start no second lookup and never replace the line`() {
         val a = Adapter()
         val s = ObdGattSetup(a, mtuAnswerMs = 50L)
