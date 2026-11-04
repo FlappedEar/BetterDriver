@@ -161,10 +161,16 @@ enum DataVideoDemo {
         let ids = (try? FileManager.default.contentsOfDirectory(atPath: sessionsRoot)) ?? []
         let seconds = long ? 5_400 : 10
         let offset = long ? 0 : 60_000_000
-        // One file, written once and copied into each session.
-        let source = FileManager.default.temporaryDirectory.appendingPathComponent("phone_demo.mp4")
-        guard long ? write(source, seconds: seconds, fps: 1, width: 320, height: 180, upright: false)
-            : write(source, seconds: seconds) else { return }
+        // One file, written once per app build (FBBD-457) and copied into each session.
+        let cache = UITestCache.folder(long ? "demo-video-long" : "demo-video")
+        let source = cache.appendingPathComponent("phone_demo.mp4")
+        if !FileManager.default.fileExists(atPath: source.path) {
+            try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+            let written = cache.appendingPathComponent("phone_demo.part.mp4")
+            guard long ? write(written, seconds: seconds, fps: 1, width: 320, height: 180, upright: false)
+                : write(written, seconds: seconds),
+                (try? FileManager.default.moveItem(at: written, to: source)) != nil else { return }
+        }
         for id in ids {
             let dir = root.appendingPathComponent(id, isDirectory: true).appendingPathComponent("video", isDirectory: true)
             let file = dir.appendingPathComponent("phone_demo.mp4")

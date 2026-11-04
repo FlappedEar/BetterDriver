@@ -466,14 +466,22 @@ extension ReviewBridge {
         if arguments.contains("-demoTwin") { demos.append(("jastrzab", 1_787_990_409_000)) }
         // -demoCues: the Jastrząb demo driven with the spoken coach on, for its Coach review (FBBD-99).
         let coached = arguments.contains("-demoCues")
-        for (name, start) in demos {
-            let replay = demo.appendingPathComponent("\(name).replay").path
-            let track = demo.appendingPathComponent("\(name).track.json").path
-            if coached && name == "jastrzab" {
-                _ = try? library.addCoachedDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
-            } else {
-                _ = try? library.addDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
+        // FBBD-457: the demos are driven once per app build and set of flags, then copied from the
+        // cache at each launch, as the UI tests start most launches from -freshInstall -demoSessions.
+        let variant = ["-demoTrackDay", "-demoTwin", "-demoCues"].filter { arguments.contains($0) }.joined()
+        let cache = UITestCache.folder("demo-sessions\(variant)")
+        let parts = ["sessions", "tracks"]
+        if !UITestCache.restore(parts, from: cache, to: base) {
+            for (name, start) in demos {
+                let replay = demo.appendingPathComponent("\(name).replay").path
+                let track = demo.appendingPathComponent("\(name).track.json").path
+                if coached && name == "jastrzab" {
+                    _ = try? library.addCoachedDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
+                } else {
+                    _ = try? library.addDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
+                }
             }
+            UITestCache.save(parts, from: base, to: cache)
         }
         // The demos with no saved track, as a road drive reads: no laps, the drive on the map (FBBD-342).
         if arguments.contains("-demoNoTrack") { try? FileManager.default.removeItem(at: base.appendingPathComponent("tracks")) }
@@ -484,6 +492,53 @@ extension ReviewBridge {
         #endif
     }
 }
+
+#if DEBUG
+/// The UI tests' fixtures made once per app build (FBBD-457): the demo sessions and their video
+/// take the app seconds to make on a simulator, and most tests start from the same ones. Kept in
+/// Caches under the app executable's date, so a new build makes them again.
+enum UITestCache {
+    static func folder(_ name: String) -> URL {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let built = Bundle.main.executableURL
+            .flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date }
+            .map { Int($0.timeIntervalSince1970) } ?? 0
+        return caches.appendingPathComponent("ui-test-\(built)", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+    }
+
+    /// Copies [parts] of [cache] into [base], keeping what is there already (as the demos keep a
+    /// saved track); false when nothing is cached yet.
+    static func restore(_ parts: [String], from cache: URL, to base: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: cache.appendingPathComponent(".done").path) else { return false }
+        for part in parts {
+            let source = cache.appendingPathComponent(part, isDirectory: true)
+            let target = base.appendingPathComponent(part, isDirectory: true)
+            try? fm.createDirectory(at: target, withIntermediateDirectories: true)
+            for item in (try? fm.contentsOfDirectory(atPath: source.path)) ?? [] {
+                let to = target.appendingPathComponent(item)
+                if !fm.fileExists(atPath: to.path) { try? fm.copyItem(at: source.appendingPathComponent(item), to: to) }
+            }
+        }
+        return true
+    }
+
+    /// Keeps [parts] of [base] in [cache]; a cache left half written is never read.
+    static func save(_ parts: [String], from base: URL, to cache: URL) {
+        let fm = FileManager.default
+        try? fm.removeItem(at: cache)
+        guard (try? fm.createDirectory(at: cache, withIntermediateDirectories: true)) != nil else { return }
+        for part in parts {
+            let source = base.appendingPathComponent(part, isDirectory: true)
+            guard fm.fileExists(atPath: source.path),
+                  (try? fm.copyItem(at: source, to: cache.appendingPathComponent(part, isDirectory: true))) != nil
+            else { return }
+        }
+        fm.createFile(atPath: cache.appendingPathComponent(".done").path, contents: nil)
+    }
+}
+#endif
 
 extension ReviewBridge {
     /// [summary]'s session against the earlier sessions at its track, as Android's summary card
