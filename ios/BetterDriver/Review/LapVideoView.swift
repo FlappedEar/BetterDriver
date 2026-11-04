@@ -222,6 +222,8 @@ final class ReviewTransport: ObservableObject {
 
     func stop() {
         playing = false
+        // No frame runs after this to drop the clock's start, and the next Play must start afresh.
+        startHost = nil
         logPlayed()
         a.pause()
         b.pause()
