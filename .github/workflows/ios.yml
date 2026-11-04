@@ -270,6 +270,7 @@ jobs:
         BetterDriverUITests/ReviewScreensTests
         BetterDriverUITests/ScreenLayoutTests
         BetterDriverUITests/DataVideoTests
+        BetterDriverUITests/ShareEntryPointsTests
     steps:
       - uses: actions/checkout@v4
         with:
