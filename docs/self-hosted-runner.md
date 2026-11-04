@@ -20,8 +20,12 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * On a self-hosted runner each job creates its own simulator (`ios-simulator.py --private`,
   named `BD <runner name> <iPad|iPhone>`) and deletes it at the end, so two runner instances on
   one Mac never drive the same simulator.
-* `ios-release.yml` (TestFlight) stays on GitHub's runners: the signing key and App Store
-  Connect secrets never reach the Mac.
+* `ios-release.yml` (TestFlight) runs on GitHub's `macos-26` by default, so the signing key and
+  App Store Connect secrets do not reach the Mac. When GitHub's macOS runners take no jobs (both
+  1.33.0 TestFlight runs were cancelled after 15 min queued on 4 Nov 2026), a dispatch from main
+  with `runner` = `["self-hosted","bd-mac"]` builds and uploads on a Mac mini: the key is then
+  written to the runner's temp folder for the run and removed after it, and the run's development
+  certificate is revoked at the end, but Xcode keeps the signing identity in the Mac's keychain.
 * Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished
   `ios.yml` run already has a job for the Mac minis. One run's 4 test shards keep both Mac runners
   busy for ~40 min, so a second run used to wait for them.
