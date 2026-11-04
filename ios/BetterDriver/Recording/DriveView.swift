@@ -12,6 +12,10 @@ struct DriveView: View {
     @EnvironmentObject private var settings: SettingsModel
     @StateObject private var place = PlaceFinder()
     @State private var picking = false
+    /// The receiver picked in START's sheet: the session starts once the sheet has gone (FBBD-456).
+    @State private var pendingStart: Receiver?
+    /// The track screen is on screen; follows the recording, and START brings it back if it was dropped.
+    @State private var trackShown = false
     @State private var camera = true
     @State private var videoMode = PhoneVideoMode.standard
     @State private var pinned = DrivePinned(focus: nil, lastTime: nil)
@@ -44,18 +48,20 @@ struct DriveView: View {
             .background(Palette.background)
             // The track screen on another view than START's sheet: one view presenting both can leave
             // the sheet unable to open again after a session (FBBD-456).
-            .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
+            .fullScreenCover(isPresented: $trackShown) {
                 TrackScreenView(model: recorder.screen) { recorder.stop() }
             }
             .navigationTitle("Drive")
             .navigationBarTitleDisplayMode(.large)
         }
-        .sheet(isPresented: $picking) {
+        // The session starts once the sheet has gone, so the track screen is never presented while the
+        // sheet is still going away, which can drop it (FBBD-456).
+        .sheet(isPresented: $picking, onDismiss: startPicked) {
             ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera, videoMode: $videoMode) { receiver in
                 recorder.phoneCamera = camera
                 recorder.phoneVideoMode = videoMode
+                pendingStart = receiver
                 picking = false
-                recorder.start(receiver)
             }
             // Full height in the UI test, so every row and the camera toggle are on screen.
             .presentationDetents(UITestMode.on ? [.large] : [.medium, .large])
@@ -66,8 +72,10 @@ struct DriveView: View {
         // A session that ends leaves no sheet asked for, so START opens it again (FBBD-456).
         .onChange(of: recorder.isRecording) { _, recording in
             if !recording { picking = false }
+            trackShown = recording
         }
         .onAppear {
+            trackShown = recorder.isRecording
             camera = recorder.phoneCamera
             videoMode = recorder.phoneVideoMode
             // The UI test runs without location access and its prompt.
@@ -83,10 +91,26 @@ struct DriveView: View {
         }
     }
 
+    /// Starts the session picked in START's sheet, now that the sheet has gone.
+    private func startPicked() {
+        guard let receiver = pendingStart else { return }
+        pendingStart = nil
+        recorder.start(receiver)
+        // The track screen follows the recording; set here too in case the change came before this view saw it.
+        trackShown = recorder.isRecording
+    }
+
     /// Opens START's sheet. When the sheet is already asked for but not on screen (a session ended
     /// while it was going away), it is asked for once more, so a tap never does nothing (FBBD-456).
     private func openSheet(_ from: String) {
         AppLog.i("Recording", "\(from) tapped: sheet \(picking ? "already asked, asked again" : "asked"), recording \(recorder.isRecording)")
+        // Recording with the track screen not on screen: START brings it back instead of the sheet.
+        if recorder.isRecording {
+            AppLog.w("Recording", "track screen was not on screen while recording: shown again")
+            trackShown = false
+            DispatchQueue.main.async { trackShown = true }
+            return
+        }
         guard picking else {
             picking = true
             return
