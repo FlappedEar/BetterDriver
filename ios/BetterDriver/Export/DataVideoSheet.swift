@@ -204,7 +204,19 @@ struct DataVideoPanel: View {
         let durations = self.durations
         let handle = self.handle
         progress = 0
+        // A whole session takes minutes: the screen stays on and a lock or a switch to another app
+        // gets background time, as AVAssetExportSession stops when the app is suspended (Moto Park).
+        UIApplication.shared.isIdleTimerDisabled = true
+        var background = UIBackgroundTaskIdentifier.invalid
+        background = UIApplication.shared.beginBackgroundTask(withName: "Video with data") {
+            UIApplication.shared.endBackgroundTask(background)
+            background = .invalid
+        }
         job = Task {
+            defer {
+                UIApplication.shared.isIdleTimerDisabled = RecordingController.shared.isRecording
+                if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+            }
             do {
                 let (asset, overlay) = try await DataVideoMaker.make(
                     session, part: picked, durations: durations, handleSeconds: handle

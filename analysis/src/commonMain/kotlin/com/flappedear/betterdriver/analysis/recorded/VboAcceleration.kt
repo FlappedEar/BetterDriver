@@ -30,6 +30,17 @@ private const val GDecimals = 3
  * from GPS speed and heading instead. The signs are those Overlays expects (RaceChrono's).
  * Empty without positions to work from.
  */
+/**
+ * [vboAccelerations], or none when the analysis fails: the VBO is written without the G columns
+ * rather than not at all (Moto Park 2026-11-08: the VBO must come out whatever else breaks).
+ */
+@Suppress("TooGenericExceptionCaught")
+fun vboAccelerationsOrNone(data: SessionData): List<VboDerivedChannel> = try {
+    vboAccelerations(data)
+} catch (_: Exception) {
+    emptyList()
+}
+
 fun vboAccelerations(data: SessionData): List<VboDerivedChannel> {
     val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: return emptyList()
     val session = accelerationSessionOf(data)

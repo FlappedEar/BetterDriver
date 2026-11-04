@@ -2,7 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
-import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
+import com.flappedear.betterdriver.analysis.recorded.vboAccelerationsOrNone
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.recorder.export.CsvWriter
@@ -96,7 +96,7 @@ class SessionExport(
         val dir = freshDir(id)
         val path = "$dir/${ExportShare.fileName(id, ExportFormat.Vbo)}"
         val data = store.read(id)
-        TextFile(path).use { VboExport.export(data, it, derived = vboAccelerations(data)) }
+        TextFile(path).use { VboExport.export(data, it, derived = vboAccelerationsOrNone(data)) }
         return path
     }
 
@@ -145,7 +145,7 @@ class SessionExport(
         val clips = wholeVideoClips(store, id)
         val video = if (clips.isEmpty()) null else VboVideo(ExportShare.videoPrefix(id), clips)
         TextFile("$folder/${ExportShare.fileName(id, ExportFormat.VboVideo)}").use {
-            VboExport.export(data, it, video, vboAccelerations(data))
+            VboExport.export(data, it, video, vboAccelerationsOrNone(data))
         }
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
         video?.orderedClips?.forEachIndexed { i, clip ->

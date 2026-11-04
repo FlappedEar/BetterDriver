@@ -9,7 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
+import com.flappedear.betterdriver.analysis.recorded.vboAccelerationsOrNone
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
@@ -203,12 +203,12 @@ class Sessions private constructor(private val context: Context) {
                 file.outputStream().buffered().use { out ->
                     when (format) {
                         ExportFormat.Vbo ->
-                            logExport(id, data) { VboExporter.export(data, out, derived = vboAccelerations(data)) }
+                            logExport(id, data) { VboExporter.export(data, out, derived = vboAccelerationsOrNone(data)) }
                         ExportFormat.VboVideo -> {
                             val sessionDir = store.dir(id)
                             val timeline = VideoTimeline.from(data.events, indexedClips(sessionDir))
                             val video = exportVideo(id, sessionDir, timeline)
-                            logExport(id, data) { VboExporter.export(data, out, video, vboAccelerations(data)) }
+                            logExport(id, data) { VboExporter.export(data, out, video, vboAccelerationsOrNone(data)) }
                             video?.orderedClips?.forEachIndexed { i, clip ->
                                 val to = File(dir, video.fileName(i))
                                 linkOrCopy(File(File(sessionDir, VideoFiles.DIR), clip.file), to)
