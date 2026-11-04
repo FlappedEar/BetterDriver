@@ -144,4 +144,36 @@ class ComparisonTest {
     private companion object {
         const val LengthMeters = 1_000.0
     }
+
+    @Test
+    fun thePlayerWithTheSoundLeavesSmallDriftAloneAndTheStatsLineSaysWhatPlayed() {
+        // 100 ms off: the muted player corrects, the one with the sound does not (FBBD-429).
+        assertEquals(0.9f, followStep(1_100, 1_000, 1.0, playing = true).speed, 1e-6f)
+        assertEquals(
+            FollowStep(null, 1f),
+            followStep(1_100, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis),
+        )
+        val sound140 = followStep(1_140, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis)
+        assertEquals(0.86f, sound140.speed, 1e-6f)
+        // Beyond the drift limit both seek.
+        val sound400 = followStep(1_400, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis)
+        assertEquals(1_000L, sound400.seekMillis)
+
+        val stats = LapReviewStats()
+        assertEquals(null, stats.line(0))
+        stats.frame(2_000)
+        stats.frame(20_500)
+        stats.rateChanged()
+        stats.seekedWhilePlaying()
+        stats.startedSynced()
+        stats.drift(-45)
+        stats.drift(12)
+        assertEquals(
+            "played 2.5 s: 2 frames, work mean 11.2 max 20.5 ms, 1 slow, 1 rate changes, " +
+                "1 seeks while playing, 1 synced starts, max drift 45 ms",
+            stats.line(2_500),
+        )
+        stats.reset()
+        assertEquals(null, stats.line(1_000))
+    }
 }
