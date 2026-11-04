@@ -178,4 +178,3 @@ class HudMoment internal constructor(
         const val MicrosPerSecond = 1_000_000.0
     }
 }
-
