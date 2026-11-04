@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.live.lapName
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.TracePoint
 import kotlinx.serialization.json.Json
@@ -59,8 +60,11 @@ class LapVideoSource(val camera: String, clips: List<VideoClip>, val dir: String
 }
 
 /** A lap of the review with its session's video. */
-class VideoLap(val trace: LapTrace, val video: LapVideoSource?) {
+class VideoLap(val trace: LapTrace, val video: LapVideoSource?, private val pointToPoint: Boolean = false) {
     val number: Int get() = trace.lap.number
+
+    /** "Lap 7", "Out lap", "Run 2": the number people count, as the session analysis (FBBD-450). */
+    val name: String get() = lapName(trace.lap.number, pointToPoint)
     val timeMillis: Long get() = trace.lap.timeMillis
 
     /** The lap has video for at least part of it. */

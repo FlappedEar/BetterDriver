@@ -5,7 +5,8 @@ import SwiftUI
 /// analysis: the button with what the video will leave out or why it cannot be made beside it, then the
 /// video's progress with Stop, then how it ended. The button opens the sheet that offers both composite
 /// laps (the realistic optimal first) with their parts; Export saves the MP4 and hands it to Files, as
-/// the Video tab does, and leaving the Summary stops it. The parts are looked for on the session's video off the main queue; the texts are
+/// the Video tab does, and leaving the Summary stops it. Watch (FBBD-452) plays the chosen composite lap
+/// full screen with its overlay, as the Video tab's Watch. The parts are looked for on the session's video off the main queue; the texts are
 /// the shared core's (CompositeLapChoice).
 struct LapTimesOptimalVideo: View {
     let sessionId: String
@@ -20,6 +21,10 @@ struct LapTimesOptimalVideo: View {
     /// The saved file's name, said under the button in place of Files' Save sheet in the UI tests.
     @State private var savedName: String?
     @State private var job: Task<Void, Never>?
+    /// The composite lap Watch picked, made once its sheet has gone; then the player over the Summary.
+    @State private var toWatch: Int32?
+    @State private var opening = false
+    @State private var playing: DataVideoPlayback?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -27,13 +32,17 @@ struct LapTimesOptimalVideo: View {
                 Button(CompositeOptionsKt.RealisticOptimalVideoLabel) { open = true }
                     .buttonStyle(.bordered)
                     .tint(Palette.accent)
-                    .disabled(!choice.enabled || progress != nil)
+                    .disabled(!choice.enabled || progress != nil || opening)
                     .accessibilityIdentifier("optimalVideoButton")
-                    // The sheet hangs on the button, the Files sheet on the row: one sheet per view.
-                    .sheet(isPresented: $open) {
+                    // The sheet hangs on the button, the player on the note, the Files sheet on the row:
+                    // one presentation per view. The player opens once the sheet has gone.
+                    .sheet(isPresented: $open, onDismiss: { if let part = toWatch { toWatch = nil; watch(part) } }) {
                         LapTimesOptimalVideoSheet(choice: choice) { part in
                             open = false
                             save(part)
+                        } onWatch: { part in
+                            toWatch = part
+                            open = false
                         } onCancel: {
                             open = false
                         }
@@ -41,7 +50,11 @@ struct LapTimesOptimalVideo: View {
                 DimText(choice.note)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("optimalVideoNote")
+                    .fullScreenCover(item: $playing) { p in
+                        DataVideoPlayerPage(playback: p) { playing = nil }
+                    }
             }
+            if opening { DimText("Opening the video…") }
             if let progress {
                 HStack {
                     ProgressView(value: progress).tint(Palette.accent)
@@ -94,6 +107,23 @@ struct LapTimesOptimalVideo: View {
         #endif
     }
 
+    /// The composite lap [part] with its overlay, as Save video makes it, played full screen.
+    private func watch(_ part: Int32) {
+        guard let session else { return }
+        let durations = self.durations
+        failure = nil
+        opening = true
+        Task {
+            do {
+                let (asset, overlay) = try await DataVideoMaker.make(session, part: part, durations: durations)
+                playing = DataVideoPlayback(asset: asset, overlay: overlay, session: session, part: part, durations: durations)
+            } catch {
+                failure = "The video could not be opened: \(error.localizedDescription)"
+            }
+            opening = false
+        }
+    }
+
     private func save(_ part: Int32) {
         guard let session else { return }
         let durations = self.durations
@@ -126,6 +156,7 @@ struct LapTimesOptimalVideo: View {
 struct LapTimesOptimalVideoSheet: View {
     let choice: CompositeLapChoice
     let onExport: (Int32) -> Void
+    let onWatch: (Int32) -> Void
     let onCancel: () -> Void
 
     @State private var picked: Int32 = 0
@@ -155,6 +186,13 @@ struct LapTimesOptimalVideoSheet: View {
                     .tint(Palette.accent)
                     .disabled(kind?.enabled != true)
                     .accessibilityIdentifier("optimalVideoExport")
+                // FBBD-452: watched in the app, as the Video tab's Watch (the shared core's canWatch).
+                Button("Watch") { if let kind { onWatch(kind.part) } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+                    .foregroundStyle(Palette.onAccent)
+                    .disabled(kind?.watchable != true)
+                    .accessibilityIdentifier("optimalVideoWatch")
             }
         }
         .padding(16)

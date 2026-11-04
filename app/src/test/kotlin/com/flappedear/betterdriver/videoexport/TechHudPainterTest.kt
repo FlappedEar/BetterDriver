@@ -73,9 +73,11 @@ class TechHudPainterTest {
         }
         assertEquals(0, Color.alpha(bmp.getPixel(960, 540)))
         assertEquals(0, Color.alpha(bmp.getPixel(960, 400)))
-        // The radar has its amber dot; the map its trail.
+        // The radar has its amber dot; the map its car and its trail, amber or, against the best lap
+        // before this one, green and orange (FBBD-451).
         assertTrue("radar dot", amber(bmp, l.boxes.getValue(HudWidget.GRadar)) > 100)
-        assertTrue("map trail and car", amber(bmp, l.boxes.getValue(HudWidget.TrackMap)) > 300)
+        val map = l.boxes.getValue(HudWidget.TrackMap)
+        assertTrue("map trail and car", count(bmp, map, Amber, TrailGreen, TrailOrange) > 300)
         save(bmp, "full")
     }
 
@@ -162,10 +164,13 @@ class TechHudPainterTest {
         return OverlayData(sets, replayLaps("s", sets, track()), channels = if (withCar) channels else emptyList())
     }
 
-    private fun amber(bmp: Bitmap, b: com.flappedear.betterdriver.timing.overlay.Box): Int {
+    private fun amber(bmp: Bitmap, b: com.flappedear.betterdriver.timing.overlay.Box): Int = count(bmp, b, Amber)
+
+    /** Pixels in [b] of any of [colors]. */
+    private fun count(bmp: Bitmap, b: com.flappedear.betterdriver.timing.overlay.Box, vararg colors: Int): Int {
         var n = 0
         for (x in b.left.toInt() until b.right.toInt()) {
-            for (y in b.top.toInt() until b.bottom.toInt()) if (bmp.getPixel(x, y) == Amber) n++
+            for (y in b.top.toInt() until b.bottom.toInt()) if (bmp.getPixel(x, y) in colors) n++
         }
         return n
     }
@@ -185,6 +190,8 @@ class TechHudPainterTest {
         const val Speed = 30.0
         const val Hz = 25
         const val Amber = 0xFFFCB203.toInt()
+        const val TrailGreen = 0xFF4FD17A.toInt()
+        const val TrailOrange = 0xFFFF9F1A.toInt()
         const val Backdrop = 0xFF3A424C.toInt()
     }
 }

@@ -274,7 +274,9 @@ class ReviewedSession internal constructor(
         val a = analysis?.let { laps?.of(it, aIndex) }
         val b = analysis?.let { laps?.of(it, bIndex) }
         val source = sessionVideoSource(data, indexed, dir, present)
-        return if (a != null && b != null) LapVideoReview(VideoLap(a, source), VideoLap(b, source)) else null
+        val runs = review.track?.pointToPoint == true
+        if (a == null || b == null) return null
+        return LapVideoReview(VideoLap(a, source, runs), VideoLap(b, source, runs))
     }
 
     /**

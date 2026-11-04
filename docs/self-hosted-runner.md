@@ -21,8 +21,16 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
   `BD <runner name> <iPad|iPhone> <runtime>`), made once and reused by later jobs, so two runner
   instances on one Mac never drive the same simulator and no job pays for a first boot. Each job
   removes the app and its data first, and shuts down the runner's other simulator.
-* `ios-release.yml` (TestFlight) stays on GitHub's runners: the signing key and App Store
-  Connect secrets never reach the Mac.
+* `ios-release.yml` (TestFlight) runs on GitHub's `macos-26` by default, so the signing key and
+  App Store Connect secrets do not reach the Mac. When GitHub's macOS runners take no jobs (both
+  1.33.0 TestFlight runs were cancelled after 15 min queued on 4 Nov 2026), a dispatch from main
+  with `runner` = `["self-hosted","bd-mac"]` builds and uploads on a Mac mini: the key is then
+  written to the runner's temp folder for the run and removed after it, and the run's development
+  certificate is revoked at the end, but Xcode keeps the signing identity in the Mac's keychain.
+  `ios-release-fallback.yml` makes that dispatch itself, for the same commit, when a hosted
+  TestFlight job was cancelled after 14 min or more in the queue without a machine. Its gate runs
+  only the smoke and first-run tests when `.github/scripts/ios-tested.py` finds an iOS CI pass
+  that differs from the release only outside the app.
 * Overflow (FBBD-457): a pull request run goes to the labels in `.github/ios-overflow.json`
   (e.g. `"macos-15"`) when another unfinished pull request run already has a job for the Mac
   minis. `null` (since 4 Nov 2026, when GitHub's macOS runners left jobs queued until they were

@@ -496,10 +496,11 @@ final class TechHudPainter: @unchecked Sendable {
         cg.strokePath()
 
         startLine(cg, view, side)
-        if m.trail.contains(where: { $0.count > 1 }) {
-            cg.setLineWidth(lw)
-            cg.setStrokeColor(Hud.amber.cgColor)
-            cg.addPath(view.path(m.trail))
+        // The trail green where the lap was ahead of the best lap before it, orange behind (FBBD-451).
+        cg.setLineWidth(lw)
+        for run in m.trailRuns {
+            cg.setStrokeColor((run.paced ? (run.ahead ? Hud.green : Hud.orange) : Hud.amber).cgColor)
+            cg.addPath(view.path([run.points]))
             cg.strokePath()
         }
         if let position = m.position { car(cg, view.point(position), side) }

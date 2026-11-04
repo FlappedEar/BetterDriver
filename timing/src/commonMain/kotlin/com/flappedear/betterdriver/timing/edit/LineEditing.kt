@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.Gate
 import com.flappedear.betterdriver.timing.track.DefaultLineWidthMeters
 import com.flappedear.betterdriver.timing.track.MaxLineWidthMeters
@@ -95,6 +96,15 @@ const val FittedLineMarginMeters = 4.0
 /** The narrowest line fitted to the passes, metres: about a Polish circuit's width (FBBD-438). */
 const val MinFittedLineWidthMeters = 12.0
 
+/**
+ * A pass counts towards a fitted line only at 0.4 to 2.5 times the tapped pass's speed (FBBD-454):
+ * on Arek's Silesia Ring sessions the pit lane beside start/finish is driven at 16 to 49 km/h, the
+ * straight at 98 to 137 km/h, and the slowest racing pass at a sector line is half the fastest.
+ */
+private val SameLaneSpeedShare = 0.4..2.5
+
+private const val MicrosPerSecond = 1_000_000.0
+
 /** Width steps of the editor's − and + (FBBD-438), metres. */
 const val LineWidthStepMeters = 2.0
 
@@ -111,9 +121,20 @@ fun TrackLine.widened(steps: Int): TrackLine {
  * A recorded drive as a line on the map, used to place timing lines from the car's own path
  * (UI-24 option A). [points] are the fixes in order.
  */
-class LapPath(val points: List<GeoPoint>) {
+class LapPath(
+    val points: List<GeoPoint>,
+    /** When each point was taken, microseconds; null when unknown (then every pass counts as fast). */
+    private val timesMicros: List<Long>? = null,
+) {
     init {
         require(points.size >= 2) { "a path needs at least two points" }
+        require(timesMicros == null || timesMicros.size == points.size) { "one time per point" }
+    }
+
+    companion object {
+        /** The drive of [fixes] with their times, or null with fewer than two (FBBD-454). */
+        fun of(fixes: List<Fix>): LapPath? = fixes.takeIf { it.size >= 2 }
+            ?.let { f -> LapPath(f.map { GeoPoint(it.lat, it.lon) }, f.map { it.tMicros }) }
     }
 
     val frame = LocalFrame(points.first())
@@ -158,9 +179,13 @@ class LapPath(val points: List<GeoPoint>) {
         val a = frame.toXy(probe.left)
         val along = frame.toXy(probe.right) - a
         val unit = along * (1.0 / along.length())
-        // Each forward pass as metres from the probe's left end.
+        // Each forward pass as metres from the probe's left end. Passes at a very different speed from
+        // the tapped one are another lane: the pit lane beside a straight (FBBD-454).
+        val tapped = speedAt(hit.segment)
         val passes = (0 until xy.size - 1).mapNotNull { i ->
-            gate.crossing(xy[i], i.toLong(), xy[i + 1], (i + 1).toLong())?.let { (it.at - a).dot(unit) }
+            gate.crossing(xy[i], i.toLong(), xy[i + 1], (i + 1).toLong())
+                ?.takeIf { i == hit.segment || sameLane(tapped, speedAt(i)) }
+                ?.let { (it.at - a).dot(unit) }
         }
         // The tapped pass always crosses the probe; [half] stands in should rounding miss it.
         val half = DefaultLineWidthMeters / 2
@@ -194,6 +219,16 @@ class LapPath(val points: List<GeoPoint>) {
         }
         return null
     }
+
+    /** Speed over segment [i], metres per second; null without times. */
+    private fun speedAt(i: Int): Double? {
+        val t = timesMicros ?: return null
+        val dt = (t[i + 1] - t[i]) / MicrosPerSecond
+        return if (dt > 0) (xy[i + 1] - xy[i]).length() / dt else null
+    }
+
+    private fun sameLane(tapped: Double?, pass: Double?): Boolean =
+        tapped == null || pass == null || tapped <= 0.0 || pass / tapped in SameLaneSpeedShare
 
     private fun headingAt(segment: Int): Double {
         var a = segment

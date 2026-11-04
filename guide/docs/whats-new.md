@@ -13,6 +13,19 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.2
+
+- **Watch video** and **Video with data** show the heart rate of imported RaceChrono sessions.
+- Android **Watch video** with the phone sideways: the picture takes all the height but one row of controls.
+- The TRACK map's trail starts at the start/finish line: nothing on the out lap.
+
+## 1.33.1
+
+- **Watch video** and **Video with data**: the TRACK map's trail is green where the lap is ahead of the best lap before it and orange where it is behind; amber with no lap to compare.
+- The **Composite lap video** sheet under the lap times has **Watch** next to **Export**.
+- The out lap is no longer lap 1: video, lap review, the lap picker, the track screen and coach cue cards number laps as the analysis does (out lap = **OUT**).
+- Track editor: a start/finish line fitted on a lap leaves out a pit lane next to the straight.
+
 ## 1.33.0
 
 - Choose every device at **START**: GPS, cameras, car data, heart-rate strap and tyres; the choice is kept for the next session.

@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.optimalOption
 import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
 import com.flappedear.betterdriver.analysis.optimal.optimalPartText
+import com.flappedear.betterdriver.analysis.optimal.unreadableCompositeOptions
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import org.junit.Assert.assertEquals
@@ -140,6 +141,25 @@ class OptimalVideoUiTest {
         val none = optimalOption(Realistic, OptimalLapResult(why = OptimalLapUnavailable.NoCompatibleChain), null)
         assertEquals(Raw, CompositeOptions(none, raw).preselected.kind)
         assertTrue(CompositeOptions(none, raw).enabled)
+    }
+
+    @Test
+    fun theSheetWatchesWhateverIsOnVideoAndExportsOnlyWhenNothingBlocksIt() {
+        // FBBD-452: Watch next to Export in the composite lap sheet.
+        val realistic = optimalOption(Realistic, OptimalLapResult(lap.copy(kind = Realistic)), plan(clip(0.0, 100.0)))
+        val offVideo = optimalOption(Raw, OptimalLapResult(lap), plan(clip(200.0, 300.0)))
+        val options = CompositeOptions(realistic, offVideo)
+        assertTrue(options.canWatch(Realistic))
+        assertTrue(options.canExport(Realistic, blocked = null))
+        // A recording or another export stops Export, not Watch: watching makes no file.
+        val blocked = videoBlocked(recording = true, busy = false)
+        assertFalse(options.canExport(Realistic, blocked))
+        assertTrue(options.canWatch(Realistic))
+        assertFalse(options.canExport(Realistic, videoBlocked(recording = false, busy = true)))
+        // Nothing on video: neither.
+        assertFalse(options.canWatch(Raw))
+        assertFalse(options.canExport(Raw, blocked = null))
+        assertFalse(unreadableCompositeOptions().canWatch(Realistic))
     }
 }
 

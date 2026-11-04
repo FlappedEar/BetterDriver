@@ -28,6 +28,13 @@ data class LiveTimingState(
     /** The track is point to point (FBBD-155): laps are runs, and [lapMillis] is null between runs. */
     val pointToPoint: Boolean = false,
 ) {
+    /**
+     * The lap number the track screen shows (FBBD-450): full laps counted from the line, as the session
+     * analysis counts them; null before the first fix and on the out lap from session start.
+     */
+    val shownLapNumber: Int?
+        get() = shownLapNumber(lapNumber, pointToPoint).takeIf { lapNumber > 0 && it > 0 }
+
     companion object {
         fun empty(sectorCount: Int, pointToPoint: Boolean = false) = LiveTimingState(
             lapNumber = 0, lapMillis = null, deltaSeconds = null, predictedMillis = null,
