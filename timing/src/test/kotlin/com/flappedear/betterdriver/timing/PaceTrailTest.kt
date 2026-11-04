@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.timing.overlay.trail
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -107,7 +108,11 @@ class PaceTrailTest {
         val stop = lap(2).startMicros + 20_000_000
         val cut = sets.filter { it.tMicros <= stop }
         val short = OverlayData(cut, replayLaps("s", cut, track))
-        assertTrue(short.paceTrail(stop - 1).filterNotNull().size > 2)
+        val past = short.paceTrail(stop - 1).filterNotNull()
+        assertTrue(past.size > 2)
+        // It starts at the line, not in the out lap before it.
+        val line = assertNotNull(short.at(lap(2).startMicros).position)
+        assertTrue((past.first().xy - line).length() < 1.0)
         assertTrue(short.paceTrail(lap(1).startMicros + 10_000_000).isEmpty())
     }
 

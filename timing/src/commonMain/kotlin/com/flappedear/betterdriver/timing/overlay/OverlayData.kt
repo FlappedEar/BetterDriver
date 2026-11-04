@@ -282,7 +282,8 @@ class OverlayData(
         val trace = hotlap
             ?: traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
         val lapStart = trace?.lap?.startMicros
-        val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
+        // Outside a traced lap: the last stretch, but not back past the line of the last lap that ended.
+        val start = lapStart ?: maxOf(sessionMicros - TrailFallbackMicros, started?.lap?.endMicros ?: Long.MIN_VALUE)
         // A single lap's trail stops at its line; after it the lap stays drawn as its time does.
         val until = hotlap?.lap?.endMicros?.coerceAtMost(sessionMicros) ?: sessionMicros
         val step = maxOf(TrailMinStepMicros, (until - start) / TrailMaxPoints)
