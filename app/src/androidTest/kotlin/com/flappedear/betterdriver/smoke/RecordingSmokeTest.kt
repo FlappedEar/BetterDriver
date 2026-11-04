@@ -53,6 +53,8 @@ class RecordingSmokeTest {
         app.waitUntilGone("Add a GNSS receiver to start")
 
         app.waitForText("START").performClick()
+        // START opens the list at START (FBBD-446); its own button starts the session.
+        app.waitForText("Start session").performScrollTo().performClick()
         // The track screen animates while it records, so the clock is advanced by hand meanwhile.
         app.withManualClock {
             app.pumpUntil(LoadTimeoutMs, "the recorder, camera and coach processes") {

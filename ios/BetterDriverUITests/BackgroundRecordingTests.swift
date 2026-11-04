@@ -35,6 +35,10 @@ final class BackgroundRecordingTests: XCTestCase {
             ? byId : app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Simulated GPS")).firstMatch
         XCTAssertTrue(simulated.waitForExistence(timeout: 20), "the simulated receiver")
         simulated.tap()
+        // A row picks; the sheet's own button starts (FBBD-446).
+        let startSession = app.buttons["startSession"]
+        XCTAssertTrue(startSession.waitForExistence(timeout: 10), "Start session on the START sheet")
+        startSession.tap()
         // The location prompt for the background keep-alive can come up as the session starts.
         allowSystemAlerts()
         let screen = app.descendants(matching: .any).matching(identifier: "trackScreen").firstMatch
@@ -66,13 +70,6 @@ final class BackgroundRecordingTests: XCTestCase {
 
     /// Answers the system's permission prompts (location, motion, Bluetooth) as a user allowing them would.
     private func allowSystemAlerts() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<4 {
-            let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 2) else { return }
-            let allow = ["Allow While Using App", "Allow", "OK"].map { alert.buttons[$0] }.first { $0.exists }
-            guard let allow else { return }
-            allow.tap()
-        }
+        allowSystemPrompts()
     }
 }

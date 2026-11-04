@@ -101,9 +101,9 @@ class HudMoment internal constructor(
     val deltaText: String? = deltaSeconds?.let(::lapDelta)
     val deltaAhead: Boolean = (deltaSeconds ?: 0.0) <= 0.0
 
-    /** This moment with a composite lap's tile (FBBD-370). */
-    internal fun asComposite(text: OptimalOverlayText): HudMoment =
-        HudMoment(frame, trail, radar, bestLapMicros, pointToPoint, text)
+    /** This moment with a composite lap's tile (FBBD-370), its BEST the session's [sessionBestMicros] (FBBD-449). */
+    internal fun asComposite(text: OptimalOverlayText, sessionBestMicros: Long?): HudMoment =
+        HudMoment(frame, trail, radar, sessionBestMicros, pointToPoint, text)
 
     /** "LAP 7" over the map; null outside a lap. */
     val mapLap: String? = lap?.let { lapMapCaption(it.number, it.kind, pointToPoint) }

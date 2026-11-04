@@ -191,9 +191,11 @@ private struct StartButton: View {
     }
 }
 
-/// The sheet at START (UI-285 B): RaceBoxes in range as they advertise, the one used last on top, the
-/// other receivers listed in Settings › Equipment, and the phone's own GPS; then the cameras, each with
-/// its switch as on Android's "This session".
+/// The list at START (FBBD-446, UI-311 A, as Android's): the car, then each group in the same rows. GPS
+/// receiver: RaceBoxes in range as they advertise (the one used last on top and picked), the other
+/// receivers listed in Settings › Equipment and the phone's own GPS, one of them; the cameras, each with
+/// its switch; then car data, heart rate and tyres from the shared list (StartList), one of each or
+/// None. The choice is kept for the next session (UI-313 A). Start session starts with the picked receiver.
 struct ReceiverSheet: View {
     @EnvironmentObject private var settings: SettingsModel
     let lastUsed: String
@@ -204,6 +206,7 @@ struct ReceiverSheet: View {
     @State private var found: [UUID: FoundRaceBoxDevice] = [:]
     @State private var scanner: RaceBoxScanner?
     @State private var modes: [PhoneVideoMode] = [PhoneVideoMode.standard]
+    @State private var picked: Receiver?
 
     private var devices: [FoundRaceBoxDevice] {
         found.values.sorted { a, b in
@@ -212,103 +215,211 @@ struct ReceiverSheet: View {
         }
     }
 
+    /// Car data, heart rate and tyres: the groups the shared list has an item in.
+    private var sensorGroups: [StartGroup] {
+        StartListKt.startGroups(setup: settings.setup).filter {
+            $0.kind == StartKind.carData || $0.kind == StartKind.heartRate || $0.kind == StartKind.tpms
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("GPS receiver for this session")
-                .font(.title3.weight(.semibold))
-                .padding(.bottom, 6)
-                // On the title only: on the whole sheet it would replace every row's own id.
-                .accessibilityIdentifier("receiverSheet")
-            // The UI test's receiver, on top where the sheet's first height shows it.
-            if UITestMode.on {
-                row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
-                    .accessibilityIdentifier("receiver.simulated")
-            }
-            ForEach(devices) { device in
-                row(device.name, device.name == lastUsed ? "Nearby · last used" : "Nearby", ok: true) {
-                    onPick(.raceBox(device))
-                }
-            }
-            if found.isEmpty {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Looking for RaceBoxes").foregroundStyle(Palette.onSurfaceVariant)
-                }
-                .padding(.vertical, 12)
-            }
-            // Wi-Fi GPS, Bluetooth LE GPS and RaceChrono DIY receivers added in Settings › Equipment (FBBD-374).
-            ForEach(settings.setup.equipment.filter { ListedReceivers.models.contains($0.modelName) }, id: \.id) { item in
-                row(item.name, ListedReceivers.detail(item), ok: true) { onPick(.listed(item)) }
-                    .accessibilityIdentifier("receiver.\(item.modelName)")
-            }
-            row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
-            // The Demo track once added in Settings › Equipment, with what it drives (FBBD-373).
-            if settings.setup.equipment.contains(where: { $0.modelName == ModelName.demoTrack }) {
-                row("Demo track", DemoTrackCore.shared.chosenLabel(filesDir: AppFolders.base.path), ok: true) {
-                    onPick(.demoTrack)
-                }
-                .accessibilityIdentifier("receiver.demoTrack")
-            }
-            // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
-            Toggle("Phone camera video", isOn: $camera)
-                .tint(Palette.accent)
-                .padding(.vertical, 12)
-                .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
-                .accessibilityIdentifier("phoneCameraToggle")
-            if camera {
-                // Only modes this phone records, as Android's video dialog (FBBD-88).
-                HStack {
-                    Text("Video")
-                    Spacer()
-                    // The chosen mode is listed from the first draw, before onAppear reads what the phone records.
-                    Picker("Video", selection: $videoMode) {
-                        ForEach(modes.contains(videoMode) ? modes : modes + [videoMode]) { Text($0.label).tag($0) }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("This session")
+                        .font(.title3.weight(.semibold))
+                        .padding(.bottom, 6)
+                        // On the title only: on the whole sheet it would replace every row's own id.
+                        .accessibilityIdentifier("receiverSheet")
+                    carRow
+                    groupTitle("GPS receiver")
+                    receivers
+                    groupTitle("Cameras")
+                    cameras
+                    ForEach(sensorGroups, id: \.kind) { group in
+                        groupTitle(group.title)
+                        ForEach(group.rows, id: \.id) { row in
+                            pickRow(row.name, row.detail, on: row.on) { choose(group.kind, row.id) }
+                                .accessibilityIdentifier("start.\(group.kind.name).\(row.name)")
+                        }
+                        pickRow("None", "", on: group.noneOn) { choose(group.kind, nil) }
+                            .accessibilityIdentifier("start.\(group.kind.name).none")
                     }
-                    .pickerStyle(.menu)
-                    .tint(Palette.accent)
                 }
-                .padding(.vertical, 6)
-                .accessibilityIdentifier("phoneVideoMode")
             }
-            // Each Open GoPro camera starts and stops with the session while on (FBBD-343).
-            ForEach(OpenGoPros.companion.listed(setup: settings.setup), id: \.id) { goPro in
-                Toggle(goPro.name, isOn: Binding(
-                    get: { goPro.on },
-                    set: { on in settings.update { SettingsCore.shared.useCamera(setup: $0, id: goPro.id, on: on) } }
-                ))
-                .tint(Palette.accent)
-                .padding(.vertical, 12)
-                .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
-                .accessibilityIdentifier("goProToggle")
+            Button {
+                if let picked { onPick(picked) }
+            } label: {
+                Text("Start session")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(picked == nil ? Palette.outline : Palette.accent))
+                    .foregroundStyle(Palette.onAccent)
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .disabled(picked == nil)
+            .padding(.top, 10)
+            .accessibilityIdentifier("startSession")
         }
         .padding(.horizontal, 20)
         .padding(.top, 22)
+        .padding(.bottom, 12)
         .foregroundStyle(Palette.onBackground)
         .onAppear {
             let supported = PhoneVideoMode.supported()
             modes = supported.contains(videoMode) ? supported : supported + [videoMode]
-            let s = RaceBoxScanner { device in found[device.id] = device }
+            let s = RaceBoxScanner { device in
+                found[device.id] = device
+                // The RaceBox used last is picked as it comes into range, as the list's top row.
+                if picked == nil, device.name == lastUsed { picked = .raceBox(device) }
+            }
             scanner = s
             s.start()
+            // A listed receiver used last is picked at once (UI-313 A).
+            if picked == nil { picked = lastNotRaceBox }
         }
         .onDisappear { scanner?.stop() }
     }
 
-    private func row(_ name: String, _ detail: String, ok: Bool, pick: @escaping () -> Void) -> some View {
-        Button(action: pick) {
-            HStack(spacing: 10) {
-                Circle().fill(ok ? TrackColors.gain : Palette.onSurfaceVariant).frame(width: 9, height: 9)
-                Text(name)
+    /// The car, chosen as in Settings › Cars.
+    private var carRow: some View {
+        let cars = settings.setup.cars
+        let current = settings.setup.active().car?.name ?? (cars.isEmpty ? "No car added" : "None")
+        return Menu {
+            ForEach(cars, id: \.id) { car in
+                Button(car.name) { settings.update { $0.chooseCar(id: car.id) } }
+            }
+            Button("None") { settings.update { $0.chooseCar(id: nil) } }
+        } label: {
+            HStack {
+                Text("Car")
                 Spacer()
-                Text(detail).font(.footnote).foregroundStyle(Palette.onSurfaceVariant)
+                Text(current).foregroundStyle(Palette.onSurfaceVariant)
             }
             .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("start.car")
+    }
+
+    /// The receiver from Settings › Equipment used last (the recorder keeps a RaceBox's or a listed
+    /// receiver's name); a RaceBox is picked only once it is in range.
+    private var lastNotRaceBox: Receiver? {
+        if lastUsed.isEmpty { return nil }
+        guard let item = settings.setup.equipment.first(where: { ListedReceivers.models.contains($0.modelName) && $0.name == lastUsed }) else { return nil }
+        return .listed(item)
+    }
+
+    @ViewBuilder
+    private var receivers: some View {
+        // The UI test's receiver, on top where the sheet's first height shows it.
+        if UITestMode.on {
+            pickRow("Simulated GPS", "UI test", on: picked == .simulated) { picked = .simulated }
+                .accessibilityIdentifier("receiver.simulated")
+        }
+        ForEach(devices) { device in
+            pickRow(device.name, device.name == lastUsed ? "In range · last used" : "In range", on: picked == .raceBox(device)) {
+                picked = .raceBox(device)
+            }
+        }
+        if found.isEmpty {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Looking for RaceBoxes").foregroundStyle(Palette.onSurfaceVariant)
+            }
+            .padding(.vertical, 12)
+        }
+        // Wi-Fi GPS, Bluetooth LE GPS and RaceChrono DIY receivers added in Settings › Equipment (FBBD-374).
+        ForEach(settings.setup.equipment.filter { ListedReceivers.models.contains($0.modelName) }, id: \.id) { item in
+            pickRow(item.name, ListedReceivers.detail(item), on: picked == .listed(item)) { picked = .listed(item) }
+                .accessibilityIdentifier("receiver.\(item.modelName)")
+        }
+        pickRow("Phone GPS only", "1 Hz", on: picked == .phone) { picked = .phone }
+        // The Demo track once added in Settings › Equipment, with what it drives (FBBD-373).
+        if settings.setup.equipment.contains(where: { $0.modelName == ModelName.demoTrack }) {
+            pickRow("Demo track", DemoTrackCore.shared.chosenLabel(filesDir: AppFolders.base.path), on: picked == .demoTrack) {
+                picked = .demoTrack
+            }
+            .accessibilityIdentifier("receiver.demoTrack")
+        }
+    }
+
+    @ViewBuilder
+    private var cameras: some View {
+        // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
+        Toggle(isOn: $camera) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Phone camera")
+                Text(videoMode.label).font(.footnote).foregroundStyle(Palette.onSurfaceVariant)
+            }
+        }
+        .tint(Palette.accent)
+        .padding(.vertical, 8)
+        .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
+        .accessibilityIdentifier("phoneCameraToggle")
+        if camera {
+            // Only modes this phone records, as Android's video dialog (FBBD-88).
+            HStack {
+                Text("Video")
+                Spacer()
+                // The chosen mode is listed from the first draw, before onAppear reads what the phone records.
+                Picker("Video", selection: $videoMode) {
+                    ForEach(modes.contains(videoMode) ? modes : modes + [videoMode]) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .tint(Palette.accent)
+            }
+            .padding(.vertical, 6)
+            .accessibilityIdentifier("phoneVideoMode")
+        }
+        // Each Open GoPro camera starts and stops with the session while on (FBBD-343).
+        ForEach(OpenGoPros.companion.listed(setup: settings.setup), id: \.id) { goPro in
+            Toggle(goPro.name, isOn: Binding(
+                get: { goPro.on },
+                set: { on in settings.update { SettingsCore.shared.useCamera(setup: $0, id: goPro.id, on: on) } }
+            ))
+            .tint(Palette.accent)
+            .padding(.vertical, 12)
+            .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
+            .accessibilityIdentifier("goProToggle")
+        }
+    }
+
+    private func choose(_ kind: StartKind, _ id: String?) {
+        // A Kotlin extension of a Kotlin class is a method of that class in Swift.
+        settings.update { $0.chooseAtStart(kind: kind, id: id, on: true) }
+    }
+
+    private func groupTitle(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.onSurfaceVariant)
+            .padding(.top, 14)
+            .padding(.bottom, 2)
+    }
+
+    /// One row of a one-of group: the name, what it is or whether it is in range, and its radio.
+    private func pickRow(_ name: String, _ detail: String, on: Bool, pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                    if !detail.isEmpty {
+                        Text(detail).font(.footnote).foregroundStyle(Palette.onSurfaceVariant)
+                    }
+                }
+                Spacer()
+                Image(systemName: on ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(on ? Palette.accent : Palette.onSurfaceVariant)
+            }
+            .padding(.vertical, 10)
             .contentShape(Rectangle())
             .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

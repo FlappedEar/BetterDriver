@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.recording.obdWatch
 import com.flappedear.betterdriver.setup.CarParameter
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.SessionEquipment
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
@@ -70,7 +71,8 @@ internal fun rememberCarLink(
     val context = LocalContext.current
     val recording = recorder.state.recording || recorder.state.starting
     val repo = SetupRepo.get(context)
-    val carData = (if (recording) repo.forSession() else repo.setup).active().carData
+    // Outside a session every listed adapter, even with None chosen at START (FBBD-446).
+    val carData = if (recording) repo.forSession().active().carData else repo.setup.ofKind(EquipmentKind.CAR_DATA)
     var using by remember { mutableStateOf<String?>(null) }
     val adapter = remember(carData, using) { obdAdapterLabel(context, SessionEquipment.obdShown(carData, using)) }
     val profile by rememberUpdatedState(ownProfile(car?.let { c -> draft?.let { c.withParameter(it) } ?: c }))

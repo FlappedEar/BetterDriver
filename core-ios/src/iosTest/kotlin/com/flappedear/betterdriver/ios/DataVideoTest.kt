@@ -230,7 +230,7 @@ class DataVideoTest {
         val frame = OverlayFrame(100.0, lap, null, null)
         val captions = listOf("REALISTIC OPTIMAL · LAP 5 · CORNER 3", "LAP 5 · CORNER 3", "LAP 5")
         val text = OptimalOverlayText(captions, 42_500_000, -0.31)
-        val m = HudMoment(frame, emptyList(), emptyList(), 110_000_000, false).asComposite(text)
+        val m = HudMoment(frame, emptyList(), emptyList(), null, false).asComposite(text, 110_000_000)
         assertTrue(m.composite)
         assertEquals(text.captions, m.captions)
         assertEquals("0:42.500", m.lapTimeText)
@@ -238,10 +238,11 @@ class DataVideoTest {
         assertTrue(m.deltaAhead)
         assertEquals("1:50.000", m.bestText)
         assertEquals("LAP 4", m.mapLap)
-        val behind = HudMoment(frame, emptyList(), emptyList(), null, false).asComposite(text.copy(deltaSeconds = 0.2))
+        val plain = HudMoment(frame, emptyList(), emptyList(), null, false)
+        val behind = plain.asComposite(text.copy(deltaSeconds = 0.2), null)
         assertEquals("+0.200", behind.deltaText)
         assertFalse(behind.deltaAhead)
-        val none = HudMoment(frame, emptyList(), emptyList(), null, false).asComposite(text.copy(deltaSeconds = null))
+        val none = plain.asComposite(text.copy(deltaSeconds = null), null)
         assertNull(none.deltaText)
     }
 

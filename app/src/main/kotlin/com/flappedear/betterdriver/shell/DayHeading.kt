@@ -9,7 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.review.SessionListDay
-import com.flappedear.betterdriver.analysis.review.SessionListEntry
+import com.flappedear.betterdriver.analysis.review.SessionListTrackDay
+import com.flappedear.betterdriver.analysis.review.sessionListEntry
 import com.flappedear.betterdriver.analysis.review.sessionListDays
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.HealthCard
@@ -35,20 +36,18 @@ import java.time.ZoneId
 @Composable
 internal fun DayHeading(
     day: SessionListDay,
-    list: List<SessionSummary>,
     onTrackDay: (List<String>) -> Unit,
     facts: Map<String, SessionFacts> = emptyMap(),
 ) {
-    val days = trackDays(list)
     Column(Modifier.padding(top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionTitle(day.title)
-        days.forEach { TrackDayCard(it, facts, named = day.trackOnRows, onTrackDay) }
+        day.trackDays.forEach { TrackDayCard(it, facts, named = day.trackOnRows, onTrackDay) }
     }
 }
 
 @Composable
 private fun TrackDayCard(
-    day: TrackDayLinkUi,
+    day: SessionListTrackDay,
     facts: Map<String, SessionFacts>,
     named: Boolean,
     onTrackDay: (List<String>) -> Unit,
@@ -79,29 +78,23 @@ private fun TrackDayCard(
 /** The test tag of a day's Track day card. */
 internal const val TrackDayLinkTag = "track-day-link"
 
-/** One track driven more than once on one day: its name and its sessions, oldest first. */
-internal data class TrackDayLinkUi(val track: String, val ids: List<String>)
-
-/**
- * The tracks of one day's [sessions] (as listed, newest first) driven in at least two sessions that
- * are not recording, most sessions first; a session with no track name takes no part.
- */
-internal fun trackDays(sessions: List<SessionSummary>): List<TrackDayLinkUi> =
-    sessions.filter { it.state != SessionState.RECORDING && it.info.track.isNotBlank() }
-        .groupBy { it.info.track }
-        .filterValues { it.size >= 2 }
-        .map { (track, list) -> TrackDayLinkUi(track, list.sortedBy { it.info.startUtcMillis }.map { it.id }) }
-        .sortedByDescending { it.ids.size }
-
 /** The Sessions list's days (shared with iOS, FBBD-360), in the phone's time zone, newest first as listed. */
 internal fun sessionDays(
     sessions: List<SessionSummary>,
+    facts: Map<String, SessionFacts> = emptyMap(),
     zone: ZoneId = ZoneId.systemDefault(),
     today: LocalDate = LocalDate.now(zone),
 ): List<SessionListDay> = sessionListDays(
     sessions.map {
         val day = Instant.ofEpochMilli(it.info.startUtcMillis).atZone(zone).toLocalDate()
-        SessionListEntry(it.id, day.toEpochDay(), it.info.track)
+        sessionListEntry(
+            it.id,
+            day.toEpochDay(),
+            it.info.track,
+            facts[it.id],
+            it.info.startUtcMillis,
+            recording = it.state == SessionState.RECORDING,
+        )
     },
     today.toEpochDay(),
 ) { DayFormat.format(LocalDate.ofEpochDay(it)) }

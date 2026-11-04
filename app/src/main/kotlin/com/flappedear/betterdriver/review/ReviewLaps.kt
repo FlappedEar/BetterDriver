@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.analysis.review.recordedFacts
+import com.flappedear.betterdriver.analysis.review.atTrack
 import com.flappedear.betterdriver.analysis.review.withLaps
 import com.flappedear.betterdriver.shell.SessionFacts
 import com.flappedear.betterdriver.timing.replay.replayLaps
@@ -139,7 +140,7 @@ class ReviewLaps private constructor(context: Context) {
                 session.takeIf { it.laps.isNotEmpty() },
                 revisions(saved),
                 Stamps.of(s.dir),
-                facts.withLaps(laps),
+                facts.withLaps(laps).atTrack(track),
             )
         }
     } catch (e: Exception) {

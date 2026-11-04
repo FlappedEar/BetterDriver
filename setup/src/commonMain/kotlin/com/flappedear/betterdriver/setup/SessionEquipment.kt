@@ -32,11 +32,15 @@ object SessionEquipment {
             ?: obdBluetooth(carData).firstOrNull() ?: obdWifi(carData).firstOrNull()?.adapter ?: carData.firstOrNull()
 
     /**
-     * The strap recorded: the first listed heart-rate monitor with an address. Heart rate has fixed
-     * channel ids, so a second strap would merge into the same stream; null when none is listed.
+     * The strap recorded: the [chosen] one (FBBD-446; the strap added last), else the last listed
+     * heart-rate monitor with an address, so a setup saved before the choice records the strap added
+     * last too (FBBD-445). Heart rate has fixed channel ids, so a second strap would merge into the
+     * same stream; null when none is listed.
      */
-    fun heartRateStrap(sensors: List<Equipment>): Equipment? =
-        sensors.firstOrNull { it.model == EquipmentModel.HEART_RATE && !it.address.isNullOrBlank() }
+    fun heartRateStrap(sensors: List<Equipment>, chosen: String? = null): Equipment? {
+        val straps = sensors.filter { it.model == EquipmentModel.HEART_RATE && !it.address.isNullOrBlank() }
+        return straps.firstOrNull { it.id == chosen } ?: straps.lastOrNull()
+    }
 
     /**
      * The tyre pressure bridge recorded (FBBD-224): the first listed one with an address. Its eight
