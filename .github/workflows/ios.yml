@@ -37,6 +37,7 @@ on:
       - ".github/scripts/ios-simulator.py"
       - ".github/scripts/ios-test-parts.py"
       - ".github/ios-runner.json"
+      - ".github/ios-overflow.json"
   push:
     branches: [main]
     paths:
@@ -64,6 +65,7 @@ on:
       - ".github/scripts/ios-simulator.py"
       - ".github/scripts/ios-test-parts.py"
       - ".github/ios-runner.json"
+      - ".github/ios-overflow.json"
   workflow_dispatch:
 
 permissions:
@@ -84,9 +86,11 @@ jobs:
   # run code from outside.
   #
   # FBBD-457: two more decisions, both to keep the two Mac minis free for pull requests.
-  # - Overflow: a pull request run goes to GitHub's macos-15 when another unfinished iOS run already
-  #   uses the Mac minis: one run's 4 test shards fill both of them for ~40 min. Same tests, same
-  #   "iOS app" gate; fork PRs run there too.
+  # - Overflow: a pull request run goes to the labels in .github/ios-overflow.json (GitHub's
+  #   runners) when another unfinished iOS run already uses the Mac minis. Same tests, same
+  #   "iOS app" gate; fork PRs run there too. null = no overflow, the run waits for the Macs: on
+  #   4 Nov 2026 GitHub's macos-15 and macos-26 left jobs queued until they were cancelled after
+  #   15 min (runs 41851537284, 41857456524, 41865619100).
   # - Reuse on main: a push to main runs only what its pull request's run left out (the rest of
   #   the iPad's UI tests, ios-test-parts.py) when that run passed on the very same source tree:
   #   its "iOS passed (tree ...)" job names the tree it tested (the PR's merge commit), as ci.yml's
@@ -118,7 +122,8 @@ jobs:
         run: |
           labels=$(python3 -c 'import json; print(json.dumps(json.load(open(".github/ios-runner.json"))))')
           if [ "$FORK" = true ]; then labels='"macos-15"'; fi
-          if [ "$EVENT" = pull_request ] && [ "$labels" != '"macos-15"' ]; then
+          overflow=$(python3 -c 'import json; print(json.dumps(json.load(open(".github/ios-overflow.json"))))')
+          if [ "$EVENT" = pull_request ] && [ "$labels" != '"macos-15"' ] && [ "$overflow" != null ]; then
             # Other unfinished pull request runs with a job for the Mac minis. A main run (the rest
             # of the iPad's tests after its pull request) is one job: this run waits for it.
             busy=0
@@ -132,8 +137,8 @@ jobs:
             done
             echo "Other iOS runs using the Mac minis: $busy"
             if [ "$busy" -ge 1 ]; then
-              echo "Mac minis busy: this pull request runs on GitHub's macos-15 (FBBD-457)."
-              labels='"macos-15"'
+              echo "Mac minis busy: this pull request runs on $overflow (FBBD-457)."
+              labels=$overflow
             fi
           fi
           echo "iOS jobs run on: $labels"

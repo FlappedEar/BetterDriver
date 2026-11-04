@@ -23,9 +23,10 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
   removes the app and its data first, and shuts down the runner's other simulator.
 * `ios-release.yml` (TestFlight) stays on GitHub's runners: the signing key and App Store
   Connect secrets never reach the Mac.
-* Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished
-  `ios.yml` run already has a job for the Mac minis. One run's 4 test shards keep both Mac runners
-  busy for ~40 min, so a second run used to wait for them.
+* Overflow (FBBD-457): a pull request run goes to the labels in `.github/ios-overflow.json`
+  (e.g. `"macos-15"`) when another unfinished pull request run already has a job for the Mac
+  minis. `null` (since 4 Nov 2026, when GitHub's macOS runners left jobs queued until they were
+  cancelled) = no overflow: the run waits for the Mac minis.
 * Main (FBBD-457): a push to main runs only the rest of the iPad's UI tests when the merged pull
   request's run passed on the same source tree (its "iOS passed (tree ...)" job names the tree it
   tested); otherwise everything on both devices. Queued main runs are dropped when a newer merge
