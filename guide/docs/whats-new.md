@@ -13,6 +13,12 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.2
+
+- **Watch video** and **Video with data** show the heart rate of imported RaceChrono sessions.
+- Android **Watch video** with the phone sideways: the picture takes all the height but one row of controls.
+- The TRACK map's trail starts at the start/finish line: nothing on the out lap.
+
 ## 1.33.1
 
 - **Watch video** and **Video with data**: the TRACK map's trail is green where the lap is ahead of the best lap before it and orange where it is behind; amber with no lap to compare.

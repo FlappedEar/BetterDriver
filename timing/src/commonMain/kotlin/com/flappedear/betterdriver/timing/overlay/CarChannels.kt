@@ -5,14 +5,14 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 /**
  * The car's and the driver's own values the video overlay shows (FBBD-347), each found by its name
  * as the app records it ("obd_rpm", the FR-S's "obd_steering_angle", "heart_rate") or as RaceChrono
- * exports it ("rpm-obd", "engine_oil_temp-obd", "gearbox_temp-obd"), with the names the lap
- * analysis and the coach use for the same values.
+ * exports it ("rpm-obd", "engine_oil_temp-obd", "gearbox_temp-obd", "heart_rate-hrm"), with the names
+ * the lap analysis and the coach use for the same values.
  *
  * [maxGapMicros] is the longest wait between two readings that still counts as one stretch of
  * values: the recorder polls temperatures far more slowly than the engine and pedals (0.5 Hz, 0.2 Hz
  * while it listens to the FR-S's CAN broadcasts), so a temperature is held across its own interval.
  */
-enum class CarValue(pattern: String, val maxGapMicros: Long = FastGapMicros) {
+enum class CarValue(pattern: String, val maxGapMicros: Long = FastGapMicros, val zeroIsNone: Boolean = false) {
     Rpm("^(?:obd_)?(?:engine_)?rpm(?:-obd|-canbus)?$"),
 
     /** The accelerator pedal in %, preferred over the throttle plate as the driver's input. */
@@ -26,7 +26,12 @@ enum class CarValue(pattern: String, val maxGapMicros: Long = FastGapMicros) {
 
     /** The steering wheel in degrees, positive left (FBBD-263). */
     SteeringAngle("^(?:obd_)?steering(?:_wheel)?_angle(?:-obd|-canbus)?$"),
-    HeartRate("^heart_?rate$", HeartRateGapMicros),
+
+    /**
+     * The driver's heart rate: the app's "heart_rate" or RaceChrono's "heart_rate-hrm" (FBBD-176), as
+     * the analysis reads it. A 0 is a strap that sent no beat, not a reading.
+     */
+    HeartRate("^heart_?rate(?:-hrm)?$", HeartRateGapMicros, zeroIsNone = true),
     OilTemp("^(?:obd_)?(?:engine_)?oil_temp(?:-obd|-canbus)?$", SlowGapMicros),
     GearboxTemp("^(?:obd_)?(?:atf|gearbox|transmission)_temp(?:-obd|-canbus)?$", SlowGapMicros),
     CoolantTemp("^(?:obd_)?(?:engine_)?coolant_temp(?:-obd|-canbus)?$", SlowGapMicros),
