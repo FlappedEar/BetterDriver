@@ -159,6 +159,8 @@ jobs:
             selection=(-only-testing:BetterDriverUITests)
           fi
           echo "UI tests: ${selection[*]}"
+          # Each test's result shows in the step log as it ends (FBBD-457), the full log goes to
+          # build/smoke.log.
           xcodebuild test \
             -project ios/BetterDriver.xcodeproj -scheme BetterDriver \
             -destination "platform=iOS Simulator,id=$sim" \
@@ -167,8 +169,10 @@ jobs:
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 480 \
             -maximum-test-execution-time-allowance 600 \
-            CODE_SIGNING_ALLOWED=NO > build/smoke.log 2>&1 && status=0 || status=$?
-          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/smoke.log || true
+            CODE_SIGNING_ALLOWED=NO 2>&1 \
+            | tee build/smoke.log \
+            | { grep --line-buffered -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " || true; } \
+            && status=0 || status=$?
           if [ $status -ne 0 ]; then
             # The test prints what was on screen when it failed.
             sed -n '/SMOKE app:/,/Test Case .*failed/p' build/smoke.log | head -n 400
