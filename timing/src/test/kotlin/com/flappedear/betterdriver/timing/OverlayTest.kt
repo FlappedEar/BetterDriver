@@ -173,8 +173,9 @@ class OverlayTest {
             assertEquals(slow.lap.timeMicros - best.lap.timeMicros, held.deltaMicros)
         }
 
-        // The session's fastest lap exported alone: BEST is lap 2's time until its line, its delta is
-        // its gain on lap 2, held after the line, where BEST becomes its own time (FBBD-449).
+        // The session's fastest lap exported alone: BEST is lap 2's time until its line, even in the
+        // seconds before it while lap 2 is still being driven; its delta is its gain on lap 2, held after
+        // the line, where BEST becomes its own time (FBBD-449).
         val first = laps.laps.single { it.lap.number == 2 }
         val alone = OverlayData(sets, laps, hotlap = 3)
         assertEquals(first.lap.timeMicros, alone.at(best.lap.startMicros - 3_000_000).bestLapMicros)

@@ -268,7 +268,8 @@ class OverlayData(
             position = if (px != null && py != null) Xy(px, py) else null,
             g = if (gl != null && gt != null) GForce(gl, gt) else null,
             car = if (car.isEmpty()) CarFrame() else carAt(sessionMicros),
-            bestLapMicros = bestBy(sessionMicros)?.timeMicros,
+            // A single-lap export shows, before its line, the best its lap will be compared with.
+            bestLapMicros = bestBy(hotlap?.lap?.startMicros?.coerceAtLeast(sessionMicros) ?: sessionMicros)?.timeMicros,
         )
     }
 
