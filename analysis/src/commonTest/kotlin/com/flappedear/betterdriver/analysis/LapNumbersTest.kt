@@ -30,7 +30,11 @@ class LapNumbersTest {
         val replay = SessionReplay.read(demoAsset("$asset.replay"), StartUtcMillis, RateHz)
         val loopFixes = demoAsset("$asset.replay").lineSequence().last { it.isNotBlank() }
             .substringBefore(' ').toDouble().times(RateHz).toLong()
-        val sets = (0 until loopFixes).map { SampleSet(it * MicrosPerSecond / RateHz, replay.fix(it)) }
+        // A recording starts before the car reaches the line (in the pits, on the out lap); the built-in
+        // replays loop from the line itself, so the first 20 s are left out. A recording that starts on
+        // the line is the one case the two counts differ: the timer counts its first fix as a crossing.
+        val sets = (StartSkipFixes until loopFixes)
+            .map { SampleSet(it * MicrosPerSecond / RateHz, replay.fix(it)) }
         val info = SessionInfo(StartUtcMillis, track = track.id, channels = GnssChannels.ALL)
         val data = SessionData(
             asset, info, SessionState.FINISHED, GnssChannels.ALL.associateBy { it.id }, sets, emptyList(),
@@ -80,6 +84,7 @@ class LapNumbersTest {
     private companion object {
         /** Both find the same line crossing to within a fix or two. */
         const val SameLapMicros = 500_000L
+        const val StartSkipFixes = 200L
         const val StartUtcMillis = 1_790_000_000_000L
         const val RateHz = 10
         const val MicrosPerSecond = 1_000_000L
