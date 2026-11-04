@@ -246,10 +246,7 @@ class DataVideoTest {
         val behind = PaceRun(listOf(Xy(1.0, 0.0), Xy(2.0, 0.0)), Pace.Behind)
         val single = PaceRun(listOf(Xy(5.0, 0.0), Xy(6.0, 0.0)), null)
         val frame = OverlayFrame(100.0, null, null, null)
-        val m = HudMoment(
-            frame, emptyList(), emptyList(), null, false,
-            trailRuns = listOf(ahead, behind, single).map(::HudTrailRun),
-        )
+        val m = HudMoment(frame, listOf(ahead, behind, single).map(::HudTrailRun), emptyList(), null, false)
         assertEquals(listOf(true, true, false), m.trailRuns.map { it.paced })
         assertEquals(listOf(true, false, false), m.trailRuns.map { it.ahead })
         assertEquals(listOf(2.0, 0.0), m.trailRuns[1].points.map { it.x }.reversed())

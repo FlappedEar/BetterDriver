@@ -22,6 +22,7 @@ import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
 import com.flappedear.betterdriver.timing.overlay.Pace
+import com.flappedear.betterdriver.timing.overlay.PaceRun
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.gearText
@@ -103,7 +104,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
                 HudWidget.GRadar -> radar(canvas, b, sessionMicros, f)
                 HudWidget.GReadout -> gReadout(canvas, b, s, f)
                 HudWidget.Steering -> steering(canvas, b, s, f)
-                HudWidget.TrackMap -> map(canvas, b, s, sessionMicros, f, paced = optimal == null)
+                HudWidget.TrackMap -> map(canvas, b, s, f, trailRuns(sessionMicros, paced = optimal == null))
             }
         }
     }
@@ -559,11 +560,20 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     }
 
     /**
-     * TechTrackMap.qml + TrackMapCore.qml: "TRACK" and the lap, the whole track, the lap's trail, the car.
-     * With [paced] the trail is green where the lap was ahead of the best lap before it and orange where
-     * behind (FBBD-451); a composite lap's, or one with nothing to compare with, stays amber.
+     * The map's trail at [sessionMicros] in runs of one pace (FBBD-451); without [paced] (a composite
+     * lap) every run is unpaced, drawn amber.
      */
-    private fun map(c: Canvas, b: Box, s: Float, sessionMicros: Long, f: OverlayFrame, paced: Boolean) {
+    private fun trailRuns(sessionMicros: Long, paced: Boolean): List<PaceRun> {
+        val runs = paceRuns(data.paceTrail(sessionMicros))
+        return if (paced) runs else runs.map { PaceRun(it.points, null) }
+    }
+
+    /**
+     * TechTrackMap.qml + TrackMapCore.qml: "TRACK" and the lap, the whole track, the lap's [trail], the
+     * car. The trail is green where the lap was ahead of the best lap before it and orange where behind
+     * (FBBD-451); with nothing to compare with it stays amber.
+     */
+    private fun map(c: Canvas, b: Box, s: Float, f: OverlayFrame, trail: List<PaceRun>) {
         panel(c, b, s)
         val p = pad(s)
         val h = b.height
@@ -595,9 +605,9 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
 
         startLine(c, view, side)
         line.strokeWidth = lw
-        for (run in paceRuns(data.paceTrail(sessionMicros))) {
+        for (run in trail) {
             polyline(run.points, view)
-            line.color = when (if (paced) run.pace else null) {
+            line.color = when (run.pace) {
                 Pace.Ahead -> Green
                 Pace.Behind -> Orange
                 null -> Amber

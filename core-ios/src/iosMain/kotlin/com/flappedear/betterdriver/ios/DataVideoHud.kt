@@ -55,21 +55,22 @@ class HudRadarDot(val g: GForce, val fade: Float)
 
 /**
  * What the Tech HUD shows at one moment (FBBD-347), with the texts as Android's TechHudPainter writes
- * them; a value the session has none of is null, its text a dash. [trail] is the map's trail of the
- * lap so far, in runs without gaps, and [trailRuns] the same split by pace (FBBD-451); [radar] the G
- * radar's last second. With [optimal] (a composite
+ * them; a value the session has none of is null, its text a dash. [trailRuns] is the map's trail of
+ * the lap so far, in runs without gaps and of one pace (FBBD-451); [radar] the G radar's last second. With [optimal] (a composite
  * lap's video, FBBD-163, iOS FBBD-370) the lap tile shows the lap the part comes from over the
  * theoretical lap's running time and its gain on the fastest lap, as Android's TechHudPainter.
  */
 class HudMoment internal constructor(
     private val frame: OverlayFrame,
-    val trail: List<List<Xy>>,
+    val trailRuns: List<HudTrailRun>,
     val radar: List<HudRadarDot>,
     private val bestLapMicros: Long?,
     private val pointToPoint: Boolean,
     private val optimal: OptimalOverlayText? = null,
-    val trailRuns: List<HudTrailRun> = emptyList(),
 ) {
+    /** The map's trail as lines, whatever the pace. */
+    val trail: List<List<Xy>> get() = trailRuns.map { it.points }
+
     private val car = frame.car
     private val lap = frame.lap
 
@@ -117,8 +118,9 @@ class HudMoment internal constructor(
      */
     internal fun asComposite(text: OptimalOverlayText, sessionBestMicros: Long?): HudMoment =
         HudMoment(
-            frame, trail, radar, sessionBestMicros, pointToPoint, text,
+            frame,
             trailRuns.map { HudTrailRun(it.points, paced = false, ahead = false) },
+            radar, sessionBestMicros, pointToPoint, text,
         )
 
     /** "LAP 7" over the map; null outside a lap. */
@@ -177,18 +179,3 @@ class HudMoment internal constructor(
     }
 }
 
-/** [points] in runs, broken at each null. */
-internal fun runs(points: List<Xy?>): List<List<Xy>> {
-    val out = ArrayList<List<Xy>>()
-    var run = ArrayList<Xy>()
-    for (p in points) {
-        if (p != null) {
-            run += p
-        } else if (run.isNotEmpty()) {
-            out += run
-            run = ArrayList()
-        }
-    }
-    if (run.isNotEmpty()) out += run
-    return out
-}

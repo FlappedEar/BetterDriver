@@ -260,13 +260,11 @@ class DataVideoSession internal constructor(
                 source.gAt(sessionMicros - RadarMicros * i / RadarDots)
                     ?.let { HudRadarDot(it, 1 - i.toFloat() / (RadarDots + 1)) }
             }
-            val paced = source.paceTrail(sessionMicros)
-            val trail = runs(paced.map { it?.xy })
             // The best lap so far at this moment (FBBD-449), as Android's TechHudPainter.
             val frame = source.at(sessionMicros)
             // The trail coloured by the delta to it (FBBD-451).
-            val trailRuns = paceRuns(paced).map(::HudTrailRun)
-            return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint, trailRuns = trailRuns)
+            val trail = paceRuns(source.paceTrail(sessionMicros)).map(::HudTrailRun)
+            return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint)
         } finally {
             lock.unlock()
         }

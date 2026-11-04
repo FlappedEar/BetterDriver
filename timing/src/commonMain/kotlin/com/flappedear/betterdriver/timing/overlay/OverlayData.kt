@@ -260,13 +260,10 @@ class OverlayData(
      * Where the car went up to [sessionMicros], as Overlays' map trail (KAN-271): from the start of
      * the lap being driven, else the last [TrailFallbackMicros], at most [TrailMaxPoints] points at
      * least [TrailMinStepMicros] apart. A null breaks the line where there was no fix.
-     */
-    fun trail(sessionMicros: Long): List<Xy?> = paceTrail(sessionMicros).map { it?.xy }
-
-    /**
-     * [trail] with the pace at each point (FBBD-451): the live delta then to the best lap set before
-     * this one (FBBD-449), as [Pace.of] reads it, so the map shows where the lap gained and lost.
-     * Without a reference (out and in laps, the first timed lap, outside a lap) every pace is null.
+     *
+     * Each point has the pace there (FBBD-451): the live delta then to the best lap set before this
+     * one (FBBD-449), as [Pace.of] reads it, so the map shows where the lap gained and lost. Without
+     * a reference (out and in laps, the first timed lap, outside a lap) every pace is null.
      */
     fun paceTrail(sessionMicros: Long): List<TrailPoint?> {
         val trace = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
@@ -413,6 +410,9 @@ class OverlayData(
         const val TrailMaxPoints = 600L
     }
 }
+
+/** [OverlayData.paceTrail] without the pace: the map's trail as a line. */
+fun OverlayData.trail(sessionMicros: Long): List<Xy?> = paceTrail(sessionMicros).map { it?.xy }
 
 /** For each of [laps], the fastest of it and those before it; on a tie the earlier lap stays. */
 private fun runningMin(laps: List<Lap>): List<Lap> {
