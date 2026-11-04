@@ -7,7 +7,42 @@ import com.flappedear.betterdriver.format.fixed
  * only draw them. The platform gives each session's local day (days since 1970 in the device's time
  * zone) and formats a date in the device's language; everything else is decided here.
  */
-data class SessionListEntry(val id: String, val localDay: Long, val track: String)
+data class SessionListEntry(
+    val id: String,
+    val localDay: Long,
+    val track: String,
+    val trackId: String? = null,
+    val startUtcMillis: Long = 0,
+    val recording: Boolean = false,
+) {
+    /** Where it was driven: the saved track its laps are timed at, else the name it was recorded with. */
+    internal val place: String get() = trackId?.let { "id:$it" } ?: "name:$track"
+}
+
+/**
+ * A listed session's entry (FBBD-453). It goes by the saved track its laps are timed at ([facts], once
+ * read), so a session recorded under the directory circuit's name ("Autodrom Jastrząb") and one under
+ * the saved track's name ("Jastrząb") are the same place; before its facts are read, by [recordedTrack].
+ */
+@Suppress("LongParameterList") // A session's list facts, passed by both platforms.
+fun sessionListEntry(
+    id: String,
+    localDay: Long,
+    recordedTrack: String,
+    facts: SessionFacts?,
+    startUtcMillis: Long,
+    recording: Boolean,
+): SessionListEntry = SessionListEntry(
+    id = id,
+    localDay = localDay,
+    track = facts?.trackName?.takeIf { it.isNotBlank() } ?: recordedTrack,
+    trackId = facts?.trackId,
+    startUtcMillis = startUtcMillis,
+    recording = recording,
+)
+
+/** One track driven in at least two finished sessions of a day (FBBD-315): its name and its sessions, oldest first. */
+data class SessionListTrackDay(val track: String, val ids: List<String>)
 
 /**
  * One day of the Sessions list (UI-308 A): its heading ("Today · Silesia Ring" when the day had one
@@ -20,6 +55,7 @@ data class SessionListDay(
     val ids: List<String>,
     val tracks: List<String>,
     val trackOnRows: Boolean,
+    val trackDays: List<SessionListTrackDay> = emptyList(),
 )
 
 /**
@@ -29,7 +65,7 @@ data class SessionListDay(
  */
 fun sessionListDays(entries: List<SessionListEntry>, today: Long, dateText: (Long) -> String): List<SessionListDay> =
     entries.groupBy { it.localDay }.map { (day, list) ->
-        val tracks = list.map { it.track }.filter { it.isNotBlank() }.distinct()
+        val tracks = list.filter { it.track.isNotBlank() }.distinctBy { it.place }.map { it.track }
         val label = sessionDayLabel(day, today, dateText)
         SessionListDay(
             localDay = day,
@@ -37,8 +73,25 @@ fun sessionListDays(entries: List<SessionListEntry>, today: Long, dateText: (Lon
             ids = list.map { it.id },
             tracks = tracks,
             trackOnRows = tracks.size > 1,
+            trackDays = sessionTrackDays(list),
         )
     }
+
+/**
+ * The tracks of one day's [entries] driven in at least two sessions that are not recording, most
+ * sessions first; a session with no track takes no part. Sessions at one saved track are one track
+ * day whatever name each was recorded with (FBBD-453), as the track day page reads them.
+ */
+fun sessionTrackDays(entries: List<SessionListEntry>): List<SessionListTrackDay> =
+    entries.filter { !it.recording && it.track.isNotBlank() }
+        .groupBy { it.place }
+        .values
+        .filter { it.size >= 2 }
+        .map { list ->
+            val sorted = list.sortedBy { it.startUtcMillis }
+            SessionListTrackDay(sorted.first().track, sorted.map { it.id })
+        }
+        .sortedByDescending { it.ids.size }
 
 /** "Today", "Yesterday", else [dateText] of [day]. */
 fun sessionDayLabel(day: Long, today: Long, dateText: (Long) -> String): String = when (day) {

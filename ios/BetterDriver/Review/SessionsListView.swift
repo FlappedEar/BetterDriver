@@ -44,7 +44,7 @@ struct SessionsListView: View {
                 // for each track driven twice that day (FBBD-315, UI-308 A), as Android's DayHeading.
                 VStack(alignment: .leading, spacing: 8) {
                     HealthSectionTitle(day.title)
-                    ForEach(TrackDayLink.of(day.sessions)) { link in
+                    ForEach(day.trackDays) { link in
                         trackDayCard(link, named: day.trackOnRows)
                     }
                 }
@@ -282,9 +282,13 @@ private struct SessionsCard: View {
 
     private var title: String {
         SessionsListKt.sessionRowTitle(
-            time: session.start.formatted(date: .omitted, time: .shortened), track: session.track, withTrack: withTrack
+            time: session.start.formatted(date: .omitted, time: .shortened), track: track, withTrack: withTrack
         )
     }
+
+    /// Where it was driven, as its day groups it: the saved track its laps are timed at once read, else
+    /// the name it was recorded with (FBBD-453).
+    private var track: String { facts?.facts?.trackName ?? session.track }
 
     private var detail: String {
         facts?.detail ?? session.durationSeconds.map { "\(Int($0 / 60)) min" } ?? ""
@@ -293,7 +297,7 @@ private struct SessionsCard: View {
     /// What VoiceOver and the tests read: the time and track (also when the card leaves the track to
     /// the day's title), the best lap and the detail.
     private var accessibilityText: String {
-        [session.start.formatted(date: .omitted, time: .shortened), session.track, facts?.best ?? "", detail]
+        [session.start.formatted(date: .omitted, time: .shortened), track, facts?.best ?? "", detail]
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 

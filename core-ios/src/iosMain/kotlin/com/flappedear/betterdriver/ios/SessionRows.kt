@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.review.SessionFacts
+import com.flappedear.betterdriver.analysis.review.atTrack
 import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.recordedFacts
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
@@ -16,13 +17,15 @@ import platform.Foundation.NSLock
 /**
  * A session's card in Sessions, as Android's (UI-139 C, UI-308 A): "Corolla · 22 min · 14 laps · OBD",
  * its best lap, and the best lap's time for the day's Track day card ([bestMillis]). [video]: the card
- * offers Watch video (FBBD-426), only with a whole video file to play.
+ * offers Watch video (FBBD-426), only with a whole video file to play. [facts]: what was read, for the
+ * shared list's days (the saved track its laps are timed at, FBBD-453).
  */
 class SessionRowFacts(
     val detail: String,
     val best: String?,
     val bestMillis: Long? = null,
     val video: Boolean = false,
+    val facts: SessionFacts? = null,
 )
 
 /**
@@ -48,7 +51,7 @@ internal class SessionRows(
             val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, video)
             // A listed session is not recording: the recorder adds it once it ends.
             val offers = offersVideo(video, recording = false)
-            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis, offers)
+            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis, offers, facts)
         }
     }
 
@@ -75,7 +78,7 @@ internal class SessionRows(
     private fun facts(s: StoredSession, saved: List<Track>): SessionFacts = try {
         val data = store.read(s.id)
         val recorded = recordedFacts(data)
-        trackFor(data, saved)?.let { recorded.withLaps(replayLaps(s.id, data.sampleSets, it)) } ?: recorded
+        trackFor(data, saved)?.let { recorded.withLaps(replayLaps(s.id, data.sampleSets, it)).atTrack(it) } ?: recorded
     } catch (e: Exception) {
         SessionFacts()
     }

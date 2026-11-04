@@ -1,20 +1,11 @@
 import SwiftUI
 import BetterDriverCore
 
-/// The sessions of one day at one track, as Android's day heading links them (FBBD-315).
+/// The sessions of one day at one track, as the shared core links them for the day heading (FBBD-315, FBBD-453).
 struct TrackDayLink: Identifiable, Hashable {
     let track: String
     let ids: [String]
     var id: String { ids.joined(separator: ",") }
-
-    /// The tracks of one day's [sessions] driven in at least two of them, most sessions first, each
-    /// with its sessions oldest first, as Android's trackDays; a session with no track takes no part.
-    static func of(_ sessions: [SessionRow]) -> [TrackDayLink] {
-        Dictionary(grouping: sessions.filter { !$0.track.isEmpty }, by: \.track)
-            .filter { $0.value.count >= 2 }
-            .map { TrackDayLink(track: $0.key, ids: $0.value.sorted { $0.start < $1.start }.map(\.id)) }
-            .sorted { $0.ids.count > $1.ids.count }
-    }
 }
 
 /// The track day page (FBBD-315, UI round 48), as Android's TrackDayScreen: the day's best, typical
