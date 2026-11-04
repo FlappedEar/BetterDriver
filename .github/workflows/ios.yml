@@ -265,7 +265,7 @@ jobs:
         part: [1, 2]
     env:
       # Part 1 runs these UI test classes (about half the UI tests' time); part 2 runs everything
-      # else, so a new test class always runs.
+      # else, so a new test class always runs. The unit tests run on the iPhone only (FBBD-457).
       PART1: >-
         BetterDriverUITests/ReviewScreensTests
         BetterDriverUITests/ScreenLayoutTests
@@ -296,6 +296,8 @@ jobs:
           if [ "${{ matrix.part }}" = 1 ]; then flag=-only-testing; else flag=-skip-testing; fi
           selection=()
           for t in $PART1; do selection+=("$flag:$t"); done
+          # FBBD-457: the unit tests (BetterDriverTests) check no layout; the iPhone runs them.
+          if [ "${{ matrix.device }}" = iPad ] && [ "${{ matrix.part }}" = 2 ]; then selection+=(-skip-testing:BetterDriverTests); fi
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \
@@ -307,7 +309,9 @@ jobs:
             -default-test-execution-time-allowance 480 \
             -maximum-test-execution-time-allowance 600 \
             > build/xcodebuild.log 2>&1 && status=0 || status=$?
-          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
+          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) |COACHVOICE " build/xcodebuild.log || true
+          # FBBD-457: the UI tests' slow steps and the time per kind of step.
+          python3 .github/scripts/ios-test-profile.py build/xcodebuild.log || true
           xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/summary.json || true
           sed -n '/SMOKE app:/,/Test Case .*failed/p' build/xcodebuild.log | head -n 300 || true
           python3 -c 'import json; d=json.load(open("build/summary.json")); print("RESULT", d.get("result"), d.get("passedTests"), "passed", d.get("failedTests"), "failed"); [print("FAILED", json.dumps(f)) for f in d.get("testFailures", [])]' || head -c 3000 build/summary.json

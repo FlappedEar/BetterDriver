@@ -29,6 +29,10 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
   passed on the same source tree (its "iOS passed (tree ...)" job names the tree it tested); queued main runs are dropped when a
   newer merge queues behind them (a running one is never cancelled). Nothing waits for a main
   commit's iOS run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
+* Test time (FBBD-457): the app tests link the release build of the shared core; the demo
+  sessions and demo video are made once per app build and copied at each launch (`UITestCache`);
+  the unit tests run on the iPhone only; each test job's log ends with `PROFILE` lines (slow
+  steps of each UI test, time per kind of step) from `.github/scripts/ios-test-profile.py`.
 
 ## Setup on the Mac mini (once, in Terminal)
 

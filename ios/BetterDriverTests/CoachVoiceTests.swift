@@ -40,8 +40,16 @@ final class CoachVoiceTests: XCTestCase {
     }
 
     func testANewOutputPassesItsDelayOn() {
+        // FBBD-457: this test took 111-180 s on the Mac mini's simulators, 0.6 s on GitHub's; the
+        // log says which step waits.
+        let began = Date()
+        func lap(_ step: String) { print("COACHVOICE \(step) at \(String(format: "%.1f", Date().timeIntervalSince(began))) s") }
         let voice = CoachVoice(settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0))
-        defer { voice.shutdown() }
+        lap("voice made")
+        defer {
+            voice.shutdown()
+            lap("shut down")
+        }
         var delays: [Int] = []
         var outputs: [String] = []
         voice.onDelay = { ms, output in
@@ -53,8 +61,10 @@ final class CoachVoiceTests: XCTestCase {
             name: AVAudioSession.routeChangeNotification, object: nil,
             userInfo: [AVAudioSessionRouteChangeReasonKey: AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue]
         )
+        lap("route change heard")
         XCTAssertEqual(delays, [CoachVoice.outputDelayMillis])
         XCTAssertEqual(outputs, [CoachVoice.output.type])
+        lap("checked")
     }
 
     func testNothingIsPassedOnAfterTheSessionEnds() {
