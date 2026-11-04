@@ -61,9 +61,18 @@ final class StartListUiTests: XCTestCase {
         tab("Drive").tap()
         let start = app.buttons["startButton"]
         XCTAssertTrue(start.waitForExistence(timeout: 20), "START on the Drive tab")
-        start.tap()
-        allowSystemAlerts()
-        XCTAssertTrue(app.descendants(matching: .any)["receiverSheet"].waitForExistence(timeout: 20), "the START sheet")
+        let sheet = app.descendants(matching: .any)["receiverSheet"]
+        // Right after a stop the track screen can still be going away: SwiftUI drops a sheet asked for
+        // then, as a person's tap would be, so START is tapped again.
+        for _ in 0..<3 {
+            start.tap()
+            allowSystemAlerts()
+            if sheet.waitForExistence(timeout: 8) { break }
+        }
+        if !sheet.exists {
+            print("START LIST app:\n\(app.debugDescription)")
+            XCTFail("the START sheet; on screen: \(onScreen())")
+        }
         allowSystemAlerts()
     }
 
@@ -122,19 +131,13 @@ final class StartListUiTests: XCTestCase {
         XCTAssertTrue(screen.exists, "still recording after 10 s")
         screen.press(forDuration: 4)
         XCTAssertTrue(app.buttons["startButton"].waitForExistence(timeout: 20), "back on Drive after the stop")
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: screen)
+        wait(for: [gone], timeout: 10)
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
     }
 
     private func allowSystemAlerts() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<4 {
-            let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 2) else { return }
-            let allow = ["Allow", "OK", "Allow While Using App", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            // The prompt can go by itself between the look and the tap.
-            guard let allow, allow.isHittable else { return }
-            allow.tap()
-        }
+        allowSystemPrompts()
     }
 
     private func tab(_ name: String) -> XCUIElement {

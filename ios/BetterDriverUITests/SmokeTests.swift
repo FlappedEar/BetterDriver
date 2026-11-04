@@ -115,15 +115,7 @@ final class SmokeTests: XCTestCase {
     /// Answers the system's permission prompts (camera, microphone, Bluetooth, motion) as a first-time
     /// user allowing them would; they belong to SpringBoard, not to the app.
     private func allowSystemAlerts() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<4 {
-            let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 2) else { return }
-            let allow = ["Allow", "OK", "Allow While Using App", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            // The prompt can go by itself between the look and the tap.
-            guard let allow, allow.isHittable else { return }
-            allow.tap()
-        }
+        allowSystemPrompts()
     }
 
     /// The buttons and switches on screen, short enough for the failure text the CI log prints.

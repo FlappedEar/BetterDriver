@@ -187,14 +187,7 @@ final class DemoTrackTests: XCTestCase {
     }
 
     private func allowSystemAlerts() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<4 {
-            let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 2) else { return }
-            let allow = ["Allow", "OK", "Allow While Using App", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            guard let allow else { return }
-            allow.tap()
-        }
+        allowSystemPrompts()
     }
 
     private func keep(_ name: String) {
