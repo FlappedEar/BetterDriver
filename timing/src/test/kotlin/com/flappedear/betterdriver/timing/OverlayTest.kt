@@ -96,20 +96,37 @@ class OverlayTest {
     }
 
     @Test
-    fun `lap, lap time and delta to the best lap follow the session clock`() {
+    fun `lap, lap time and delta to the best lap so far follow the session clock`() {
         val drive = circuit.drive(listOf(1.0, 1.05, 0.95))
         val sets = session(drive)
         val laps = replayLaps("s", sets, track)
         val data = OverlayData(sets, laps)
         val best = assertNotNull(laps.best)
+        val first = laps.laps.single { it.lap.number == 2 }
         val slow = laps.laps.single { it.lap.number == 4 }
+        assertEquals(LapKind.Timed, first.lap.kind)
         assertEquals(3, best.lap.number)
 
+        // The first timed lap has nothing before it to compare with: no BEST yet, no delta (FBBD-449).
+        val inFirst = data.at(first.lap.startMicros + 10_000_000)
+        assertNull(inFirst.lap?.deltaMicros)
+        assertNull(inFirst.bestLapMicros)
+
+        // The session's fastest lap is compared with the best lap before it, not with itself (FBBD-449):
+        // from its first metre BEST is lap 2's time, and it gains on it all the way round.
         val inBest = data.at(best.lap.startMicros + 10_000_000)
         assertEquals(3, inBest.lap?.number)
         assertEquals(10_000_000L, inBest.lap?.lapMicros)
-        assertEquals(0L, inBest.lap?.deltaMicros)
         assertTrue(inBest.lap?.isBest == true)
+        assertEquals(first.lap.timeMicros, data.at(best.lap.startMicros).bestLapMicros)
+        assertEquals(first.lap.timeMicros, inBest.bestLapMicros)
+        val gain = assertNotNull(data.at(best.lap.endMicros - 1).lap?.deltaMicros)
+        assertTrue(assertNotNull(inBest.lap?.deltaMicros) < 0 && gain < 0, "gain $gain")
+        assertEquals((best.lap.timeMicros - first.lap.timeMicros).toDouble(), gain.toDouble(), 30_000.0)
+
+        // After its line BEST is the new best.
+        assertEquals(best.lap.timeMicros, data.at(best.lap.endMicros).bestLapMicros)
+        assertEquals(best.lap.timeMicros, data.at(slow.lap.startMicros + 5_000_000).bestLapMicros)
 
         // The slower lap loses time all the way round, and at its end the delta is the lap time difference.
         val early = assertNotNull(data.at(slow.lap.startMicros + 5_000_000).lap?.deltaMicros)
@@ -155,6 +172,18 @@ class OverlayTest {
             assertEquals(slow.lap.timeMicros, held.lapMicros)
             assertEquals(slow.lap.timeMicros - best.lap.timeMicros, held.deltaMicros)
         }
+
+        // The session's fastest lap exported alone: BEST is lap 2's time until its line, its delta is
+        // its gain on lap 2, held after the line, where BEST becomes its own time (FBBD-449).
+        val first = laps.laps.single { it.lap.number == 2 }
+        val alone = OverlayData(sets, laps, hotlap = 3)
+        assertEquals(first.lap.timeMicros, alone.at(best.lap.startMicros - 3_000_000).bestLapMicros)
+        assertEquals(first.lap.timeMicros, alone.at(best.lap.startMicros + 10_000_000).bestLapMicros)
+        assertTrue(assertNotNull(alone.at(best.lap.startMicros + 10_000_000).lap?.deltaMicros) < 0)
+        val bragged = alone.at(best.lap.endMicros + 2_000_000)
+        assertEquals(LapPhase.Finished, bragged.lap?.phase)
+        assertEquals(best.lap.timeMicros - first.lap.timeMicros, bragged.lap?.deltaMicros)
+        assertEquals(best.lap.timeMicros, bragged.bestLapMicros)
 
         // Without a hotlap, or with a lap the session does not have, laps follow the clock as before.
         for (plain in listOf(OverlayData(sets, laps), OverlayData(sets, laps, hotlap = 99))) {

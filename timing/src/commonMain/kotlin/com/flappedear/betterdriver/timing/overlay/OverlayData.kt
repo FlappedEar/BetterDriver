@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.Fix
+import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.replay.LapAlignment
@@ -22,8 +23,10 @@ import com.flappedear.betterdriver.timing.replay.trackFrame
  * The lap being driven at one moment, or the run on a point-to-point track (FBBD-155). [number] and
  * [lapMicros] (time since the lap started) are always known; [kind] is null for the lap still being
  * driven when the session stopped.
- * [deltaMicros] is the live delta to the session's best lap, matched by track position as on the
- * track screen; null on out and in laps, and without a best lap.
+ * [deltaMicros] is the live delta to the best lap set before this one (FBBD-449), matched by track
+ * position as on the track screen: the session's fastest lap shows what it gains on the previous
+ * best, not 0.0 against itself. Null on out and in laps, and when no earlier lap counts for best.
+ * [isBest]: this lap is the session's best lap.
  * [phase] is [LapPhase.Running] except in a single-lap export ([OverlayData]'s hotlap).
  */
 data class OverlayLap(
@@ -51,6 +54,11 @@ data class OverlayFrame(
     val g: GForce?,
     /** The car's own values (FBBD-347): engine, pedals, wheel, temperatures, the driver's heart rate. */
     val car: CarFrame = CarFrame(),
+    /**
+     * The best lap time so far (FBBD-449): the fastest lap counting for best that had finished by this
+     * moment, as the track screen showed it then; null before the first.
+     */
+    val bestLapMicros: Long? = null,
 )
 
 /**
@@ -62,7 +70,7 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
 
 /**
  * Everything the video export's data overlay draws (FBBD-152), looked up by session time: speed,
- * position, G, and the lap with its delta to the session's best lap.
+ * position, G, and the lap with its delta to the best lap set before it (FBBD-449).
  *
  * Built once per export from the session's sample sets and its replayed laps ([laps], null when
  * the session was not at a saved track with a start/finish line: then there is no lap or delta).
@@ -91,6 +99,15 @@ class OverlayData(
     private val gLat: TimeSeries
     private val traces: List<LapTrace> = laps?.laps.orEmpty().sortedBy { it.lap.startMicros }
     private val best: LapTrace? = laps?.best
+
+    /**
+     * The laps that count for best, in the order they finished, and the fastest of each one and those
+     * before it (FBBD-449): the running best, as the track screen's best lap moved during the session.
+     */
+    private val counted: List<Lap> =
+        (laps?.book?.laps ?: traces.map { it.lap }).filter { it.countsForBest }.sortedBy { it.endMicros }
+    private val countedEnds = LongArray(counted.size) { counted[it].endMicros }
+    private val runningBest: List<Lap> = runningMin(counted)
     private val starts = LongArray(traces.size) { traces[it].lap.startMicros }
     private val alignments = HashMap<Int, LapAlignment>()
     private val hotlap: LapTrace? = hotlap?.let { n -> traces.firstOrNull { it.lap.number == n } }
@@ -109,7 +126,10 @@ class OverlayData(
     /** The car's values this session has samples of (FBBD-347): the overlay leaves out the rest. */
     val carValues: Set<CarValue> get() = car.keys
 
-    /** The session's best lap time; null without one. */
+    /**
+     * The session's best lap time; null without one. A composite lap's video compares with it; the
+     * other videos show [OverlayFrame.bestLapMicros], the best so far.
+     */
     val bestLapMicros: Long? = best?.lap?.let { it.endMicros - it.startMicros }
 
     /** The start/finish line's ends, in the frame of [outline]; null without a saved track's line. */
@@ -248,7 +268,21 @@ class OverlayData(
             position = if (px != null && py != null) Xy(px, py) else null,
             g = if (gl != null && gt != null) GForce(gl, gt) else null,
             car = if (car.isEmpty()) CarFrame() else carAt(sessionMicros),
+            bestLapMicros = bestBy(sessionMicros)?.timeMicros,
         )
+    }
+
+    /** The fastest lap counting for best that had finished by [t]; null before the first (FBBD-449). */
+    private fun bestBy(t: Long): Lap? =
+        if (counted.isEmpty() || t < countedEnds[0]) null else runningBest[floorIndex(countedEnds, t)]
+
+    /**
+     * The lap [lap] is compared with: the best lap finished before it started (FBBD-449), with its trace
+     * for the live delta; null for the first lap counting for best, or when that lap has no trace.
+     */
+    private fun referenceFor(lap: Lap): LapTrace? {
+        val before = bestBy(lap.startMicros) ?: return null
+        return traces.firstOrNull { it.lap.number == before.number }
     }
 
     /**
@@ -268,7 +302,7 @@ class OverlayData(
             else -> {
                 val lapMicros = t - trace.lap.startMicros
                 val isBest = trace.lap.number == best?.lap?.number
-                OverlayLap(trace.lap.number, trace.lap.kind, lapMicros, deltaAt(trace, lapMicros, isBest), isBest)
+                OverlayLap(trace.lap.number, trace.lap.kind, lapMicros, deltaAt(trace, lapMicros), isBest)
             }
         }
     }
@@ -280,27 +314,22 @@ class OverlayData(
         return when {
             t < lap.startMicros -> OverlayLap(lap.number, lap.kind, 0L, null, isBest, LapPhase.Ready)
             t >= lap.endMicros -> {
-                val delta = best?.takeIf { lap.kind == LapKind.Timed }?.let { lap.timeMicros - it.lap.timeMicros }
+                val delta = bestBy(lap.startMicros)?.takeIf { lap.kind == LapKind.Timed }
+                    ?.let { lap.timeMicros - it.timeMicros }
                 OverlayLap(lap.number, lap.kind, lap.timeMicros, delta, isBest, LapPhase.Finished)
             }
             else -> {
                 val lapMicros = t - lap.startMicros
-                OverlayLap(lap.number, lap.kind, lapMicros, deltaAt(trace, lapMicros, isBest), isBest)
+                OverlayLap(lap.number, lap.kind, lapMicros, deltaAt(trace, lapMicros), isBest)
             }
         }
     }
 
-    private fun deltaAt(trace: LapTrace, lapMicros: Long, isBest: Boolean): Long? {
-        val reference = best
-        return when {
-            reference == null || trace.lap.kind != LapKind.Timed -> null
-            isBest -> 0L
-            else -> {
-                val alignment = alignments.getOrPut(trace.lap.number) { LapAlignment(reference, trace) }
-                // Time this lap took to get here minus the time the best lap took to the same place.
-                lapMicros - alignment.referenceMicrosAt(lapMicros)
-            }
-        }
+    private fun deltaAt(trace: LapTrace, lapMicros: Long): Long? {
+        val reference = (if (trace.lap.kind == LapKind.Timed) referenceFor(trace.lap) else null) ?: return null
+        val alignment = alignments.getOrPut(trace.lap.number) { LapAlignment(reference, trace) }
+        // Time this lap took to get here minus the time the best lap before it took to the same place.
+        return lapMicros - alignment.referenceMicrosAt(lapMicros)
     }
 
     private companion object {
@@ -310,6 +339,16 @@ class OverlayData(
         const val TrailMinStepMicros = 100_000L
         const val TrailMaxPoints = 600L
     }
+}
+
+/** For each of [laps], the fastest of it and those before it; on a tie the earlier lap stays. */
+private fun runningMin(laps: List<Lap>): List<Lap> {
+    val out = ArrayList<Lap>(laps.size)
+    for (lap in laps) {
+        val b = out.lastOrNull()
+        out += if (b == null || lap.timeMicros < b.timeMicros) lap else b
+    }
+    return out
 }
 
 private fun SampleSet.valueOf(channelId: Int): Double? =
