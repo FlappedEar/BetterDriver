@@ -27,7 +27,17 @@ private class SimPort(private val answers: Map<String, String>) : ObdBlePort {
     private val lock = NSRecursiveLock()
     private val pending = StringBuilder()
     private var events: ObdBleEvents? = null
-    val commands = ArrayList<String>()
+    private val commands = ArrayList<String>()
+
+    /** The first [n] commands the adapter saw, copied under the lock: the OBD thread can still write. */
+    fun seen(n: Int): List<String> {
+        lock.lock()
+        try {
+            return commands.take(n)
+        } finally {
+            lock.unlock()
+        }
+    }
 
     /** Why the next opens fail, as the Swift link says it ("Bluetooth not allowed"); null opens. */
     var refuse: String? = null
@@ -181,7 +191,7 @@ class ObdFeedTest {
         val recorded = waitFor(20.0) { sink.setCount >= 5 }
         val status = feed.status()
         feed.stop()
-        assertTrue(recorded, "values recorded; adapter saw ${port.commands.take(30)}")
+        assertTrue(recorded, "values recorded; adapter saw ${port.seen(30)}")
         assertTrue("obd_rpm" in sink.channelNames, "channels ${sink.channelNames}")
         assertEquals(ObdSessionEvents.CONNECTED, sink.eventKinds.first())
         assertEquals(ObdLinkState.Connected, status.state)
@@ -339,7 +349,7 @@ class ObdFeedTest {
         feed.start()
         val recorded = waitFor(20.0) { sink.setCount >= 5 }
         feed.stop()
-        assertTrue(recorded, "values recorded; adapter saw ${port.commands.take(30)}")
+        assertTrue(recorded, "values recorded; adapter saw ${port.seen(30)}")
         val names = sink.channelNames
         assertTrue("obd_speed" in names, "channels $names")
         assertTrue(names.any { "custom_coolant2" in it }, "channels $names")

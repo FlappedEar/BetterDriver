@@ -70,6 +70,8 @@ class FaultTest {
     fun startRecording() {
         d.openApp()
         d.tap("START")
+        // START opens the list at START (FBBD-446); its own button starts the session.
+        d.tap("Start session")
         d.waitForTrackScreen()
         val live = checkNotNull(d.waitForRecorder("the recording to start") { it.recording }.live)
         checkTrackWindow()

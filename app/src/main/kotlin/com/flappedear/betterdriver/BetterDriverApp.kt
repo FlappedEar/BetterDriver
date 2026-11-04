@@ -274,6 +274,8 @@ private fun Drive(
         ),
         onAddReceiver = { nav.navigate(Routes.AddEquipment) },
         cameraAllowed = prefs.cameraGranted(),
+        // In range or not, looked for only while the list at START is open (FBBD-446).
+        reach = { rememberEquipmentReach(prefs, repo) },
         onStart = {
             val active = repo.setup.active()
             if (!prefs.hasRequiredPermissions()) {

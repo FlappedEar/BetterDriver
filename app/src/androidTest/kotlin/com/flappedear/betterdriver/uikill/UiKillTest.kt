@@ -83,6 +83,9 @@ class UiKillTest {
         openApp()
         val start = device.wait(Until.findObject(By.text("START")), LoadTimeoutMs)
         checkNotNull(start) { "Drive shows no START. ${screen()}" }.click()
+        // START opens the list at START (FBBD-446); its own button starts the session.
+        val inSheet = device.wait(Until.findObject(By.text("Start session")), LoadTimeoutMs)
+        checkNotNull(inSheet) { "The list at START shows no Start session. ${screen()}" }.click()
         waitForTrackScreen()
         val live = waitForRecorder("the recording to start") { it.recording }.live!!
         // Some data before the kill, written well before it.
