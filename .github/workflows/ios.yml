@@ -300,13 +300,18 @@ jobs:
           selection=()
           while IFS= read -r a; do selection+=("$a"); done < <(python3 .github/scripts/ios-test-parts.py args "${{ matrix.device }}" "${{ matrix.part }}")
           echo "Selection: ${selection[*]}"
+          # FBBD-457: the Mac mini (M4, 10 cores, 24 GB) runs two runners; each job drives two
+          # clones of its simulator, test classes shared between them. GitHub's macOS runners keep one.
+          if [ "${{ runner.environment }}" = self-hosted ]; then parallel=YES; workers=2; else parallel=NO; workers=1; fi
+          echo "Parallel testing: $parallel, $workers simulator(s)"
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
             "${selection[@]}" \
             -resultBundlePath build/ios-tests.xcresult \
-            -parallel-testing-enabled NO \
+            -parallel-testing-enabled "$parallel" \
+            -parallel-testing-worker-count "$workers" \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 480 \
             -maximum-test-execution-time-allowance 600 \
