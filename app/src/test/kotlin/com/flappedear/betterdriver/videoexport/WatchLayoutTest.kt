@@ -71,8 +71,9 @@ class WatchLayoutTest {
         show()
         val screen = compose.onRoot().getUnclippedBoundsInRoot()
         val picture = compose.onNodeWithTag(Picture).getUnclippedBoundsInRoot()
-        val share = picture.height.value / screen.height.value
-        assertTrue("picture ${picture.height} of ${screen.height}", share >= MinWideShare)
+        val pictureHeight = (picture.bottom - picture.top).value
+        val screenHeight = (screen.bottom - screen.top).value
+        assertTrue("picture $pictureHeight of $screenHeight dp", pictureHeight / screenHeight >= MinWideShare)
         // No title bar; back is in the controls' row.
         compose.onNodeWithText("Watch video").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back").assertExists()
@@ -89,7 +90,9 @@ class WatchLayoutTest {
         val screen = compose.onRoot().getUnclippedBoundsInRoot()
         val picture = compose.onNodeWithTag(Picture).getUnclippedBoundsInRoot()
         // Full width, less the screen's 16 dp margins.
-        assertTrue("picture ${picture.width} of ${screen.width}", picture.width.value >= screen.width.value - 33f)
+        val pictureWidth = (picture.right - picture.left).value
+        val screenWidth = (screen.right - screen.left).value
+        assertTrue("picture $pictureWidth of $screenWidth dp", pictureWidth >= screenWidth - 33f)
         compose.onNodeWithText("Play").assertExists()
     }
 

@@ -97,8 +97,9 @@ class PaceTrailTest {
     fun `nothing is drawn before the start-finish line is first crossed - FBBD-460`() {
         val data = OverlayData(sets, laps)
         assertEquals(LapKind.Out, lap(1).kind)
-        // The out lap, from the session's start to the first line: no trail.
-        for (t in listOf(lap(1).startMicros, lap(1).startMicros + 10_000_000, lap(1).endMicros - 1)) {
+        // The out lap, from the session's start to the first line (50 m here): no trail.
+        val outMid = (lap(1).startMicros + lap(1).endMicros) / 2
+        for (t in listOf(lap(1).startMicros, outMid, lap(1).endMicros - 1)) {
             assertTrue(data.paceTrail(t).isEmpty(), "out lap at $t")
         }
         // Over the line, the lap's trail starts.
@@ -113,7 +114,7 @@ class PaceTrailTest {
         // It starts at the line, not in the out lap before it.
         val line = assertNotNull(short.at(lap(2).startMicros).position)
         assertTrue((past.first().xy - line).length() < 1.0)
-        assertTrue(short.paceTrail(lap(1).startMicros + 10_000_000).isEmpty())
+        assertTrue(short.paceTrail(outMid).isEmpty())
     }
 
     @Test
