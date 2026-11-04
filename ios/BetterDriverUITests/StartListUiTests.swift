@@ -68,7 +68,8 @@ final class StartListUiTests: XCTestCase {
         let sheet = app.descendants(matching: .any)["receiverSheet"]
         if !sheet.waitForExistence(timeout: 8) {
             print("START LIST app:\n\(app.debugDescription)")
-            XCTFail("one START tap after a stop opens no sheet; START value '\(start.value as? String ?? "")'; on screen: \(onScreen())")
+            let tree = app.debugDescription.split(separator: "\n").prefix(40).joined(separator: " / ")
+            XCTFail("one START tap after a stop opens no sheet; START value '\(start.value as? String ?? "")', hittable \(start.isHittable), windows \(app.windows.count), sheets \(app.sheets.count); on screen: \(onScreen()); tree: \(tree)")
         }
         pickSimulated()
         record()

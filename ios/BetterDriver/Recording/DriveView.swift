@@ -16,6 +16,8 @@ struct DriveView: View {
     @State private var pendingStart: Receiver?
     /// The track screen is on screen; follows the recording, and START brings it back if it was dropped.
     @State private var trackShown = false
+    /// START and Change taps, for the UI tests' failure text (FBBD-456).
+    @State private var taps = 0
     @State private var camera = true
     @State private var videoMode = PhoneVideoMode.standard
     @State private var pinned = DrivePinned(focus: nil, lastTime: nil)
@@ -24,7 +26,7 @@ struct DriveView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 10) {
-                    StartButton(place: place.name, asked: picking) { openSheet("START") }
+                    StartButton(place: place.name, state: "taps \(taps), sheet \(picking ? "asked" : "not asked"), track \(trackShown ? "shown" : "not shown")") { openSheet("START") }
                         .padding(.vertical, 4)
                     if let error = recorder.error {
                         Text(error)
@@ -103,6 +105,7 @@ struct DriveView: View {
     /// Opens START's sheet. When the sheet is already asked for but not on screen (a session ended
     /// while it was going away), it is asked for once more, so a tap never does nothing (FBBD-456).
     private func openSheet(_ from: String) {
+        taps += 1
         AppLog.i("Recording", "\(from) tapped: sheet \(picking ? "already asked, asked again" : "asked"), recording \(recorder.isRecording)")
         // Recording with the track screen not on screen: START brings it back instead of the sheet.
         if recorder.isRecording {
@@ -212,8 +215,8 @@ private struct ThisSessionCard: View {
 /// The 170 point amber START ring with the place the phone is at (UI-308 A, as on Android).
 private struct StartButton: View {
     let place: String?
-    /// Whether START's sheet is asked for, as the button's value for the UI tests (FBBD-456).
-    let asked: Bool
+    /// Taps, sheet and track screen state, as the button's value for the UI tests (FBBD-456).
+    let state: String
     let action: () -> Void
 
     var body: some View {
@@ -232,7 +235,7 @@ private struct StartButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("startButton")
-        .accessibilityValue(asked ? "sheet asked" : "")
+        .accessibilityValue(state)
     }
 }
 
