@@ -13,6 +13,15 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.0
+
+- iPhone: a recording keeps running with the phone locked or another app in front.
+- The vLinker OBD adapter reconnects within seconds when it stalls.
+- The track screen's status strip is icons only, with a tyre icon while the tyre bridge sends values.
+- **Watch video** and **Video with data** compare each lap with the best lap set so far.
+- iPad and Mac: **Lap review** plays both videos in step.
+- The **Track day** card counts every session at the saved track.
+
 ## 1.32.0
 
 - iPhone: phone video keeps recording after a failed file instead of stopping after three.
