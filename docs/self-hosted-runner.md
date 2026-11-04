@@ -25,8 +25,8 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished
   `ios.yml` run already has a job for the Mac minis. One run's 4 test shards keep both Mac runners
   busy for ~40 min, so a second run used to wait for them.
-* Main (FBBD-457): a push to main skips the build and the tests when the merged pull request's head
-  has the same source tree and its "iOS app" check passed; queued main runs are dropped when a
+* Main (FBBD-457): a push to main skips the build and the tests when the merged pull request's run
+  passed on the same source tree (its "iOS passed (tree ...)" job names the tree it tested); queued main runs are dropped when a
   newer merge queues behind them (a running one is never cancelled). Nothing waits for a main
   commit's iOS run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
 

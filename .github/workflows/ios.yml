@@ -86,8 +86,9 @@ jobs:
   #   uses the Mac minis: one run's 4 test shards fill both of them for ~40 min. Same tests, same
   #   "iOS app" gate; fork PRs run there too.
   # - Reuse on main: a push to main skips the build and the tests when the merged pull request's
-  #   head has the very same source tree and its "iOS app" check passed (the rule release.yml
-  #   applies to ci.yml). A merge of a PR that was behind main has another tree and runs in full.
+  #   run passed on the very same source tree: its "iOS passed (tree ...)" job names the tree it
+  #   tested (the PR's merge commit), as ci.yml's "CI passed (tree ...)" does for release.yml.
+  #   A merge whose tree no PR run tested runs in full.
   runner:
     name: iOS runner
     runs-on: ubuntu-latest
@@ -99,6 +100,7 @@ jobs:
     outputs:
       labels: ${{ steps.pick.outputs.labels }}
       reuse: ${{ steps.reuse.outputs.reuse }}
+      tree: ${{ steps.pick.outputs.tree }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -133,6 +135,9 @@ jobs:
           fi
           echo "iOS jobs run on: $labels"
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          # The source tree the build checks out (a pull request's merge commit), for the
+          # "iOS passed (tree ...)" job.
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - name: A pull request run of this same tree that passed
         id: reuse
         if: github.event_name == 'push'
@@ -144,19 +149,15 @@ jobs:
           echo "Tree of $GITHUB_SHA: $tree"
           for head in $(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
               --jq '.[] | select(.merged_at != null) | .head.sha' || true); do
-            head_tree=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head" --jq .commit.tree.sha || true)
-            if [ "$head_tree" != "$tree" ]; then
-              echo "Pull request head $head has another tree ($head_tree)."
-              continue
-            fi
-            url=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" -f check_name="iOS app" \
+            # The tree the pull request run actually tested (its merge commit), not the head's.
+            url=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" -f check_name="iOS passed (tree $tree)" \
               --jq '[.check_runs[] | select(.conclusion == "success")][0].html_url // empty' || true)
             if [ -n "$url" ]; then
-              echo "iOS app passed on this exact tree in the pull request run: $url"
+              echo "iOS passed on this exact tree in the pull request run: $url"
               reuse=true
               break
             fi
-            echo "No passed iOS app check on pull request head $head."
+            echo "No pull request run of pull request head $head passed on tree $tree."
           done
           echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
 
@@ -349,3 +350,14 @@ jobs:
           # FBBD-457: on main, the pull request run of the same tree already passed.
           if [ "${{ needs.runner.outputs.reuse }}" = true ]; then exit 0; fi
           [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
+
+  # FBBD-457: the same result, named after the source tree the run tested. A push to main with
+  # that tree reuses it instead of running the build and the tests again (runner job above).
+  tested-tree:
+    name: iOS passed (tree ${{ needs.runner.outputs.tree }})
+    needs: [runner, passed]
+    if: needs.passed.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tree
+        run: echo "iOS passed on tree ${{ needs.runner.outputs.tree }}"
