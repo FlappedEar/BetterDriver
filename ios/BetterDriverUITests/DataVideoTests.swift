@@ -342,6 +342,49 @@ final class DataVideoTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
     }
 
+    /// Watch in the composite lap sheet under the lap times (FBBD-452, Arek 2026-11-04: "tu brakuje opcji
+    /// watch"): the realistic optimal the sheet starts on plays full screen with its overlay, and closing
+    /// the player comes back to the Summary.
+    func testTheOptimalLapIsWatchedFromUnderTheLapTimes() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideoLong", "-noFilesSheet"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 180), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
+
+        let button = app.buttons["optimalVideoButton"].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 60), "no optimal-lap video under the lap times")
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: button)
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 180), .completed,
+                       "the optimal-lap video stayed off: \(app.staticTexts["optimalVideoNote"].firstMatch.label)")
+        for _ in 0..<4 where !button.isHittable { app.swipeUp() }
+        button.tap()
+        let title = app.staticTexts["optimalVideoSheet"].firstMatch
+        if !title.waitForExistence(timeout: 15) {
+            keep("Composite lap sheet not open")
+            button.tap()
+        }
+        XCTAssertTrue(title.waitForExistence(timeout: 30), "no composite lap sheet")
+
+        let watch = app.buttons["optimalVideoWatch"].firstMatch
+        XCTAssertTrue(watch.waitForExistence(timeout: 10), "no Watch in the composite lap sheet")
+        XCTAssertTrue(watch.isEnabled, "Watch is off for the realistic optimal")
+        keep("Composite lap sheet with Watch")
+        watch.tap()
+        let failed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'The video could not be opened'")).firstMatch
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 120),
+            failed.exists ? failed.label : "the composite lap did not play from under the lap times"
+        )
+        sleep(2)
+        keep("Composite lap playing from under the lap times")
+        XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+        XCTAssertTrue(button.waitForExistence(timeout: 30), "not back in the Summary")
+    }
+
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
         let bottom = app.tabBars.buttons["Sessions"]

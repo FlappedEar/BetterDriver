@@ -24,12 +24,12 @@ class CompositeLapChoice(options: CompositeOptions?) {
 
     /** The sheet's choices: the realistic optimal, then the raw theoretical best. */
     val kinds: List<CompositeKindLine> =
-        options?.let { listOf(kindLine(it.realistic), kindLine(it.raw)) }.orEmpty()
+        options?.let { o -> listOf(kindLine(o, o.realistic), kindLine(o, o.raw)) }.orEmpty()
 
     /** The video part the sheet starts on (DataVideoSession's -1 or -2); 0 while there is no choice. */
     val preselected: Int = options?.let { DataVideoSession.partOf(it.preselected.kind) } ?: 0
 
-    private fun kindLine(o: OptimalOption): CompositeKindLine {
+    private fun kindLine(options: CompositeOptions, o: OptimalOption): CompositeKindLine {
         val (name, note) = optimalOptionText(o)
         val parts = o.parts.map { p ->
             val (detail, video) = optimalPartText(p)
@@ -37,6 +37,7 @@ class CompositeLapChoice(options: CompositeOptions?) {
         }
         val part = DataVideoSession.partOf(o.kind)
         return CompositeKindLine(part, name, note, o.unavailable, missingText(o), parts)
+            .also { it.watchable = options.canWatch(o.kind) }
     }
 }
 
@@ -60,6 +61,10 @@ class CompositeKindLine(
     val missing: String?,
     val parts: List<CompositePartLine>,
 ) {
+    /** The sheet's Watch is on (FBBD-452): the shared core's CompositeOptions.canWatch. */
+    var watchable: Boolean = false
+        internal set
+
     /** It can be filmed. */
     val enabled: Boolean get() = unavailable == null
 }
