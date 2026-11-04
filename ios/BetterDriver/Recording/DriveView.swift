@@ -20,7 +20,7 @@ struct DriveView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 10) {
-                    StartButton(place: place.name) { picking = true }
+                    StartButton(place: place.name, asked: picking) { openSheet("START") }
                         .padding(.vertical, 4)
                     if let error = recorder.error {
                         Text(error)
@@ -33,7 +33,7 @@ struct DriveView: View {
                     if let focus = pinned.focus { NextSessionHereCard(focus: focus, track: place.name) }
                     if let last = pinned.lastTime { LastTimeHereCard(last: last) }
                     ThisSessionCard(setup: settings.setup, receiver: recorder.lastReceiverName, phoneCamera: camera) {
-                        picking = true
+                        openSheet("Change")
                     }
                 }
                 .padding(.horizontal, 16)
@@ -42,6 +42,11 @@ struct DriveView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Palette.background)
+            // The track screen on another view than START's sheet: one view presenting both can leave
+            // the sheet unable to open again after a session (FBBD-456).
+            .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
+                TrackScreenView(model: recorder.screen) { recorder.stop() }
+            }
             .navigationTitle("Drive")
             .navigationBarTitleDisplayMode(.large)
         }
@@ -58,8 +63,9 @@ struct DriveView: View {
             .interactiveDismissDisabled(UITestMode.on)
             .presentationBackground(Palette.surface)
         }
-        .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
-            TrackScreenView(model: recorder.screen) { recorder.stop() }
+        // A session that ends leaves no sheet asked for, so START opens it again (FBBD-456).
+        .onChange(of: recorder.isRecording) { _, recording in
+            if !recording { picking = false }
         }
         .onAppear {
             camera = recorder.phoneCamera
@@ -75,6 +81,18 @@ struct DriveView: View {
                 ReviewBridge.library.drivePinned(trackId: id, track: name)
             }.value
         }
+    }
+
+    /// Opens START's sheet. When the sheet is already asked for but not on screen (a session ended
+    /// while it was going away), it is asked for once more, so a tap never does nothing (FBBD-456).
+    private func openSheet(_ from: String) {
+        AppLog.i("Recording", "\(from) tapped: sheet \(picking ? "already asked, asked again" : "asked"), recording \(recorder.isRecording)")
+        guard picking else {
+            picking = true
+            return
+        }
+        picking = false
+        DispatchQueue.main.async { picking = true }
     }
 }
 
@@ -170,6 +188,8 @@ private struct ThisSessionCard: View {
 /// The 170 point amber START ring with the place the phone is at (UI-308 A, as on Android).
 private struct StartButton: View {
     let place: String?
+    /// Whether START's sheet is asked for, as the button's value for the UI tests (FBBD-456).
+    let asked: Bool
     let action: () -> Void
 
     var body: some View {
@@ -188,6 +208,7 @@ private struct StartButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("startButton")
+        .accessibilityValue(asked ? "sheet asked" : "")
     }
 }
 

@@ -53,6 +53,27 @@ final class StartListUiTests: XCTestCase {
         XCTAssertFalse(row("start.HEART_RATE.Strap A").isSelected)
     }
 
+    /// Two sessions back to back, as on a track day (FBBD-456): after a stop, one tap on START opens the
+    /// sheet again, without closing the app.
+    func testTwoSessionsBackToBack() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad has no Drive tab")
+        openSheet()
+        pickSimulated()
+        record()
+        // The track screen's slide away ends within a second; a person taps after it.
+        sleep(2)
+        let start = app.buttons["startButton"]
+        start.tap()
+        allowSystemAlerts()
+        let sheet = app.descendants(matching: .any)["receiverSheet"]
+        if !sheet.waitForExistence(timeout: 8) {
+            print("START LIST app:\n\(app.debugDescription)")
+            XCTFail("one START tap after a stop opens no sheet; START value '\(start.value as? String ?? "")'; on screen: \(onScreen())")
+        }
+        pickSimulated()
+        record()
+    }
+
     private var launched = false
 
     private func openSheet() {
