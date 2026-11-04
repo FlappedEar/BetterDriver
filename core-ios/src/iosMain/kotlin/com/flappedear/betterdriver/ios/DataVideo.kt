@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
+import com.flappedear.betterdriver.timing.overlay.paceRuns
 import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.thin
 import com.flappedear.betterdriver.timing.overlay.videoCuts
@@ -259,9 +260,10 @@ class DataVideoSession internal constructor(
                 source.gAt(sessionMicros - RadarMicros * i / RadarDots)
                     ?.let { HudRadarDot(it, 1 - i.toFloat() / (RadarDots + 1)) }
             }
-            val trail = runs(source.trail(sessionMicros))
             // The best lap so far at this moment (FBBD-449), as Android's TechHudPainter.
             val frame = source.at(sessionMicros)
+            // The trail coloured by the delta to it (FBBD-451).
+            val trail = paceRuns(source.paceTrail(sessionMicros)).map(::HudTrailRun)
             return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint)
         } finally {
             lock.unlock()

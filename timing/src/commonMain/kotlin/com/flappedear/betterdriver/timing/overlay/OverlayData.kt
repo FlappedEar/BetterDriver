@@ -45,6 +45,69 @@ data class OverlayLap(
  */
 enum class LapPhase { Ready, Running, Finished }
 
+/**
+ * The lap's pace at a point of the map's trail (FBBD-451): [Ahead] of the best lap before it (live
+ * delta -0.001 s or less), drawn green; [Behind] (slower, or level), drawn orange.
+ */
+enum class Pace {
+    Ahead,
+    Behind,
+    ;
+
+    companion object {
+        /** The pace for live delta [deltaMicros]; null without one (the trail keeps its single colour). */
+        fun of(deltaMicros: Long?): Pace? = when {
+            deltaMicros == null -> null
+            deltaMicros <= AheadMicros -> Ahead
+            else -> Behind
+        }
+
+        /** -0.001 s, the delta's last shown digit: Arek's "delta <= -0.001 green, above orange". */
+        const val AheadMicros = -1_000L
+    }
+}
+
+/** A point of the map's trail and the lap's [pace] there; null pace: no reference lap. */
+data class TrailPoint(val xy: Xy, val pace: Pace?)
+
+/** A stretch of the map's trail without a gap and in one [pace]; drawn as one line. */
+class PaceRun(val points: List<Xy>, val pace: Pace?)
+
+/**
+ * [points] as lines to draw: broken at each null (no fix), and split where the pace changes. A segment
+ * takes the pace of its later point, and the run after a change starts at the point before it, so
+ * the line stays joined.
+ */
+fun paceRuns(points: List<TrailPoint?>): List<PaceRun> {
+    val out = ArrayList<PaceRun>()
+    var run = ArrayList<Xy>()
+    var pace: Pace? = null
+    fun close() {
+        if (run.size > 1) out += PaceRun(run, pace)
+    }
+    for (p in points) {
+        when {
+            p == null -> {
+                close()
+                run = ArrayList()
+            }
+            // The first segment takes its later point's pace.
+            run.size < 2 -> {
+                run += p.xy
+                pace = p.pace
+            }
+            p.pace != pace -> {
+                close()
+                run = arrayListOf(run.last(), p.xy)
+                pace = p.pace
+            }
+            else -> run += p.xy
+        }
+    }
+    close()
+    return out
+}
+
 /** What the data overlay shows at one moment of the session; a null field is shown as a dash or left out. */
 data class OverlayFrame(
     val speedKmh: Double?,
@@ -197,19 +260,25 @@ class OverlayData(
      * Where the car went up to [sessionMicros], as Overlays' map trail (KAN-271): from the start of
      * the lap being driven, else the last [TrailFallbackMicros], at most [TrailMaxPoints] points at
      * least [TrailMinStepMicros] apart. A null breaks the line where there was no fix.
+     *
+     * Each point has the pace there (FBBD-451): the live delta then to the best lap set before this
+     * one (FBBD-449), as [Pace.of] reads it, so the map shows where the lap gained and lost. Without
+     * a reference (out and in laps, the first timed lap, outside a lap) every pace is null.
      */
-    fun trail(sessionMicros: Long): List<Xy?> {
-        val lapStart = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
-            ?.lap?.startMicros
+    fun paceTrail(sessionMicros: Long): List<TrailPoint?> {
+        val trace = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
+        val lapStart = trace?.lap?.startMicros
         val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
         val step = maxOf(TrailMinStepMicros, (sessionMicros - start) / TrailMaxPoints)
-        val out = ArrayList<Xy?>()
+        val paced = trace?.takeIf { it.lap.kind == LapKind.Timed && referenceFor(it.lap) != null }
+        val out = ArrayList<TrailPoint?>()
         var open = false
         fun add(t: Long) {
             val px = x.at(t)
             val py = y.at(t)
             if (px != null && py != null) {
-                out += Xy(px, py)
+                val pace = paced?.let { Pace.of(deltaAt(it, t - it.lap.startMicros)) }
+                out += TrailPoint(Xy(px, py), pace)
                 open = true
             } else if (open) {
                 out += null
@@ -341,6 +410,9 @@ class OverlayData(
         const val TrailMaxPoints = 600L
     }
 }
+
+/** [OverlayData.paceTrail] without the pace: the map's trail as a line. */
+fun OverlayData.trail(sessionMicros: Long): List<Xy?> = paceTrail(sessionMicros).map { it?.xy }
 
 /** For each of [laps], the fastest of it and those before it; on a tie the earlier lap stays. */
 private fun runningMin(laps: List<Lap>): List<Lap> {
