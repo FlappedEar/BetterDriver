@@ -44,7 +44,17 @@ final class CoachVoiceTests: XCTestCase {
         // log says which step waits.
         let began = Date()
         func lap(_ step: String) { print("COACHVOICE \(step) at \(String(format: "%.1f", Date().timeIntervalSince(began))) s") }
-        let voice = CoachVoice(settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0))
+        let settings = LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0)
+        // What CoachVoice's init does, one step at a time: the first of them pays the stall.
+        _ = CoachVoiceChoice.voice(settings)
+        lap("speech voice looked up")
+        _ = AVSpeechSynthesizer()
+        lap("synthesizer made")
+        _ = AVAudioEngine()
+        lap("audio engine made")
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+        lap("audio category set")
+        let voice = CoachVoice(settings: settings)
         lap("voice made")
         defer {
             voice.shutdown()

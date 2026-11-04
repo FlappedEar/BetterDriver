@@ -5,7 +5,7 @@ import XCTest
 /// on an Android tablet held sideways and can be hidden and shown again (Arek 2026-10-31), and
 /// Settings is a tab. Screenshots of each stay in the test results.
 final class IPadLayoutTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

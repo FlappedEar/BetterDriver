@@ -5,7 +5,7 @@ import XCTest
 /// opens with the photo under the road where MapKit gives one (the drawn road without it) and nothing
 /// crashes either way. A screenshot of each stays in the test results.
 final class SatelliteMapTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

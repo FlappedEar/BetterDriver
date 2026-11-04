@@ -5,7 +5,7 @@ import XCTest
 /// with the traces over the corner, and two ticked passes open side by side in the lap review.
 /// A screenshot of each stays in the test results.
 final class EveryPassTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

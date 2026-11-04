@@ -4,7 +4,7 @@ import XCTest
 /// Sessions' Compare laps lists the sessions at a track with their laps; two laps picked into slots
 /// A and B open side by side in the lap review. A screenshot of each stays in the test results.
 final class LapPickerTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

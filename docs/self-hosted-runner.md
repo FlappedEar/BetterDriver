@@ -17,22 +17,33 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * Pull requests from forks always run on GitHub's runners. The repository is public, and GitHub
   advises against self-hosted runners for public repositories because anyone can open a pull
   request ([secure use](https://docs.github.com/en/actions/reference/security/secure-use)).
-* On a self-hosted runner each job creates its own simulator (`ios-simulator.py --private`,
-  named `BD <runner name> <iPad|iPhone>`) and deletes it at the end, so two runner instances on
-  one Mac never drive the same simulator.
+* Each runner instance keeps its own simulator per device (`ios-simulator.py --private`, named
+  `BD <runner name> <iPad|iPhone> <runtime>`), made once and reused by later jobs, so two runner
+  instances on one Mac never drive the same simulator and no job pays for a first boot. Each job
+  removes the app and its data first, and shuts down the runner's other simulator.
 * `ios-release.yml` (TestFlight) runs on GitHub's `macos-26` by default, so the signing key and
   App Store Connect secrets do not reach the Mac. When GitHub's macOS runners take no jobs (both
   1.33.0 TestFlight runs were cancelled after 15 min queued on 4 Nov 2026), a dispatch from main
   with `runner` = `["self-hosted","bd-mac"]` builds and uploads on a Mac mini: the key is then
   written to the runner's temp folder for the run and removed after it, and the run's development
   certificate is revoked at the end, but Xcode keeps the signing identity in the Mac's keychain.
-* Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished
-  `ios.yml` run already has a job for the Mac minis. One run's 4 test shards keep both Mac runners
-  busy for ~40 min, so a second run used to wait for them.
-* Main (FBBD-457): a push to main skips the build and the tests when the merged pull request's run
-  passed on the same source tree (its "iOS passed (tree ...)" job names the tree it tested); queued main runs are dropped when a
-  newer merge queues behind them (a running one is never cancelled). Nothing waits for a main
-  commit's iOS run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
+  `ios-release-fallback.yml` makes that dispatch itself, for the same commit, when a hosted
+  TestFlight job was cancelled after 14 min or more in the queue without a machine. Its gate runs
+  only the smoke and first-run tests when `.github/scripts/ios-tested.py` finds an iOS CI pass
+  that differs from the release only outside the app.
+* Overflow (FBBD-457): a pull request run goes to the labels in `.github/ios-overflow.json`
+  (e.g. `"macos-15"`) when another unfinished pull request run already has a job for the Mac
+  minis. `null` (since 4 Nov 2026, when GitHub's macOS runners left jobs queued until they were
+  cancelled) = no overflow: the run waits for the Mac minis.
+* Main (FBBD-457): a push to main runs only the rest of the iPad's UI tests when the merged pull
+  request's run passed on the same source tree (its "iOS passed (tree ...)" job names the tree it
+  tested); otherwise everything on both devices. Queued main runs are dropped when a newer merge
+  queues behind them (a running one is never cancelled). Nothing waits for a main commit's iOS
+  run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
+* Test jobs (FBBD-457, `.github/scripts/ios-test-parts.py`): a pull request runs every test on the
+  iPhone in three parts of about equal time, and on the iPad only what checks the iPad itself
+  (iPad layout, screen layout, review screens, first start); main then runs the iPad's rest, so
+  every test runs on both devices before a release. Two Mac runners take two jobs at a time.
 * Test time (FBBD-457): the app tests link the release build of the shared core; the demo
   sessions and demo video are made once per app build and copied at each launch (`UITestCache`);
   the unit tests run on the iPhone only; each test job's log ends with `PROFILE` lines (slow

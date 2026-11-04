@@ -4,7 +4,7 @@ import XCTest
 /// driven with the spoken coach on (-demoCues) offers "Coach review" with its cues from its row and from
 /// the session's More menu, and the review lists the cues. A screenshot of each stays in the results.
 final class CoachReviewTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
     /// Newest first: Silesia Ring, then the coached Jastrząb.
     private let jastrzab = 1

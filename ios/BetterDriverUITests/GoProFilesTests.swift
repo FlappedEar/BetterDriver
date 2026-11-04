@@ -5,7 +5,7 @@ import XCTest
 /// the GoPro's GPS. With -demoGoPro the app adds a made-up GoPro file riding along the session in place
 /// of Files' picker. Screenshots stay in the test results.
 final class GoProFilesTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

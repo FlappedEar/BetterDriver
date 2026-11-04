@@ -5,7 +5,7 @@ import XCTest
 /// editor opens on the proposed line, Save keeps it, and the session is timed with it. A screenshot
 /// of each stays in the test results.
 final class MakeTrackTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

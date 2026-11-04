@@ -5,7 +5,7 @@ import XCTest
 /// screen stays in the test results, which CI uploads as the ios-review-screenshots artifact.
 /// Each test that needs it starts from -freshInstall.
 final class ReviewScreensTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

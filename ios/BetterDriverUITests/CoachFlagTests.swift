@@ -5,7 +5,7 @@ import XCTest
 /// flagged when the Summary is opened again, and unflagging it is stored too. A screenshot of each
 /// stays in the test results.
 final class CoachFlagTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

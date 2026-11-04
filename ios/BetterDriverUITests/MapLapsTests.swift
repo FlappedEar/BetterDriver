@@ -4,7 +4,7 @@ import XCTest
 /// compared lap on the map coloured by time against the best lap, with its G-G diagram, and the
 /// switch to "Where to find time". A screenshot of each stays in the test results.
 final class MapLapsTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

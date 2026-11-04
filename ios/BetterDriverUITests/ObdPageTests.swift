@@ -4,7 +4,7 @@ import XCTest
 /// that is never there (-obdWifi), the page connects by itself, says no adapter answers, and the app
 /// keeps running while it retries. Screenshots stay in the test results.
 final class ObdPageTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

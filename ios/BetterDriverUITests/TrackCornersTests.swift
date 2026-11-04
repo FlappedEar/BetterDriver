@@ -5,7 +5,7 @@ import XCTest
 /// listed in its editor; Split makes a corner of two and marks it Edited, and Restore automatic
 /// brings the corners found from the laps back. A screenshot of each stays in the test results.
 final class TrackCornersTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

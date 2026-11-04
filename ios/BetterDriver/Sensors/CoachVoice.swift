@@ -120,6 +120,9 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         utterance.voice = voice
         utterance.rate = rate
         utterance.pitchMultiplier = pitch
+        // UI tests (FBBD-457) say every phrase as usual, at no volume: the Mac mini that runs them
+        // is also Arek's desk machine.
+        if UITestMode.quietVoice { utterance.volume = 0 }
         lock.lock()
         current[ObjectIdentifier(utterance)] = speech
         playing += 1
@@ -175,6 +178,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionCallbackType: .dataPlayedBack) {
             [weak self] _ in self?.clipEnded(id)
         }
+        player.volume = UITestMode.quietVoice ? 0 : 1
         player.play()
         let (route, device) = Self.route()
         speech.started(route: route, device: device, clip: true)
