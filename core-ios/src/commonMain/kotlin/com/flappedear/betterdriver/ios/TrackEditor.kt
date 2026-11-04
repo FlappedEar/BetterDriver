@@ -47,10 +47,7 @@ data class EditorLine(
 @Suppress("TooManyFunctions") // One function per editor action.
 class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Track? = initial) {
     /** The newest session's drive, the "lap" lines are placed on. */
-    val path: LapPath? = sessions.firstOrNull()?.fixes
-        ?.map { GeoPoint(it.lat, it.lon) }
-        ?.takeIf { it.size >= 2 }
-        ?.let(::LapPath)
+    val path: LapPath? = sessions.firstOrNull()?.fixes?.let(LapPath::of)
 
     /** The drive as a flat list for the map, [lat0, lon0, lat1, lon1, …]; empty without a session. */
     val pathPoints: List<Double> = path?.points?.flatMap { listOf(it.lat, it.lon) }.orEmpty()
