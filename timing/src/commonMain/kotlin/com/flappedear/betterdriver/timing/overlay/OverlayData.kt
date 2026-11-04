@@ -263,13 +263,17 @@ class OverlayData(
      *
      * Each point has the pace there (FBBD-451): the live delta then to the best lap set before this
      * one (FBBD-449), as [Pace.of] reads it, so the map shows where the lap gained and lost. Without
-     * a reference (out and in laps, the first timed lap, outside a lap) every pace is null.
+     * a reference (in laps, the first timed lap, outside a lap) every pace is null.
+     *
+     * Nothing is drawn before the car first crosses the start/finish line (FBBD-460): not in the out
+     * lap, nor before a single-lap export's line while its time shows 0:00 ([LapPhase.Ready]). After
+     * that lap's line ([LapPhase.Finished]) its whole trail stays, as its final time does.
      */
     fun paceTrail(sessionMicros: Long): List<TrailPoint?> {
-        val trace = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
-        val lapStart = trace?.lap?.startMicros
-        val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
-        val step = maxOf(TrailMinStepMicros, (sessionMicros - start) / TrailMaxPoints)
+        val (trace, window) = trailWindow(sessionMicros, hotlap, traces, TrailFallbackMicros) ?: return emptyList()
+        val start = window.first
+        val until = window.last
+        val step = maxOf(TrailMinStepMicros, (until - start) / TrailMaxPoints)
         val paced = trace?.takeIf { it.lap.kind == LapKind.Timed && referenceFor(it.lap) != null }
         val out = ArrayList<TrailPoint?>()
         var open = false
@@ -286,11 +290,11 @@ class OverlayData(
             }
         }
         var t = start
-        while (t < sessionMicros) {
+        while (t < until) {
             add(t)
             t += step
         }
-        add(sessionMicros)
+        add(until)
         return out
     }
 
@@ -413,6 +417,29 @@ class OverlayData(
 
 /** [OverlayData.paceTrail] without the pace: the map's trail as a line. */
 fun OverlayData.trail(sessionMicros: Long): List<Xy?> = paceTrail(sessionMicros).map { it?.xy }
+
+/**
+ * The lap a map trail at [t] belongs to and the session times it runs over ([OverlayData.paceTrail]);
+ * null before the start/finish line was first crossed (FBBD-460): before [hotlap]'s line, else in the
+ * out lap or before any of [traces]. Outside a traced lap the trail is the last [fallbackMicros], but
+ * not back past the line of the last lap that ended; a single lap's trail stops at its own line.
+ */
+private fun trailWindow(
+    t: Long,
+    hotlap: LapTrace?,
+    traces: List<LapTrace>,
+    fallbackMicros: Long,
+): Pair<LapTrace?, LongRange>? {
+    if (hotlap != null) {
+        val lap = hotlap.lap
+        return if (t < lap.startMicros) null else hotlap to lap.startMicros..minOf(t, lap.endMicros)
+    }
+    val started = traces.lastOrNull { it.lap.startMicros <= t }
+    val inOutLap = started != null && started.lap.kind == LapKind.Out && t < started.lap.endMicros
+    val trace = traces.lastOrNull { it.lap.startMicros <= t && t < it.lap.endMicros }
+    val start = trace?.lap?.startMicros ?: maxOf(t - fallbackMicros, started?.lap?.endMicros ?: Long.MIN_VALUE)
+    return if (traces.isNotEmpty() && (started == null || inOutLap)) null else trace to start..t
+}
 
 /** For each of [laps], the fastest of it and those before it; on a tie the earlier lap stays. */
 private fun runningMin(laps: List<Lap>): List<Lap> {
