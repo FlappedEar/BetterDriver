@@ -68,38 +68,53 @@ def relevant(commit, paths):
     return hits
 
 
-def passed_job(commit):
+def passed_jobs(commit):
+    """(tested tree, job URL) of each successful "iOS passed (tree X)" job on the commit."""
     data = gh(f"repos/{REPO}/commits/{commit}/check-runs?per_page=100")
+    out = []
     for c in (data or {}).get("check_runs", []):
-        if c["name"].startswith("iOS passed (tree ") and c["conclusion"] == "success":
-            return c["html_url"]
-    return None
+        m = re.match(r"^iOS passed \(tree ([0-9a-f]{40})\)$", c["name"])
+        if m and c["conclusion"] == "success":
+            out.append((m.group(1), c["html_url"]))
+    return out
+
+
+def present(obj, kind):
+    return run("git", "cat-file", "-t", obj, check=False).strip() == kind
 
 
 def main():
     depth = int(sys.argv[1]) if len(sys.argv) > 1 else 15
     paths = ios_paths()
+    head_tree = run("git", "rev-parse", "HEAD^{tree}").strip()
     for commit in run("git", "rev-list", "--first-parent", f"--max-count={depth}", "HEAD").split():
         pulls = gh(f"repos/{REPO}/commits/{commit}/pulls") or []
         heads = [p["head"]["sha"] for p in pulls if p.get("merged_at")]
         for candidate in [commit] + heads:
-            url = passed_job(candidate)
-            if not url:
-                continue
-            if run("git", "cat-file", "-t", candidate, check=False).strip() != "commit":
-                subprocess.run(["git", "fetch", "-q", "origin", candidate], check=False)
-            if run("git", "cat-file", "-t", candidate, check=False).strip() != "commit":
-                print(f"{candidate[:7]}: iOS passed ({url}) but the commit could not be fetched")
-                continue
-            hits = relevant(candidate, paths)
-            if not hits:
-                print(f"iOS CI passed on {candidate[:7]}, which differs from HEAD only outside the app: {url}")
-                return 0
-            print(f"{candidate[:7]}: iOS passed ({url}) but HEAD differs in {', '.join(hits[:5])}"
-                  + (f" and {len(hits) - 5} more" if len(hits) > 5 else ""))
-            # An older pass can only differ more: stop at the newest one.
-            return 1
-    print(f"No iOS CI pass in the last {depth} main commits or their pull requests")
+            for tree, url in passed_jobs(candidate):
+                if tree == head_tree:
+                    print(f"iOS CI passed on this exact tree: {url}")
+                    return 0
+                # A pull request's run tests its merge with main at that time and names that
+                # tree; compare with it when it is here, else with the head commit, which can only
+                # differ more (main's newer files count as differences).
+                if present(tree, "tree"):
+                    against = tree
+                else:
+                    if not present(candidate, "commit"):
+                        subprocess.run(["git", "fetch", "-q", "origin", candidate], check=False)
+                    if not present(candidate, "commit"):
+                        print(f"{candidate[:7]}: iOS passed ({url}) but the commit could not be fetched")
+                        continue
+                    against = candidate
+                hits = relevant(against, paths)
+                if not hits:
+                    print(f"iOS CI passed on {candidate[:7]}, which differs from HEAD only outside the app: {url}")
+                    return 0
+                # History is not monotonic (a revert can bring an older pass back), so keep looking.
+                print(f"{candidate[:7]}: iOS passed ({url}) but HEAD differs in {', '.join(hits[:5])}"
+                      + (f" and {len(hits) - 5} more" if len(hits) > 5 else ""))
+    print(f"No usable iOS CI pass in the last {depth} main commits or their pull requests")
     return 1
 
 
