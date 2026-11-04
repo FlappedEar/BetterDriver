@@ -154,8 +154,15 @@ final class StartListUiTests: XCTestCase {
             XCTAssertEqual(app.state, .runningForeground, "the app is still running while recording")
         }
         XCTAssertTrue(screen.exists, "still recording after 10 s")
-        screen.press(forDuration: 4)
-        XCTAssertTrue(app.buttons["startButton"].waitForExistence(timeout: 20), "back on Drive after the stop")
+        // The hold at the middle of the window, as SmokeTests: in landscape an element's own centre can
+        // be outside the turned screen, and the press then never reaches the track screen.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 4)
+        // START is under the track screen all along, so the stop is seen by the track screen going away.
+        let start = app.buttons["startButton"]
+        if !screen.waitForNonExistence(timeout: 20) {
+            XCTFail("the track screen after the 4 s hold; START value '\(start.value as? String ?? "")'")
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 20), "back on Drive after the stop")
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
     }
 

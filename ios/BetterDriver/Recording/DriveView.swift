@@ -26,7 +26,7 @@ struct DriveView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 10) {
-                    StartButton(place: place.name, state: "taps \(taps), sheet \(picking ? "asked" : "not asked"), track \(trackShown ? "shown" : "not shown")") { openSheet("START") }
+                    StartButton(place: place.name, state: "taps \(taps), sheet \(picking ? "asked" : "not asked"), track \(trackShown ? "shown" : "not shown"), \(recorder.isRecording ? "recording" : "not recording")") { openSheet("START") }
                         .padding(.vertical, 4)
                     if let error = recorder.error {
                         Text(error)
