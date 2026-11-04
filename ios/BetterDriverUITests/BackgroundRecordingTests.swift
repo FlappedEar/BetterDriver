@@ -43,11 +43,17 @@ final class BackgroundRecordingTests: XCTestCase {
         allowSystemAlerts()
 
         XCUIDevice.shared.press(.home)
+        // The Home press can first close a system prompt, and the state takes a moment to change.
+        if !app.wait(for: .runningBackground, timeout: 10) {
+            allowSystemAlerts()
+            XCUIDevice.shared.press(.home)
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10), "in the background, state \(app.state.rawValue)")
+        }
         // iOS suspends an app it does not keep running within a few seconds of leaving the screen.
         let until = Date().addingTimeInterval(30)
         while Date() < until {
             sleep(2)
-            XCTAssertEqual(app.state, .runningBackground, "the recording app is suspended or gone in the background")
+            XCTAssertEqual(app.state, .runningBackground, "the recording app is suspended or gone in the background, state \(app.state.rawValue)")
         }
 
         app.activate()
