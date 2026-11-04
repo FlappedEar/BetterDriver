@@ -6,6 +6,8 @@ import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.Pace
 import com.flappedear.betterdriver.timing.overlay.TrailPoint
@@ -88,6 +90,35 @@ class PaceTrailTest {
         val t = lap(3).startMicros + 30_000_000
         assertEquals(OverlayData(sets, laps).paceTrail(t), alone.paceTrail(t))
         assertEquals(Pace.Ahead, alone.paceTrail(t).filterNotNull().last().pace)
+    }
+
+    @Test
+    fun `nothing is drawn before the start-finish line is first crossed - FBBD-460`() {
+        val data = OverlayData(sets, laps)
+        assertEquals(LapKind.Out, lap(1).kind)
+        // The out lap, from the session's start to the first line: no trail.
+        for (t in listOf(lap(1).startMicros, lap(1).startMicros + 10_000_000, lap(1).endMicros - 1)) {
+            assertTrue(data.paceTrail(t).isEmpty(), "out lap at $t")
+        }
+        // Over the line, the lap's trail starts.
+        assertTrue(data.paceTrail(lap(2).startMicros + 5_000_000).filterNotNull().size > 2)
+    }
+
+    @Test
+    fun `a single-lap video draws nothing before its line and holds its lap after it - FBBD-460`() {
+        val alone = OverlayData(sets, laps, hotlap = 3)
+        val start = lap(3).startMicros
+        val end = lap(3).endMicros
+        // The seconds before its line, the time showing 0:00: the lap before it is not drawn.
+        for (t in listOf(start - 5_000_000, start - 1)) {
+            assertEquals(LapPhase.Ready, alone.at(t).lap?.phase)
+            assertTrue(alone.paceTrail(t).isEmpty(), "before the line at $t")
+        }
+        assertTrue(alone.paceTrail(start + 5_000_000).filterNotNull().size > 2)
+        // After its line the whole lap stays, as its final time does; the next lap is not drawn.
+        val held = alone.paceTrail(end + 3_000_000)
+        assertEquals(alone.paceTrail(end), held)
+        assertTrue(held.filterNotNull().size > 100)
     }
 
     @Test

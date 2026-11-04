@@ -8,8 +8,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -59,6 +61,7 @@ import com.flappedear.betterdriver.format.formatRunningTime
 import com.flappedear.betterdriver.format.formatVideoClock
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
+import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.overlay.CutPosition
 import com.flappedear.betterdriver.timing.overlay.OverlayData
@@ -109,28 +112,77 @@ sealed interface WatchLoad {
  */
 @Composable
 fun WatchVideoScreen(title: String, load: WatchLoad, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize()) {
-        ShellTopBar("Watch video", onBack = onBack)
-        Column(
-            Modifier.weight(1f).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (title.isNotEmpty()) DimText(title)
-            when (load) {
-                WatchLoad.Loading -> {
+    when (load) {
+        is WatchLoad.Ready -> {
+            val source = load.source
+            val (w, painter) = rememberWatch(source)
+            WatchLayout(
+                title,
+                onBack,
+                modifier,
+                picture = { m -> Picture(w, painter, source.momentAt(w.at), m) { w.aspect } },
+                transport = { leading -> Transport(w, source.totalMicros, leading) },
+            )
+        }
+        else -> Column(modifier.fillMaxSize()) {
+            ShellTopBar("Watch video", onBack = onBack)
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (title.isNotEmpty()) DimText(title)
+                if (load == WatchLoad.Loading) {
                     DimText("Reading video and data…")
                     LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
                 }
-                WatchLoad.NoVideo -> DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
-                is WatchLoad.Ready -> Watch(load.source)
             }
         }
     }
 }
 
-/** The picture takes the height left after the controls, so they stay on screen in landscape too. */
+/**
+ * Where the watch screen puts the [picture] and the [transport]. Upright: the title bar, the title,
+ * the picture and the controls under it. Sideways (FBBD-459): no title bar and one row of controls
+ * (back, Play/Pause, the clock, the seek bar), so the picture takes all the height but that row; with
+ * the title bar and two rows of controls it had only about a third of a landscape phone's screen.
+ * [transport] gets the back button to lead its single row with, or null for its upright two rows.
+ */
 @Composable
-private fun ColumnScope.Watch(source: WatchSource) {
+internal fun WatchLayout(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    picture: @Composable (Modifier) -> Unit,
+    transport: @Composable ((@Composable () -> Unit)?) -> Unit,
+) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        if (maxWidth > maxHeight) {
+            Column(Modifier.fillMaxSize().background(Color.Black)) {
+                picture(Modifier.weight(1f))
+                transport {
+                    IconButton(onClick = onBack) {
+                        Icon(ShellIcons.Back, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                ShellTopBar("Watch video", onBack = onBack)
+                Column(
+                    Modifier.weight(1f).padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (title.isNotEmpty()) DimText(title)
+                    picture(Modifier.weight(1f, fill = false))
+                    transport(null)
+                }
+            }
+        }
+    }
+}
+
+/** The player of [source] and the overlay's painter; the video stops in the background, the screen stays on while it plays. */
+@Composable
+private fun rememberWatch(source: WatchSource): Pair<WatchPlayer, TechHudPainter> {
     val context = LocalContext.current
     val w = remember(source) { WatchPlayer(context, source) }
     DisposableEffect(w) { onDispose { w.release() } }
@@ -155,17 +207,21 @@ private fun ColumnScope.Watch(source: WatchSource) {
     }
     val fonts = remember(context) { HudFonts.load(context) }
     val painter = remember(source) { TechHudPainter(fonts, source.data) }
-    val moment = source.momentAt(w.at)
-    Picture(w, painter, moment, Modifier.weight(1f, fill = false))
-    Transport(w, source.totalMicros)
+    return w to painter
 }
 
 /** The video, letterboxed, with the data overlay (Overlays' Tech HUD, FBBD-347) over it as in the export. */
 @Composable
-private fun Picture(w: WatchPlayer, painter: TechHudPainter, moment: HudMoment?, modifier: Modifier) {
+private fun Picture(
+    w: WatchPlayer,
+    painter: TechHudPainter,
+    moment: HudMoment?,
+    modifier: Modifier,
+    aspect: () -> Float,
+) {
     Box(modifier.fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
         // As wide as it can be, else as tall as the space it has.
-        Box(Modifier.aspectRatio(w.aspect)) {
+        Box(Modifier.aspectRatio(aspect())) {
             AndroidView(
                 factory = { SurfaceView(it).also { v -> w.player.setVideoSurfaceView(v) } },
                 onRelease = { v -> w.player.clearVideoSurfaceView(v) },
@@ -187,12 +243,34 @@ private fun Picture(w: WatchPlayer, painter: TechHudPainter, moment: HudMoment?,
     }
 }
 
-/** Play/Pause, where it is of how long, and the seek bar. */
+/**
+ * Play/Pause, where it is of how long, and the seek bar: the bar under the button and clock, or with
+ * [leading] (landscape, FBBD-459) all in one row after it.
+ */
 @Composable
-private fun Transport(w: WatchPlayer, totalMicros: Long) {
+private fun Transport(w: WatchPlayer, totalMicros: Long, leading: (@Composable () -> Unit)? = null) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging?.let { (it * totalMicros).roundToLong() } ?: w.outputMicros
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    val seek: @Composable (Modifier) -> Unit = { m ->
+        Slider(
+            value = if (totalMicros > 0) (shown.toFloat() / totalMicros).coerceIn(0f, 1f) else 0f,
+            onValueChange = { v ->
+                dragging = v
+                w.seek((v * totalMicros).roundToLong(), exact = false)
+            },
+            onValueChangeFinished = {
+                dragging?.let { w.seek((it * totalMicros).roundToLong(), exact = true) }
+                dragging = null
+            },
+            modifier = m,
+        )
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(end = if (leading != null) 16.dp else 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        leading?.invoke()
         FilledTonalButton(onClick = w::playPause, modifier = Modifier.width(104.dp)) {
             Text(if (w.playing) "Pause" else "Play")
         }
@@ -201,19 +279,9 @@ private fun Transport(w: WatchPlayer, totalMicros: Long) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (leading != null) seek(Modifier.weight(1f))
     }
-    Slider(
-        value = if (totalMicros > 0) (shown.toFloat() / totalMicros).coerceIn(0f, 1f) else 0f,
-        onValueChange = { v ->
-            dragging = v
-            w.seek((v * totalMicros).roundToLong(), exact = false)
-        },
-        onValueChangeFinished = {
-            dragging?.let { w.seek((it * totalMicros).roundToLong(), exact = true) }
-            dragging = null
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
+    if (leading == null) seek(Modifier.fillMaxWidth())
 }
 
 /**

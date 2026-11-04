@@ -263,12 +263,36 @@ class OverlayData(
      *
      * Each point has the pace there (FBBD-451): the live delta then to the best lap set before this
      * one (FBBD-449), as [Pace.of] reads it, so the map shows where the lap gained and lost. Without
-     * a reference (out and in laps, the first timed lap, outside a lap) every pace is null.
+     * a reference (in laps, the first timed lap, outside a lap) every pace is null.
+     *
+     * Nothing is drawn before the car first crosses the start/finish line (FBBD-460): not in the out
+     * lap, nor before a single-lap export's line while its time shows 0:00 ([LapPhase.Ready]). After
+     * that lap's line ([LapPhase.Finished]) its whole trail stays, as its final time does.
      */
     fun paceTrail(sessionMicros: Long): List<TrailPoint?> {
-        val trace = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
+        if (beforeStartLine(sessionMicros)) return emptyList()
+        val trace = hotlap
+            ?: traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
         val lapStart = trace?.lap?.startMicros
         val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
+        val until = hotlap?.lap?.endMicros?.coerceAtMost(sessionMicros) ?: sessionMicros
+        return trailBetween(start, until, trace)
+    }
+
+    /**
+     * [sessionMicros] is before the start/finish line was first crossed: before a single-lap export's
+     * lap, in the out lap, or before the first lap a saved track's replay found.
+     */
+    private fun beforeStartLine(sessionMicros: Long): Boolean {
+        val lap = hotlap?.lap ?: return traces.isNotEmpty() && (
+            sessionMicros < starts.first() ||
+                traces.lastOrNull { it.lap.startMicros <= sessionMicros }?.lap?.kind == LapKind.Out
+            )
+        return sessionMicros < lap.startMicros
+    }
+
+    /** The trail from [start] to [sessionMicros], at most [TrailMaxPoints] points, paced by [trace]'s delta. */
+    private fun trailBetween(start: Long, sessionMicros: Long, trace: LapTrace?): List<TrailPoint?> {
         val step = maxOf(TrailMinStepMicros, (sessionMicros - start) / TrailMaxPoints)
         val paced = trace?.takeIf { it.lap.kind == LapKind.Timed && referenceFor(it.lap) != null }
         val out = ArrayList<TrailPoint?>()
