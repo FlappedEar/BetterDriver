@@ -8,10 +8,26 @@ package com.flappedear.betterdriver.obd
  *
  * One command at a time: an ELM327 answers one request before it reads the next.
  */
-class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long = DEFAULT_RESYNC_MS) {
+class ElmLine(
+    private val write: (ByteArray) -> Unit,
+    private val resyncMs: Long = DEFAULT_RESYNC_MS,
+    private val silentLimit: Int = 0,
+) {
     private val lock = ObdMonitor()
     private val received = StringBuilder()
     private var closed: String? = null
+
+    /**
+     * FBBD-271: whether any byte came since the last command was written, and how many waits in a row
+     * ended with nothing at all from the adapter. A vLinker whose firmware stalls (or that lost power
+     * before the phone's Bluetooth noticed) keeps the link up and sends nothing; with [silentLimit] above
+     * zero, that many silent waits in a row end the line with [SILENT], so the connector connects again
+     * within seconds instead of waiting out every listen and request (over two minutes while CAN was
+     * listened to). A slow or busy adapter still sends something (`NO DATA`, `STOPPED`, frames, a late
+     * prompt), so it is never taken as gone.
+     */
+    private var heard = false
+    private var silentWaits = 0
 
     /** The last command timed out: the adapter may still print its answer and prompt. */
     private var outstanding = false
@@ -20,6 +36,10 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
     fun feed(bytes: ByteArray) {
         lock.locked {
             for (b in bytes) if (b.toInt() != 0) received.append((b.toInt() and ByteMask).toChar())
+            if (bytes.isNotEmpty()) {
+                heard = true
+                silentWaits = 0
+            }
             lock.signalAll()
         }
     }
@@ -42,15 +62,16 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      */
     fun command(text: String, timeoutMs: Long): String? {
         lock.locked {
-            if (outstanding) awaitPrompt(resyncMs)
+            if (outstanding) awaitPrompt(resyncWaitMs())
             outstanding = false
             closed?.let { throw IOException(it) }
             received.clear()
+            heard = false
         }
         write((text + "\r").encodeToByteArray())
         lock.locked {
             val answer = awaitPrompt(timeoutMs)
-            if (answer == null) outstanding = true
+            if (answer == null) timedOut()
             return answer
         }
     }
@@ -66,10 +87,11 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      */
     fun monitor(text: String, windowMs: Long, timeoutMs: Long): String? {
         lock.locked {
-            if (outstanding) awaitPrompt(resyncMs)
+            if (outstanding) awaitPrompt(resyncWaitMs())
             outstanding = false
             closed?.let { throw IOException(it) }
             received.clear()
+            heard = false
         }
         write((text + "\r").encodeToByteArray())
         lock.locked {
@@ -78,7 +100,7 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
         write(STOP_MONITOR)
         lock.locked {
             val answer = awaitPrompt(timeoutMs)
-            if (answer == null) outstanding = true
+            if (answer == null) timedOut()
             return answer
         }
     }
@@ -88,31 +110,66 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      * can be stamped when it arrived rather than at the end of the window: [onLines] gets every batch
      * of whole lines on the calling thread, outside the lock, the last batch (up to the prompt) after
      * the monitor stopped. False when no prompt came [timeoutMs] after the stop; the next command then
-     * resyncs as after [command].
+     * resyncs as after [command]. With [quietMs] the monitor is stopped early once no line came for that
+     * long, so a stalled adapter is noticed within about a second, not at the end of a long window.
      */
-    fun monitorLines(text: String, windowMs: Long, timeoutMs: Long, onLines: (List<String>) -> Unit): Boolean {
+    fun monitorLines(
+        text: String,
+        windowMs: Long,
+        timeoutMs: Long,
+        quietMs: Long = Long.MAX_VALUE,
+        onLines: (List<String>) -> Unit,
+    ): Boolean {
         lock.locked {
-            if (outstanding) awaitPrompt(resyncMs)
+            if (outstanding) awaitPrompt(resyncWaitMs())
             outstanding = false
             closed?.let { throw IOException(it) }
             received.clear()
+            heard = false
         }
         write((text + "\r").encodeToByteArray())
         val windowEnd = monoNanos() + windowMs * NanosPerMs
         var stopped = false
         var stopDeadline = 0L
+        var lastLines = monoNanos()
         while (true) {
-            val (lines, prompt) = lock.locked { awaitLines(if (stopped) stopDeadline else windowEnd) }
-            if (lines.isNotEmpty()) onLines(lines)
+            val quietEnd = if (quietMs == Long.MAX_VALUE) Long.MAX_VALUE else lastLines + quietMs * NanosPerMs
+            val (lines, prompt) = lock.locked { awaitLines(if (stopped) stopDeadline else minOf(windowEnd, quietEnd)) }
+            if (lines.isNotEmpty()) {
+                lastLines = monoNanos()
+                onLines(lines)
+            }
             if (prompt) return true
-            if (!stopped && monoNanos() >= windowEnd) {
+            // Nothing for [quietMs]: a quiet bus or a stalled adapter (FBBD-271); stopping now tells which.
+            if (!stopped && (monoNanos() >= windowEnd || monoNanos() >= quietEnd)) {
                 write(STOP_MONITOR)
                 stopped = true
                 stopDeadline = monoNanos() + timeoutMs * NanosPerMs
             } else if (stopped && monoNanos() >= stopDeadline) {
-                lock.locked { outstanding = true }
+                lock.locked { timedOut() }
                 return false
             }
+        }
+    }
+
+    /**
+     * Under [lock]: how long a command waits for the late prompt of one that timed out. After a wait in
+     * which not one byte came the adapter is most likely stalled, not slow, and the full wait would only
+     * delay [silentLimit] (FBBD-271); a short one still catches a prompt already on its way.
+     */
+    private fun resyncWaitMs() = if (silentLimit > 0 && silentWaits > 0) minOf(resyncMs, SILENT_RESYNC_MS) else resyncMs
+
+    /**
+     * Under [lock]: no prompt came in time, so the next command resyncs first; when nothing at all came
+     * since the command was written, [silentLimit] such waits in a row end the line (FBBD-271).
+     */
+    private fun timedOut() {
+        outstanding = true
+        if (heard) return
+        silentWaits++
+        if (silentLimit in 1..silentWaits) {
+            closed = SILENT
+            throw IOException(SILENT)
         }
     }
 
@@ -157,6 +214,12 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
     companion object {
         /** How long a command waits for the late prompt of one that timed out. */
         const val DEFAULT_RESYNC_MS = 2_000L
+
+        /** The late-prompt wait after a silent one (FBBD-271). */
+        const val SILENT_RESYNC_MS = 500L
+
+        /** Why a line ends after [silentLimit] silent waits in a row: the connector's reason too (FBBD-271). */
+        const val SILENT = "adapter stopped answering"
         private val STOP_MONITOR = " ".encodeToByteArray()
         private const val NanosPerMs = 1_000_000L
     }
