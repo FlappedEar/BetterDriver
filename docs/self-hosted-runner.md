@@ -25,10 +25,15 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished
   `ios.yml` run already has a job for the Mac minis. One run's 4 test shards keep both Mac runners
   busy for ~40 min, so a second run used to wait for them.
-* Main (FBBD-457): a push to main skips the build and the tests when the merged pull request's run
-  passed on the same source tree (its "iOS passed (tree ...)" job names the tree it tested); queued main runs are dropped when a
-  newer merge queues behind them (a running one is never cancelled). Nothing waits for a main
-  commit's iOS run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
+* Main (FBBD-457): a push to main runs only the rest of the iPad's UI tests when the merged pull
+  request's run passed on the same source tree (its "iOS passed (tree ...)" job names the tree it
+  tested); otherwise everything on both devices. Queued main runs are dropped when a newer merge
+  queues behind them (a running one is never cancelled). Nothing waits for a main commit's iOS
+  run: `release.yml` gates on `ci.yml`, `ios-release.yml` has its own iPhone UI gate.
+* Test jobs (FBBD-457, `.github/scripts/ios-test-parts.py`): a pull request runs every test on the
+  iPhone in three parts of about equal time, and on the iPad only what checks the iPad itself
+  (iPad layout, screen layout, review screens, first start); main then runs the iPad's rest, so
+  every test runs on both devices before a release. Two Mac runners take two jobs at a time.
 * Test time (FBBD-457): the app tests link the release build of the shared core; the demo
   sessions and demo video are made once per app build and copied at each launch (`UITestCache`);
   the unit tests run on the iPhone only; each test job's log ends with `PROFILE` lines (slow

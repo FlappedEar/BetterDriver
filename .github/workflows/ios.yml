@@ -35,6 +35,7 @@ on:
       - "gradle.properties"
       - ".github/workflows/ios.yml"
       - ".github/scripts/ios-simulator.py"
+      - ".github/scripts/ios-test-parts.py"
       - ".github/ios-runner.json"
   push:
     branches: [main]
@@ -61,6 +62,7 @@ on:
       - "gradle.properties"
       - ".github/workflows/ios.yml"
       - ".github/scripts/ios-simulator.py"
+      - ".github/scripts/ios-test-parts.py"
       - ".github/ios-runner.json"
   workflow_dispatch:
 
@@ -85,10 +87,10 @@ jobs:
   # - Overflow: a pull request run goes to GitHub's macos-15 when another unfinished iOS run already
   #   uses the Mac minis: one run's 4 test shards fill both of them for ~40 min. Same tests, same
   #   "iOS app" gate; fork PRs run there too.
-  # - Reuse on main: a push to main skips the build and the tests when the merged pull request's
-  #   run passed on the very same source tree: its "iOS passed (tree ...)" job names the tree it
-  #   tested (the PR's merge commit), as ci.yml's "CI passed (tree ...)" does for release.yml.
-  #   A merge whose tree no PR run tested runs in full.
+  # - Reuse on main: a push to main runs only what its pull request's run left out (the rest of
+  #   the iPad's UI tests, ios-test-parts.py) when that run passed on the very same source tree:
+  #   its "iOS passed (tree ...)" job names the tree it tested (the PR's merge commit), as ci.yml's
+  #   "CI passed (tree ...)" does for release.yml. A merge whose tree no PR run tested runs in full.
   runner:
     name: iOS runner
     runs-on: ubuntu-latest
@@ -101,6 +103,7 @@ jobs:
       labels: ${{ steps.pick.outputs.labels }}
       reuse: ${{ steps.reuse.outputs.reuse }}
       tree: ${{ steps.pick.outputs.tree }}
+      matrix: ${{ steps.parts.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,12 +119,12 @@ jobs:
           labels=$(python3 -c 'import json; print(json.dumps(json.load(open(".github/ios-runner.json"))))')
           if [ "$FORK" = true ]; then labels='"macos-15"'; fi
           if [ "$EVENT" = pull_request ] && [ "$labels" != '"macos-15"' ]; then
-            # Other unfinished iOS runs with a job for the Mac minis (a main run that reuses its
-            # pull request's result has none).
+            # Other unfinished pull request runs with a job for the Mac minis. A main run (the rest
+            # of the iPad's tests after its pull request) is one job: this run waits for it.
             busy=0
             for status in queued in_progress; do
               for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ios.yml/runs?status=$status&per_page=50" \
-                  --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id" || true); do
+                  --jq ".workflow_runs[] | select(.id != $RUN_ID and .event == \"pull_request\") | .id" || true); do
                 n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=20" \
                   --jq '[.jobs[] | select(.labels | index("bd-mac"))] | length' || echo 0)
                 if [ "${n:-0}" -gt 0 ] 2>/dev/null; then busy=$((busy + 1)); fi
@@ -160,11 +163,19 @@ jobs:
             echo "No pull request run of pull request head $head passed on tree $tree."
           done
           echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+      # FBBD-457: the test jobs (ios-test-parts.py).
+      - name: Test jobs
+        id: parts
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then scope=pr
+          elif [ "${{ steps.reuse.outputs.reuse }}" = true ]; then scope=main-rest
+          else scope=full; fi
+          echo "Test scope: $scope"
+          echo "matrix=$(python3 .github/scripts/ios-test-parts.py matrix $scope)" >> "$GITHUB_OUTPUT"
 
   build:
     name: iOS build
     needs: runner
-    if: needs.runner.outputs.reuse != 'true'
     # FBBD-434: GitHub's macos-15 or Arek's Mac mini, as the runner job picks.
     runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     timeout-minutes: 60
@@ -252,7 +263,6 @@ jobs:
   test:
     name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
     needs: [runner, build]
-    if: needs.runner.outputs.reuse != 'true'
     # Same runner as the build job (FBBD-434).
     runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     # The slowest half took ~17 min on the iPad (PR #456): room for a slow runner.
@@ -260,17 +270,8 @@ jobs:
     strategy:
       # Report every failing half, not only the first one.
       fail-fast: false
-      matrix:
-        device: [iPad, iPhone]
-        part: [1, 2]
-    env:
-      # Part 1 runs these UI test classes (about half the UI tests' time); part 2 runs everything
-      # else, so a new test class always runs. The unit tests run on the iPhone only (FBBD-457).
-      PART1: >-
-        BetterDriverUITests/ReviewScreensTests
-        BetterDriverUITests/ScreenLayoutTests
-        BetterDriverUITests/DataVideoTests
-        BetterDriverUITests/ShareEntryPointsTests
+      matrix: ${{ fromJSON(needs.runner.outputs.matrix) }}
+    # The jobs and the tests in each: .github/scripts/ios-test-parts.py (FBBD-457).
     steps:
       - uses: actions/checkout@v4
         with:
@@ -294,11 +295,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          if [ "${{ matrix.part }}" = 1 ]; then flag=-only-testing; else flag=-skip-testing; fi
           selection=()
-          for t in $PART1; do selection+=("$flag:$t"); done
-          # FBBD-457: the unit tests (BetterDriverTests) check no layout; the iPhone runs them.
-          if [ "${{ matrix.device }}" = iPad ] && [ "${{ matrix.part }}" = 2 ]; then selection+=(-skip-testing:BetterDriverTests); fi
+          while IFS= read -r a; do selection+=("$a"); done < <(python3 .github/scripts/ios-test-parts.py args "${{ matrix.device }}" "${{ matrix.part }}")
+          echo "Selection: ${selection[*]}"
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \
@@ -356,12 +355,12 @@ jobs:
         run: |
           echo "runner: ${{ needs.runner.result }}, build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}, reused: ${{ needs.runner.outputs.reuse }}"
           [ "${{ needs.runner.result }}" = success ] || exit 1
-          # FBBD-457: on main, the pull request run of the same tree already passed.
-          if [ "${{ needs.runner.outputs.reuse }}" = true ]; then exit 0; fi
+          # FBBD-457: on main after a pull request run of the same tree, the tests are the rest of
+          # the iPad's; that pull request run passed the others.
           [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
 
   # FBBD-457: the same result, named after the source tree the run tested. A push to main with
-  # that tree reuses it instead of running the build and the tests again (runner job above).
+  # that tree runs only what the pull request run left out (runner job above).
   tested-tree:
     name: iOS passed (tree ${{ needs.runner.outputs.tree }})
     needs: [runner, passed]
