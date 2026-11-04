@@ -15,6 +15,8 @@ The full notes of every release are on
 
 ## 1.33.0
 
+- Choose every device at **START**: GPS, cameras, car data, heart-rate strap and tyres; the choice is kept for the next session.
+- A heart-rate strap added in **Settings › Equipment** is the one that records.
 - iPhone: a recording keeps running with the phone locked or another app in front.
 - The vLinker OBD adapter reconnects within seconds when it stalls.
 - The track screen's status strip is icons only, with a tyre icon while the tyre bridge sends values.
