@@ -436,10 +436,9 @@ private fun trailWindow(
     }
     val started = traces.lastOrNull { it.lap.startMicros <= t }
     val inOutLap = started != null && started.lap.kind == LapKind.Out && t < started.lap.endMicros
-    if (traces.isNotEmpty() && (started == null || inOutLap)) return null
     val trace = traces.lastOrNull { it.lap.startMicros <= t && t < it.lap.endMicros }
     val start = trace?.lap?.startMicros ?: maxOf(t - fallbackMicros, started?.lap?.endMicros ?: Long.MIN_VALUE)
-    return trace to start..t
+    return if (traces.isNotEmpty() && (started == null || inOutLap)) null else trace to start..t
 }
 
 /** For each of [laps], the fastest of it and those before it; on a tie the earlier lap stays. */
