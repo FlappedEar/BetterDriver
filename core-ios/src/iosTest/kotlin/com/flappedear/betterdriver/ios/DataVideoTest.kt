@@ -249,7 +249,7 @@ class DataVideoTest {
         val m = HudMoment(frame, listOf(ahead, behind, single).map(::HudTrailRun), emptyList(), null, false)
         assertEquals(listOf(true, true, false), m.trailRuns.map { it.paced })
         assertEquals(listOf(true, false, false), m.trailRuns.map { it.ahead })
-        assertEquals(listOf(2.0, 0.0), m.trailRuns[1].points.map { it.x }.reversed())
+        assertEquals(listOf(1.0, 2.0), m.trailRuns[1].points.map { it.x })
         val text = OptimalOverlayText(listOf("LAP 5"), 42_500_000, -0.31)
         val composite = m.asComposite(text, null)
         assertEquals(3, composite.trailRuns.size)
