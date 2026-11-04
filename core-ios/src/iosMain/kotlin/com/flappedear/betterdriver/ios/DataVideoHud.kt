@@ -56,9 +56,10 @@ class HudRadarDot(val g: GForce, val fade: Float)
 /**
  * What the Tech HUD shows at one moment (FBBD-347), with the texts as Android's TechHudPainter writes
  * them; a value the session has none of is null, its text a dash. [trailRuns] is the map's trail of
- * the lap so far, in runs without gaps and of one pace (FBBD-451); [radar] the G radar's last second. With [optimal] (a composite
- * lap's video, FBBD-163, iOS FBBD-370) the lap tile shows the lap the part comes from over the
- * theoretical lap's running time and its gain on the fastest lap, as Android's TechHudPainter.
+ * the lap so far, in runs without gaps and of one pace (FBBD-451); [radar] the G radar's last second.
+ * With [optimal] (a composite lap's video, FBBD-163, iOS FBBD-370) the lap tile shows the lap the part
+ * comes from over the theoretical lap's running time and its gain on the fastest lap, as Android's
+ * TechHudPainter.
  */
 class HudMoment internal constructor(
     private val frame: OverlayFrame,
