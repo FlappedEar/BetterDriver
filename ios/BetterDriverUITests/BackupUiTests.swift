@@ -4,7 +4,7 @@ import XCTest
 /// on Android: each reaches its dialog or sheet with the app still running. What the files hold and
 /// how a restore merges is BackupTests' (unit tests) and the JVM's BackupInteropTest.
 final class BackupUiTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

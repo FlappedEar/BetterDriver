@@ -243,6 +243,7 @@ final class VoiceTester {
         utterance.voice = CoachVoiceChoice.voice(s)
         utterance.rate = CoachVoiceChoice.rate(s)
         utterance.pitchMultiplier = s.speech.pitch
+        if UITestMode.quietVoice { utterance.volume = 0 }
         synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utterance)
     }

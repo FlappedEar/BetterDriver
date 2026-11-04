@@ -6,7 +6,7 @@ import UIKit
 /// laps on the track screen and the session opens, with the track screen's frame times within budget
 /// (FBBD-376). Screenshots stay in the test results.
 final class DemoTrackTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

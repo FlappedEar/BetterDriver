@@ -4,7 +4,7 @@ import XCTest
 /// session, as Android opens it: two demo sessions at Jastrząb make it, the Silesia Ring session
 /// takes no part. A screenshot stays in the test results.
 final class ProgressionTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

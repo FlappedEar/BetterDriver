@@ -6,7 +6,7 @@ import XCTest
 /// waits for a RaceBox that is never there; the camera test says it cannot run. Real-RaceBox and
 /// real-camera checks need a phone. Screenshots stay in the test results.
 final class RaceBoxDiagnosticsTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

@@ -7,7 +7,7 @@ import UIKit
 /// The test records with the simulated receiver, goes to the Home Screen for 30 s and checks that the
 /// app was never suspended, then comes back and stops the session.
 final class BackgroundRecordingTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

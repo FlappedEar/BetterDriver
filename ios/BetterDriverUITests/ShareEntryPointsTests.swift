@@ -6,7 +6,7 @@ import XCTest
 /// video showed nothing and then iOS killed the app. Video with data's Save is DataVideoTests'. The
 /// memory of a long video's share is ShareTests' (unit tests): the simulator demo video is only ten seconds.
 final class ShareEntryPointsTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

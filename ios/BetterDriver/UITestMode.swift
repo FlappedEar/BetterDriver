@@ -6,6 +6,9 @@ import Foundation
 enum UITestMode {
     static let on = ProcessInfo.processInfo.arguments.contains("-uiTest")
 
+    /// Every UI test's launch (FBBD-457, XCUIApplication.quiet()): the coach speaks at no volume.
+    static let quietVoice = ProcessInfo.processInfo.environment["BD_QUIET_VOICE"] == "1"
+
     /// Call once at launch, before anything reads the app's files or defaults.
     static func resetIfAsked() {
         guard ProcessInfo.processInfo.arguments.contains("-uiTestReset") else { return }

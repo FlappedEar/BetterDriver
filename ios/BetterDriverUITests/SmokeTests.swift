@@ -6,7 +6,7 @@ import UIKit
 /// crashing. The simulator has no camera or Bluetooth, so those links run against nothing, as with
 /// nothing paired.
 final class SmokeTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

@@ -5,7 +5,7 @@ import UIKit
 /// and a session records with every device off and with each one chosen. The simulator has no
 /// Bluetooth, so the chosen devices run against nothing, as with nothing in range.
 final class StartListUiTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
 
     override func setUp() {
         continueAfterFailure = false

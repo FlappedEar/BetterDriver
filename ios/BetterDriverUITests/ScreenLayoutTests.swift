@@ -10,7 +10,7 @@ import XCTest
 /// in 1:49.91, Silesia Ring lap 14 in 2:13.78. Every problem is reported at once, with a
 /// screenshot of the screen it is on.
 final class ScreenLayoutTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
     private var problems: [String] = []
 

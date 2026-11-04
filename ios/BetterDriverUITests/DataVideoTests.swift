@@ -4,7 +4,7 @@ import XCTest
 /// seconds of phone video plays with the overlay and is saved as an MP4. Screenshots stay in the
 /// test results (ios-review-screenshots).
 final class DataVideoTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {

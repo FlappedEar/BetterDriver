@@ -11,7 +11,7 @@ private enum FirstRunText {
 /// Bluetooth, and after Done the app opens on its tabs. The iPad only reviews and opens on
 /// Sessions. Settings › App › Run setup again shows the checklist on both.
 final class FirstRunTests: XCTestCase {
-    private let app = XCUIApplication()
+    private let app = XCUIApplication.quiet()
     private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
     override func setUp() {
