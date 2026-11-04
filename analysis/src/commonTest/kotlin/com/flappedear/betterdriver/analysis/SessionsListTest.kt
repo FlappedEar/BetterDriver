@@ -82,7 +82,9 @@ class SessionsListTest {
         // (not placed at their first position), each timed at the saved track (FBBD-453).
         val silesia = SessionFacts(laps = 6, trackId = "silesia", trackName = "Silesia Ring")
         val ids = listOf("s1454", "s1353", "s1300")
-        val read = ids.mapIndexed { i, id -> sessionListEntry(id, today, "", silesia, (3 - i).toLong(), recording = false) }
+        val read = ids.mapIndexed { i, id ->
+            sessionListEntry(id, today, "", silesia, (3 - i).toLong(), recording = false)
+        }
         val day = sessionListDays(read, today, date).single()
         assertEquals(listOf(SessionListTrackDay("Silesia Ring", listOf("s1300", "s1353", "s1454"))), day.trackDays)
         assertEquals("Today · Silesia Ring", day.title)
