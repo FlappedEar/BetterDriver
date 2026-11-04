@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.feature.review.ReviewLoad
 import com.flappedear.betterdriver.review.ReviewLaps
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.replayLaps
+import com.flappedear.betterdriver.timing.live.lapName as shownLapName
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -137,7 +138,9 @@ class ReviewSyncTest {
 
     /** Taps [lap]'s row in the lap picker, into the slot that is next. */
     private fun pickLap(lap: LapTrace) {
-        val row = hasText("Lap ${lap.lap.number}") and hasText(formatLapTime(lap.lap.timeMillis)) and hasClickAction()
+        // The picker names laps as the analysis counts them (FBBD-450).
+        val time = formatLapTime(lap.lap.timeMillis)
+        val row = hasText(shownLapName(lap.lap.number)) and hasText(time) and hasClickAction()
         app.waitFor(hasScrollToNodeAction() and hasAnyDescendant(hasText("Compare")), LoadTimeoutMs)
             .performScrollToNode(row)
         app.onNode(row).performClick()
@@ -294,7 +297,7 @@ class ReviewSyncTest {
         const val MillisPerSecond = 1_000.0
 
         /** "Lap 7 · 1:41.89", as the review names a lap. */
-        fun lapName(l: LapTrace) = "Lap ${l.lap.number} · ${formatLapTime(l.lap.timeMillis)}"
+        fun lapName(l: LapTrace) = "${shownLapName(l.lap.number)} · ${formatLapTime(l.lap.timeMillis)}"
 
         /** Whether the frame [shown] (null: unreadable) is within 1 frame of [want]. */
         fun shows(shown: Int?, want: Double) = shown != null && framesOff(shown, want) <= 1.0
