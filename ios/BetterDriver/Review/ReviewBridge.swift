@@ -190,8 +190,23 @@ enum ReviewBridge {
     }
 
     static func summary(id: String) throws -> SessionSummary {
-        let reviewed = try library.review(id: id)
+        let started = Date()
+        let reviewed: ReviewedSession
+        do {
+            reviewed = try library.review(id: id)
+        } catch {
+            AppLog.w("Review", "\(id): analysis failed: \(error.localizedDescription)")
+            throw error
+        }
         let review = reviewed.review
+        // What the iPad shows of a session just AirDropped from the iPhone (Moto Park, 2026-11-08).
+        let best = review.bestLapSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) } ?? "none"
+        AppLog.i(
+            "Review",
+            "\(id): analysis ready in \(String(format: "%.1f", Date().timeIntervalSince(started))) s: " +
+                "track \(review.track?.name ?? "none"), \(review.laps.count) laps, best \(best), " +
+                "where to find time \(review.line != nil ? "yes" : "no"), line plan \(reviewed.linePlan != nil ? "yes" : "no")"
+        )
         let laps = review.laps.enumerated().map { i, lap in
             LapRow(
                 index: i,
@@ -377,6 +392,13 @@ extension ReviewBridge {
     static func trackDiffers(_ received: ReceivedImport) -> Bool { library.trackDiffers(received: received.bundle) }
 
     static func trackName(_ received: ReceivedImport) -> String { received.bundle.session.track?.displayName ?? "" }
+
+    /// What a received bundle holds, for the app log: the session, when it started, and its track.
+    static func describe(_ received: ReceivedImport) -> String {
+        let s = received.bundle.session
+        let track = s.track.map { "track \($0.displayName) (\($0.id))" } ?? "no track"
+        return "session \(s.sessionId), car \(s.info.car ?? "none"), \(track)"
+    }
 
     /// Adds the session; with one of its id here, [replace] picks which stays, and [replaceTrack]
     /// whether the file's track replaces the saved one. True when added.

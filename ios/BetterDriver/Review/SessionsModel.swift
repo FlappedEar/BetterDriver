@@ -288,6 +288,7 @@ final class SessionsModel {
         let id = session.id
         sharing = ImportProgress(name: id, read: 0, total: 0, started: Date())
         AppLog.i(Self.shareTag, "\(id): preparing to share")
+        let started = Date()
         Task {
             let result: Result<URL, Error> = await Task.detached {
                 // One step per percent reaches the list, not one per 64 KB piece.
@@ -305,7 +306,7 @@ final class SessionsModel {
             switch result {
             case .success(let url):
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
-                AppLog.i(Self.shareTag, "\(id): \(size / 1_000_000) MB ready, opening the share sheet")
+                AppLog.i(Self.shareTag, "\(id): \(url.lastPathComponent), \(size) bytes, ready in \(String(format: "%.1f", Date().timeIntervalSince(started))) s, opening the share sheet")
                 LogShare.share(url)
             case .failure(let error):
                 AppLog.w(Self.shareTag, "\(id): could not share: \(error.localizedDescription)")
@@ -403,6 +404,9 @@ final class SessionsModel {
         Task.detached(priority: .userInitiated) {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let started = Date()
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? -1
+            AppLog.i("Imports", "received \(name): type \(url.pathExtension.lowercased()), \(size) bytes, scoped \(scoped)")
             do {
                 if ReviewBridge.isForeign(url) {
                     // A VBO or RaceChrono CSV becomes a new session with a new id; a drive already here is refused (FBBD-427).
@@ -415,6 +419,8 @@ final class SessionsModel {
                     let received = try ReviewBridge.receive(url) { read, total in
                         Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
                     }
+                    let seconds = String(format: "%.1f", Date().timeIntervalSince(started))
+                    AppLog.i("Imports", "\(name) unpacked and checked in \(seconds) s: \(ReviewBridge.describe(received))")
                     await self.received(received, name: name)
                 }
             } catch {
@@ -433,6 +439,7 @@ final class SessionsModel {
     private func received(_ received: ReceivedImport, name: String) {
         importing = nil
         if ReviewBridge.exists(received) {
+            AppLog.i("Imports", "\(received.sessionId) is already here: asking to replace or keep")
             duplicate = Duplicate(received: received, name: name)
         } else {
             add(received, replace: false)
@@ -456,6 +463,7 @@ final class SessionsModel {
     private func add(_ received: ReceivedImport, replace: Bool) {
         let adds = replace || !ReviewBridge.exists(received)
         if adds && ReviewBridge.trackDiffers(received) {
+            AppLog.i("Imports", "\(received.sessionId): the file's track differs from the one here: asking which to keep")
             trackChange = TrackChange(received: received, replace: replace, track: ReviewBridge.trackName(received))
         } else {
             store(received, replace: replace, replaceTrack: false)
@@ -464,8 +472,14 @@ final class SessionsModel {
 
     private func store(_ received: ReceivedImport, replace: Bool, replaceTrack: Bool) {
         do {
-            if try ReviewBridge.accept(received, replace: replace, replaceTrack: replaceTrack) { revision += 1 }
+            let added = try ReviewBridge.accept(received, replace: replace, replaceTrack: replaceTrack)
+            if added { revision += 1 }
+            AppLog.i(
+                "Imports",
+                "\(received.sessionId): \(added ? "added" : "kept the one here"), replace \(replace), track from the file \(replaceTrack)"
+            )
         } catch {
+            AppLog.w("Imports", "\(received.sessionId) not added: \(error.localizedDescription)")
             message = "Could not add the session: \(error.localizedDescription)"
         }
         reload()
