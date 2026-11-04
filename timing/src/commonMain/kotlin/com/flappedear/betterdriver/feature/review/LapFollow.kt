@@ -77,6 +77,9 @@ data class FollowStep(val seekMillis: Long?, val speed: Float)
  * [justStopped]: the player played until now. Its position is where it was while playing, and it
  * plays on until the pause reaches its playback thread, so however close that position is it says
  * nothing about the frame it stops on: it seeks to the target's exact frame (FBBD-214).
+ *
+ * [deadbandMillis]: drift left alone while playing. The player with the sound takes
+ * [SoundDeadbandMillis]: each of its rate changes restarts its audio, a hitch on the Mac (FBBD-429).
  */
 fun followStep(
     positionMillis: Long,
@@ -84,6 +87,7 @@ fun followStep(
     rate: Double,
     playing: Boolean,
     justStopped: Boolean = false,
+    deadbandMillis: Long = DeadbandMillis,
 ): FollowStep {
     val err = positionMillis - targetMillis
     val base = rate.coerceIn(MinSpeed, MaxSpeed)
@@ -91,7 +95,7 @@ fun followStep(
         !playing && justStopped -> FollowStep(targetMillis, base.toFloat())
         !playing -> FollowStep(if (abs(err) > PausedToleranceMillis) targetMillis else null, base.toFloat())
         abs(err) > MaxDriftMillis -> FollowStep(targetMillis, base.toFloat())
-        abs(err) <= DeadbandMillis -> FollowStep(null, base.toFloat())
+        abs(err) <= deadbandMillis -> FollowStep(null, base.toFloat())
         else -> {
             val k = (1 - err.toDouble() / CorrectionMillis).coerceIn(1 - MaxCorrection, 1 + MaxCorrection)
             // In whole steps: the player's rate then changes a few times a correction, not on every
@@ -145,6 +149,12 @@ const val PausedToleranceMillis = 20L
 const val MaxDriftMillis = 350L
 const val DeadbandMillis = 30L
 
+/** The drift the player with the sound is left with while playing (FBBD-429). */
+const val SoundDeadbandMillis = 120L
+
+/** The [followStep] deadband of a player with or without the sound. */
+fun deadbandFor(sound: Boolean): Long = if (sound) SoundDeadbandMillis else DeadbandMillis
+
 /** The shortest time between two drift-correction rate changes of a playing player (FBBD-429). */
 const val MinRateGapMillis = 500L
 
@@ -157,3 +167,74 @@ private const val MaxCorrection = 0.3
 private const val MinSpeed = 0.1
 private const val MaxSpeed = 4.0
 private const val NanosPerMicro = 1_000.0
+
+/**
+ * What one stretch of lap review playback did, for the app log (FBBD-429): display frames and the
+ * time the frame loop took, player rate changes, seeks while playing, synced starts and the largest
+ * drift of a playing player. A Mac log without these numbers cannot tell a stutter's cause.
+ */
+class LapReviewStats {
+    var frames = 0
+        private set
+    var rateChanges = 0
+        private set
+    var playingSeeks = 0
+        private set
+    var syncedStarts = 0
+        private set
+    var maxDriftMillis = 0L
+        private set
+    private var workMicros = 0L
+    private var maxWorkMicros = 0L
+    /** Frames that took longer than a display frame of 60 Hz. */
+    private var slowFrames = 0
+
+    fun frame(workMicros: Long) {
+        frames++
+        this.workMicros += workMicros
+        if (workMicros > maxWorkMicros) maxWorkMicros = workMicros
+        if (workMicros > SlowFrameMicros) slowFrames++
+    }
+
+    fun rateChanged() { rateChanges++ }
+
+    fun seekedWhilePlaying() { playingSeeks++ }
+
+    fun startedSynced() { syncedStarts++ }
+
+    fun drift(millis: Long) {
+        val d = abs(millis)
+        if (d > maxDriftMillis) maxDriftMillis = d
+    }
+
+    /** One log line for [playedMillis] of playback; null when nothing played. */
+    fun line(playedMillis: Long): String? {
+        if (frames == 0) return null
+        val mean = workMicros / frames
+        return "played ${playedMillis / MillisPerSecondL}.${(playedMillis % MillisPerSecondL) / TenthMillis} s: " +
+            "$frames frames, work mean ${micros(mean)} max ${micros(maxWorkMicros)} ms, $slowFrames slow, " +
+            "$rateChanges rate changes, $playingSeeks seeks while playing, $syncedStarts synced starts, " +
+            "max drift $maxDriftMillis ms"
+    }
+
+    fun reset() {
+        frames = 0
+        rateChanges = 0
+        playingSeeks = 0
+        syncedStarts = 0
+        maxDriftMillis = 0
+        workMicros = 0
+        maxWorkMicros = 0
+        slowFrames = 0
+    }
+
+    private fun micros(us: Long): String = "${us / MicrosPerMilliL}.${(us % MicrosPerMilliL) / TenthMicros}"
+
+    private companion object {
+        const val SlowFrameMicros = 16_667L
+        const val MillisPerSecondL = 1_000L
+        const val TenthMillis = 100L
+        const val MicrosPerMilliL = 1_000L
+        const val TenthMicros = 100L
+    }
+}
