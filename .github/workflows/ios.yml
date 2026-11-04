@@ -67,8 +67,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run. On main a running run is never cancelled,
+# but a queued one is dropped when a newer merge queues behind it (FBBD-457): nothing waits for a
+# given main commit's iOS run (release.yml gates on ci.yml, ios-release.yml runs its own iPhone
+# UI gate), and each full run costs ~80 minutes of the Mac minis.
 concurrency:
-  group: ios-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ios-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -76,11 +80,27 @@ jobs:
   # "macos-15" (GitHub's runners) or ["self-hosted","bd-mac"] (Arek's Mac mini). Pull requests from
   # forks always get GitHub's runners: the repository is public, and a self-hosted runner must never
   # run code from outside.
+  #
+  # FBBD-457: two more decisions, both to keep the two Mac minis free for pull requests.
+  # - Overflow: a pull request run goes to GitHub's macos-15 when another unfinished iOS run already
+  #   uses the Mac minis: one run's 4 test shards fill both of them for ~40 min. Same tests, same
+  #   "iOS app" gate; fork PRs run there too.
+  # - Reuse on main: a push to main skips the build and the tests when the merged pull request's
+  #   run passed on the very same source tree: its "iOS passed (tree ...)" job names the tree it
+  #   tested (the PR's merge commit), as ci.yml's "CI passed (tree ...)" does for release.yml.
+  #   A merge whose tree no PR run tested runs in full.
   runner:
     name: iOS runner
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     outputs:
       labels: ${{ steps.pick.outputs.labels }}
+      reuse: ${{ steps.reuse.outputs.reuse }}
+      tree: ${{ steps.pick.outputs.tree }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,15 +109,62 @@ jobs:
         id: pick
         env:
           FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           labels=$(python3 -c 'import json; print(json.dumps(json.load(open(".github/ios-runner.json"))))')
           if [ "$FORK" = true ]; then labels='"macos-15"'; fi
+          if [ "$EVENT" = pull_request ] && [ "$labels" != '"macos-15"' ]; then
+            # Other unfinished iOS runs with a job for the Mac minis (a main run that reuses its
+            # pull request's result has none).
+            busy=0
+            for status in queued in_progress; do
+              for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ios.yml/runs?status=$status&per_page=50" \
+                  --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id" || true); do
+                n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=20" \
+                  --jq '[.jobs[] | select(.labels | index("bd-mac"))] | length' || echo 0)
+                if [ "${n:-0}" -gt 0 ] 2>/dev/null; then busy=$((busy + 1)); fi
+              done
+            done
+            echo "Other iOS runs using the Mac minis: $busy"
+            if [ "$busy" -ge 1 ]; then
+              echo "Mac minis busy: this pull request runs on GitHub's macos-15 (FBBD-457)."
+              labels='"macos-15"'
+            fi
+          fi
           echo "iOS jobs run on: $labels"
           echo "labels=$labels" >> "$GITHUB_OUTPUT"
+          # The source tree the build checks out (a pull request's merge commit), for the
+          # "iOS passed (tree ...)" job.
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - name: A pull request run of this same tree that passed
+        id: reuse
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reuse=false
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .commit.tree.sha)
+          echo "Tree of $GITHUB_SHA: $tree"
+          for head in $(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+              --jq '.[] | select(.merged_at != null) | .head.sha' || true); do
+            # The tree the pull request run actually tested (its merge commit), not the head's.
+            url=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" -f check_name="iOS passed (tree $tree)" \
+              --jq '[.check_runs[] | select(.conclusion == "success")][0].html_url // empty' || true)
+            if [ -n "$url" ]; then
+              echo "iOS passed on this exact tree in the pull request run: $url"
+              reuse=true
+              break
+            fi
+            echo "No pull request run of pull request head $head passed on tree $tree."
+          done
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
 
   build:
     name: iOS build
     needs: runner
+    if: needs.runner.outputs.reuse != 'true'
     # FBBD-434: GitHub's macos-15 or Arek's Mac mini, as the runner job picks.
     runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     timeout-minutes: 60
@@ -181,6 +248,7 @@ jobs:
   test:
     name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
     needs: [runner, build]
+    if: needs.runner.outputs.reuse != 'true'
     # Same runner as the build job (FBBD-434).
     runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     # The slowest half took ~17 min on the iPad (PR #456): room for a slow runner.
@@ -277,5 +345,19 @@ jobs:
     steps:
       - name: Every iOS job passed
         run: |
-          echo "runner: ${{ needs.runner.result }}, build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}"
-          [ "${{ needs.runner.result }}" = success ] && [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
+          echo "runner: ${{ needs.runner.result }}, build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}, reused: ${{ needs.runner.outputs.reuse }}"
+          [ "${{ needs.runner.result }}" = success ] || exit 1
+          # FBBD-457: on main, the pull request run of the same tree already passed.
+          if [ "${{ needs.runner.outputs.reuse }}" = true ]; then exit 0; fi
+          [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
+
+  # FBBD-457: the same result, named after the source tree the run tested. A push to main with
+  # that tree reuses it instead of running the build and the tests again (runner job above).
+  tested-tree:
+    name: iOS passed (tree ${{ needs.runner.outputs.tree }})
+    needs: [runner, passed]
+    if: needs.passed.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tree
+        run: echo "iOS passed on tree ${{ needs.runner.outputs.tree }}"

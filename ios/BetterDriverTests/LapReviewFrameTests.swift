@@ -51,6 +51,11 @@ final class LapReviewFrameTests: XCTestCase {
         // Play and Pause re-run the screen; the frames in between must not.
         XCTAssertLessThanOrEqual(bodies, 4, "the whole screen re-ran each frame: \(summary)")
         XCTAssertLessThanOrEqual(draws, 4, "the map line or chart traces were redrawn each frame: \(summary)")
+        // Stopping writes what playback did to the app log, so a Mac log shows a stutter's cause.
+        spin(0.3)
+        let line = st.lastPlayedLine ?? ""
+        XCTAssertTrue(line.contains(" frames, work mean "), "no LapReview line after the pause: '\(line)'")
+        XCTAssertTrue(line.contains("rate changes") && line.contains("max drift"), "the LapReview line lacks its numbers: '\(line)'")
         // Generous for a busy CI simulator; it was the per-frame redraw, not this loop, that was slow.
         XCTAssertLessThan(meanWorkMs, 4, "the frame loop is too slow: \(summary)")
     }

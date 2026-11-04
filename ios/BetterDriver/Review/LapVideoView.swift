@@ -34,8 +34,14 @@ final class LapPlayer: ObservableObject {
     /// It played and has not been sent to its exact frame since it stopped (FBBD-214).
     private var stopping = false
     private var playingNow = false
+    /// Until then a synced start is still to come, and the player's rate is left to it.
+    private var startingUntil: CFTimeInterval = 0
+    private let muted: Bool
+    private let stats: LapReviewStats
 
-    init(muted: Bool) {
+    init(muted: Bool, stats: LapReviewStats) {
+        self.muted = muted
+        self.stats = stats
         player.isMuted = muted
         player.automaticallyWaitsToMinimizeStalling = false
         player.actionAtItemEnd = .pause
@@ -64,16 +70,21 @@ final class LapPlayer: ObservableObject {
             lastSeekMillis = nil
             pause()
         }
+        // A synced start is under way: its seek has not landed yet, so the position says nothing.
+        if playing && playingNow && now < startingUntil { return false }
         let position = Int64((player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0) * 1000)
         let step = LapFollowKt.followStep(
-            positionMillis: position, targetMillis: target.mediaMillis, rate: rate, playing: playing, justStopped: stopping
+            positionMillis: position, targetMillis: target.mediaMillis, rate: rate, playing: playing, justStopped: stopping,
+            deadbandMillis: LapFollowKt.deadbandFor(sound: !muted)
         )
+        if playing && playingNow { stats.drift(millis: position - target.mediaMillis) }
         let gap = playing ? 0.3 : 0.05
         let last = lastSeekMillis.map { KotlinLong(value: $0) }
         // Wanted before this frame's seek, so the frame after a seek still runs and sees it land.
         let pending = LapFollowKt.seekPending(step: step, lastSeekMillis: last)
         if let ms = step.seekMillis?.int64Value, LapFollowKt.seekDue(targetMillis: ms, lastMillis: last), now - lastSeekTime >= gap {
             seek(ms, now: now)
+            if playing && playingNow { stats.seekedWhilePlaying() }
             stopping = false
         }
         // Started, or a new review speed: at once; a drift correction at most every half second.
@@ -84,10 +95,12 @@ final class LapPlayer: ObservableObject {
         if playing {
             let current = fresh ? nil : KotlinFloat(value: rateSet)
             let since = Int64((now - rateSetTime) * 1000)
-            if LapFollowKt.rateChangeDue(currentSpeed: current, wantedSpeed: step.speed, sinceLastMillis: since) || player.rate == 0 {
+            if LapFollowKt.rateChangeDue(currentSpeed: current, wantedSpeed: step.speed, sinceLastMillis: since)
+                || (player.rate == 0 && now >= startingUntil) {
                 if player.rate != step.speed {
                     player.rate = step.speed
                     LapReviewProbe.rateChanges += 1
+                    stats.rateChanged()
                 }
                 rateSet = step.speed
                 rateSetTime = now
@@ -102,6 +115,26 @@ final class LapPlayer: ObservableObject {
     func pause() {
         player.pause()
         playingNow = false
+    }
+
+    /// Starts playing at [target] at [rate] at [hostTime], the same instant as the other lap's player,
+    /// so the two start together and on the cursor's clock instead of whenever each is ready
+    /// (FBBD-429). False when it cannot (no video here, another file to open, not ready yet); the
+    /// frame loop then starts it as before.
+    func start(_ target: VideoTarget?, lap: VideoLap, rate: Double, hostTime: CMTime, now: CFTimeInterval) -> Bool {
+        guard let target, lap.path(target: target) == file, player.currentItem?.status == .readyToPlay else { return false }
+        let speed = Float(rate)
+        player.setRate(speed, time: CMTime(value: target.mediaMillis, timescale: 1000), atHostTime: hostTime)
+        LapReviewProbe.rateChanges += 1
+        rateSet = speed
+        rateSetTime = now
+        lastRate = rate
+        lastSeekMillis = target.mediaMillis
+        lastSeekTime = now
+        stopping = false
+        playingNow = true
+        startingUntil = CMTimeGetSeconds(hostTime) + 0.1
+        return true
     }
 
     private func seek(_ ms: Int64, now: CFTimeInterval) {
@@ -124,8 +157,10 @@ final class LapPlayer: ObservableObject {
 @MainActor
 final class ReviewTransport: ObservableObject {
     let review: LapVideoReview
-    let a = LapPlayer(muted: false)
-    let b = LapPlayer(muted: true)
+    /// What playback did since it last started, logged when it stops (FBBD-429).
+    let stats = LapReviewStats()
+    let a: LapPlayer
+    let b: LapPlayer
     /// The cursor, observed only by what draws it (FBBD-429).
     let clock = ReviewClock()
     /// The map line and chart traces, read from the core once.
@@ -136,9 +171,22 @@ final class ReviewTransport: ObservableObject {
 
     private var link: CADisplayLink?
     private var lastFrame: CFTimeInterval = 0
+    /// While playing: the host time both players started at, the cursor then and the speed. The
+    /// cursor runs from these, on the players' own clock, not from summed frame times (FBBD-429).
+    fileprivate var startHost: CFTimeInterval?
+    fileprivate var startCursor: Int64 = 0
+    fileprivate var startSpeed = 0.0
+    fileprivate var playedFrom: CFTimeInterval?
+    /// The last LapReview line written to the app log, for the test.
+    fileprivate(set) var lastPlayedLine: String?
+
+    /// How far ahead of now both players are told to start, so both have the time to get ready.
+    fileprivate static let startLeadSeconds = 0.15
 
     init(review: LapVideoReview) {
         self.review = review
+        a = LapPlayer(muted: false, stats: stats)
+        b = LapPlayer(muted: true, stats: stats)
     }
 
     /// Time since the start line, the same for both laps.
@@ -174,6 +222,9 @@ final class ReviewTransport: ObservableObject {
 
     func stop() {
         playing = false
+        // No frame runs after this to drop the clock's start, and the next Play must start afresh.
+        startHost = nil
+        logPlayed()
         a.pause()
         b.pause()
         link?.invalidate()
@@ -191,12 +242,22 @@ final class ReviewTransport: ObservableObject {
 
     private func frame(_ now: CFTimeInterval) {
         let started = CACurrentMediaTime()
-        defer { LapReviewProbe.frame(work: CACurrentMediaTime() - started) }
-        if playing && lastFrame != 0 {
+        defer {
+            let work = CACurrentMediaTime() - started
+            LapReviewProbe.frame(work: work)
+            if playing { stats.frame(workMicros: Int64(work * 1e6)) }
+        }
+        if playing && (startHost == nil || startSpeed != speed) {
+            startTogether()
+        } else if playing, let host = startHost {
             cursor = LapFollowKt.advance(
-                lapMicros: cursor, elapsedNanos: Int64((now - lastFrame) * 1e9), speed: speed, lengthMicros: lengthMicros
+                lapMicros: startCursor, elapsedNanos: Int64(max(0, now - host) * 1e9), speed: speed, lengthMicros: lengthMicros
             )
             if cursor >= lengthMicros { playing = false }
+        }
+        if !playing && startHost != nil {
+            startHost = nil
+            logPlayed()
         }
         lastFrame = now
         let t = cursor
@@ -208,6 +269,38 @@ final class ReviewTransport: ObservableObject {
             link?.invalidate()
             link = nil
         }
+    }
+}
+
+extension ReviewTransport {
+    /// Starts both players at one host time a little ahead, and the cursor's clock with them.
+    fileprivate func startTogether() {
+        let hostTime = CMTimeAdd(CMClockGetTime(CMClockGetHostTimeClock()), CMTime(seconds: Self.startLeadSeconds, preferredTimescale: 1_000_000_000))
+        let host = CMTimeGetSeconds(hostTime)
+        let now = CACurrentMediaTime()
+        let t = cursor
+        let startedA = t < review.a.trace.lap.timeMicros
+            && a.start(review.a.videoAt(lapMicros: traces.aMicros(micros: t)), lap: review.a, rate: speed, hostTime: hostTime, now: now)
+        let startedB = t < review.b.trace.lap.timeMicros
+            && b.start(review.b.videoAt(lapMicros: traces.bMicros(micros: t)), lap: review.b, rate: speed, hostTime: hostTime, now: now)
+        if startedA || startedB { stats.startedSynced() }
+        if playedFrom == nil { playedFrom = now }
+        startHost = host
+        startCursor = t
+        startSpeed = speed
+    }
+
+    /// Logs what playback did since it started, once, and starts the count again.
+    func logPlayed() {
+        guard let from = playedFrom else { return }
+        playedFrom = nil
+        if let line = stats.line(playedMillis: Int64((CACurrentMediaTime() - from) * 1000)) {
+            let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+            let full = "\(line), speed \(speed), \(device)\(ProcessInfo.processInfo.isiOSAppOnMac ? " on Mac" : "")"
+            AppLog.i("LapReview", full)
+            lastPlayedLine = full
+        }
+        stats.reset()
     }
 }
 

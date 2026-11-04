@@ -239,6 +239,7 @@ class DataVideoSession internal constructor(
     val startLineTo: Xy? = data.startLine?.second
 
     private val widgets = hudWidgets(data)
+    /** The session's best lap: a composite lap compares with it (FBBD-449). */
     private val bestLapMicros = data.bestLapMicros
 
     /** Where the Tech HUD's widgets go on a picture [videoWidth] by [videoHeight] pixels. */
@@ -259,7 +260,9 @@ class DataVideoSession internal constructor(
                     ?.let { HudRadarDot(it, 1 - i.toFloat() / (RadarDots + 1)) }
             }
             val trail = runs(source.trail(sessionMicros))
-            return HudMoment(source.at(sessionMicros), trail, radar, bestLapMicros, pointToPoint)
+            // The best lap so far at this moment (FBBD-449), as Android's TechHudPainter.
+            val frame = source.at(sessionMicros)
+            return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint)
         } finally {
             lock.unlock()
         }
@@ -275,7 +278,7 @@ class DataVideoSession internal constructor(
         val plan = lock.withLock { cutPlans[part] }
         val piece = plan?.cuts?.getOrNull(cut) ?: return moment(sessionMicros, part)
         val base = moment(sessionMicros, WholeVideo)
-        return base.asComposite(plan.overlayAt(piece, sessionMicros, runs = pointToPoint))
+        return base.asComposite(plan.overlayAt(piece, sessionMicros, runs = pointToPoint), bestLapMicros)
     }
 
     /** The name the saved file is offered with, as Android's: BetterDriver-<id>-video.mp4, -lap7.mp4, -run2.mp4. */
