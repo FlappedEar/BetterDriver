@@ -1,0 +1,54 @@
+name: iOS share probe (FBBD-393, temporary)
+on:
+  push:
+    branches: [claude/fbbd393-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: probe ${{ matrix.core }}
+    runs-on: [self-hosted, bd-mac]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [release, debug]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+      - name: Simulator
+        id: sim
+        run: python3 .github/scripts/ios-simulator.py iPhone --private >> "$GITHUB_OUTPUT"
+      - name: Core
+        run: |
+          C=${{ matrix.core }}; Cap=$( [ $C = release ] && echo Release || echo Debug )
+          ./gradlew -Pbetterdriver.coreOnly :core-ios:link${Cap}FrameworkIosSimulatorArm64
+          rm -rf core-ios/build/XCFrameworks/$C
+          xcodebuild -create-xcframework \
+            -framework core-ios/build/bin/iosSimulatorArm64/${C}Framework/BetterDriverCore.framework \
+            -output core-ios/build/XCFrameworks/$C/BetterDriverCore.xcframework
+          SKIP_CORE=1 BETTERDRIVER_CORE_BUILD=$C ios/generate.sh
+      - name: Build
+        run: |
+          mkdir -p build
+          xcodebuild build-for-testing -project ios/BetterDriver.xcodeproj -scheme BetterDriver \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO > build/b.log 2>&1 || { grep error: build/b.log; exit 1; }
+      - name: Probe
+        run: |
+          x=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
+          t() { xcodebuild test-without-building -xctestrun "$x" -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" -parallel-testing-enabled NO "$@" > build/t.log 2>&1; grep -E "PROBE|grew|Test Case .*(passed|failed)|Executed [0-9]+ test" build/t.log || tail -n 40 build/t.log; }
+          echo "== ShareProbeTests (${{ matrix.core }})"; t -only-testing:BetterDriverTests/ShareProbeTests || true
+          for i in 1 2 3 4 5; do echo "== ShareTests alone #$i (${{ matrix.core }})"; t -only-testing:BetterDriverTests/ShareTests || true; done
+          for i in 1 2; do echo "== all unit tests #$i (${{ matrix.core }})"; t -only-testing:BetterDriverTests || true; done
+      - name: Delete the job's simulator
+        if: always() && steps.sim.outputs.udid != ''
+        run: |
+          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
+          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true

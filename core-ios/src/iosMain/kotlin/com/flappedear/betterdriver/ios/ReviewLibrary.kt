@@ -146,6 +146,15 @@ class ReviewLibrary(base: String) {
      * video included, and the saved track it was timed with, so it opens with its laps on Android
      * or another iPhone. Returns the file's path; [onProgress] gets bytes written and their total.
      */
+    /** PROBE FBBD-393: the read share does before the copy. */
+    @Throws(Exception::class)
+    fun probeTimedTrack(id: String, samples: Boolean): String? =
+        trackFor(store.read(id, samples), tracks())?.id
+
+    /** PROBE FBBD-393: a full Kotlin GC. */
+    @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
+    fun probeCollect() = kotlin.native.runtime.GC.collect()
+
     @Throws(Exception::class)
     fun share(id: String, outRoot: String, onProgress: (written: Long, total: Long) -> Unit): String =
         SessionOutbox(sessionsRoot, outRoot).write(id, timedTrack(id), onProgress)
