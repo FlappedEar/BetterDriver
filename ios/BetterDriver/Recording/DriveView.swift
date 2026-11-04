@@ -12,6 +12,7 @@ struct DriveView: View {
     @EnvironmentObject private var settings: SettingsModel
     @StateObject private var place = PlaceFinder()
     @State private var picking = false
+    @State private var starting: Receiver?
     @State private var camera = true
     @State private var videoMode = PhoneVideoMode.standard
     @State private var pinned = DrivePinned(focus: nil, lastTime: nil)
@@ -45,12 +46,18 @@ struct DriveView: View {
             .navigationTitle("Drive")
             .navigationBarTitleDisplayMode(.large)
         }
-        .sheet(isPresented: $picking) {
+        // The session starts once the sheet has gone: the track screen shown while the sheet is still
+        // going away left START dead after the stop (a tap on it opened nothing).
+        .sheet(isPresented: $picking, onDismiss: {
+            guard let receiver = starting else { return }
+            starting = nil
+            recorder.start(receiver)
+        }) {
             ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera, videoMode: $videoMode) { receiver in
                 recorder.phoneCamera = camera
                 recorder.phoneVideoMode = videoMode
+                starting = receiver
                 picking = false
-                recorder.start(receiver)
             }
             // Full height in the UI test, so every row and the camera toggle are on screen.
             .presentationDetents(UITestMode.on ? [.large] : [.medium, .large])
