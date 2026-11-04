@@ -36,7 +36,9 @@ jobs:
   testflight:
     name: TestFlight
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: macos-15
+    # macos-15 jobs sat queued and were cancelled after 15 min on 4 Nov 2026 (runs 41851537284,
+    # 41857456524); macos-26 also carries Xcode 26.
+    runs-on: macos-26
     # The smoke gate runs every UI test on one iPhone before the archive; the review tests of
     # PR #411 (some allowed 600 s) push it past an hour on a slow runner.
     timeout-minutes: 120
