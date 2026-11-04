@@ -219,7 +219,7 @@ private fun CompareBar(c: Comparison, onChangeLaps: () -> Unit) {
 }
 
 /** "Lap 7 · 1:41.89". */
-internal fun lapName(l: ReviewLap) = "Lap ${l.number} · ${formatLapTime(l.timeMillis)}"
+internal fun lapName(l: ReviewLap) = "${l.name} · ${formatLapTime(l.timeMillis)}"
 
 @Composable
 private fun LapPane(l: ReviewLap, letter: String, color: Color, player: LapVideoPlayer, modifier: Modifier) {

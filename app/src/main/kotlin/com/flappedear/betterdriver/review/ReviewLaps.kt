@@ -131,7 +131,7 @@ class ReviewLaps private constructor(context: Context) {
                 id = s.id,
                 title = title,
                 detail = sessionDetail(s),
-                laps = laps.laps.map { ReviewLap(it, title, video) },
+                laps = laps.laps.map { ReviewLap(it, title, video, track.pointToPoint) },
                 bestNumber = laps.best?.lap?.number,
             )
             Cached(

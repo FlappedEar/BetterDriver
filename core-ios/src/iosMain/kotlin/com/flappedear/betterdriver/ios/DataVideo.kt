@@ -24,6 +24,8 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.live.lapFileWord
+import com.flappedear.betterdriver.timing.live.lapName
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
@@ -185,13 +187,14 @@ class DataVideoSession internal constructor(
             val note = listOfNotNull(
                 when {
                     n == best -> "Best ${word.lowercase()}"
-                    t.lap.kind == LapKind.Out -> "Out lap"
+                    // The out lap from session start is named "Out lap" already (FBBD-450).
+                    t.lap.kind == LapKind.Out && (pointToPoint || n > 1) -> "Out lap"
                     t.lap.kind == LapKind.In -> "In lap"
                     else -> null
                 },
                 if (onVideo) null else "No video",
             ).joinToString(" · ")
-            DataVideoPart(n, "$word $n · ${formatLapTime(t.lap.timeMillis)}", note, onVideo, n == best)
+            DataVideoPart(n, "${lapName(n, pointToPoint)} · ${formatLapTime(t.lap.timeMillis)}", note, onVideo, n == best)
         }
         val films = composites(durations)
         val compositeParts = listOf(films.realistic, films.raw).map { film ->
@@ -284,8 +287,7 @@ class DataVideoSession internal constructor(
             part == WholeVideo -> "video"
             part == RealisticOptimal -> "realistic-optimal"
             part == RawTheoretical -> "raw-theoretical"
-            pointToPoint -> "run$part"
-            else -> "lap$part"
+            else -> lapFileWord(part, pointToPoint)
         }
         return "BetterDriver-$sessionId-$name.mp4"
     }

@@ -5,6 +5,8 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalOption
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.live.lapFileWord
+import com.flappedear.betterdriver.timing.live.lapName
 import java.util.Locale
 
 /** What "Video with data" exports (FBBD-152): [WholeVideo], or the lap with that number. */
@@ -73,13 +75,14 @@ internal fun lapOptionText(o: LapOption, pointToPoint: Boolean = false): Pair<St
     val note = listOfNotNull(
         when {
             o.best -> "Best ${word.lowercase()}"
-            o.kind == LapKind.Out -> "Out lap"
+            // The out lap from session start is named "Out lap" already (FBBD-450).
+            o.kind == LapKind.Out && (pointToPoint || o.number > 1) -> "Out lap"
             o.kind == LapKind.In -> "In lap"
             else -> null
         },
         if (o.onVideo) null else "No video",
     ).joinToString(" · ")
-    return "$word ${o.number} · ${formatLapTime(o.timeMillis)}" to note
+    return "${lapName(o.number, pointToPoint)} · ${formatLapTime(o.timeMillis)}" to note
 }
 
 /** "18 min of video", "45 s of video". */
@@ -99,8 +102,7 @@ fun videoExportFileName(sessionId: String, part: VideoPart, pointToPoint: Boolea
         part == WholeVideo -> "video"
         part == RealisticOptimalLap -> "realistic-optimal"
         part == RawTheoreticalLap -> "raw-theoretical"
-        pointToPoint -> "run$part"
-        else -> "lap$part"
+        else -> lapFileWord(part, pointToPoint)
     }
     return "BetterDriver-$sessionId-$name.mp4"
 }

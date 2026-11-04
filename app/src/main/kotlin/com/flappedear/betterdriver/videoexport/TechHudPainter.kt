@@ -13,6 +13,8 @@ import android.graphics.Typeface
 import androidx.core.content.res.ResourcesCompat
 import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.lapMapCaption
+import com.flappedear.betterdriver.timing.live.lapMark
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.HudRowSpec
@@ -219,7 +221,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         val caption = lapCaption(optimal, b.width - 2 * p)
         textTop(c, caption.uppercase(Locale.ROOT), b.left + p, b.top + p * 1.2f, semibold)
         if (optimal == null) {
-            val number = lap?.number?.toString() ?: Dash
+            val number = lap?.let { lapMark(it.number, it.kind, data.pointToPoint) } ?: Dash
             setText(bold, h * 0.15f, Amber)
             textTop(c, number, b.right - p * 1.4f - bold.measureText(number), b.top + p, bold)
         }
@@ -565,7 +567,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         textTop(c, "TRACK", b.left + p, titleTop, semibold)
         val lap = f.lap
         if (lap != null) {
-            val text = "${if (data.pointToPoint) "RUN" else "LAP"} ${lap.number}"
+            val text = lapMapCaption(lap.number, lap.kind, data.pointToPoint)
             setText(bold, h * 0.065f, Text)
             textTop(c, text, b.right - p - cut * 0.6f - bold.measureText(text), titleTop, bold)
         }

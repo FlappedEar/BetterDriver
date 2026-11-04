@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoPosition
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.live.lapName
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import java.io.File
 
@@ -88,9 +89,17 @@ class SessionVideo(val camera: String, clips: List<VideoClip>, val dir: File) {
 }
 
 /** A lap the review can show: its path and times, the session it is from, and that session's video. */
-data class ReviewLap(val trace: LapTrace, val sessionTitle: String, val video: SessionVideo?) {
+data class ReviewLap(
+    val trace: LapTrace,
+    val sessionTitle: String,
+    val video: SessionVideo?,
+    val pointToPoint: Boolean = false,
+) {
     val key: LapKey get() = LapKey(trace.sessionId, trace.lap.number)
     val number: Int get() = trace.lap.number
+
+    /** "Lap 7", "Out lap", "Run 2": the number people count, as the session analysis (FBBD-450). */
+    val name: String get() = lapName(trace.lap.number, pointToPoint)
     val kind: LapKind get() = trace.lap.kind
     val timeMillis: Long get() = trace.lap.timeMillis
 

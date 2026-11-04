@@ -200,11 +200,14 @@ class LiveUiTest {
         assertEquals(listOf("GNSS"), s.status.map { it.label })
         assertEquals(-0.34, requireNotNull(s.deltaSeconds), 1e-9)
         assertEquals(112_410L, s.bestMillis)
-        assertEquals(3, s.lapNumber)
+        // The timer's lap 3 is the second full lap (FBBD-450).
+        assertEquals(2, s.lapNumber)
         assertEquals(47_300L, s.lapMillis)
         val outLap = liveTrackState(timed.copy(timing = timing.copy(lapNumber = 0, lapMillis = null)), tiles, true)
-        assertNull("no number before the first line crossing", outLap.lapNumber)
-        assertEquals("3", s.tiles[2]?.value)
+        assertNull("no number before the first fix", outLap.lapNumber)
+        val fromStart = liveTrackState(timed.copy(timing = timing.copy(lapNumber = 1)), tiles, true)
+        assertNull("no number on the out lap from session start", fromStart.lapNumber)
+        assertEquals("2", s.tiles[2]?.value)
     }
 
     @Test

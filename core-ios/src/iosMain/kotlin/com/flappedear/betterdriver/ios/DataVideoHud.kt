@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.lapMapCaption
+import com.flappedear.betterdriver.timing.live.lapMark
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.HudDash
@@ -82,7 +84,7 @@ class HudMoment internal constructor(
 
     /** A composite lap's tile has no lap number in amber: its caption names the lap. */
     val composite: Boolean = optimal != null
-    val lapNumber: String = lap?.number?.toString() ?: HudDash
+    val lapNumber: String = lap?.let { lapMark(it.number, it.kind, pointToPoint) } ?: HudDash
     val lapTimeText: String = when {
         optimal != null -> lapTime(optimal.theoreticalMicros)
         lap != null -> lapTime(lap.lapMicros)
@@ -104,7 +106,7 @@ class HudMoment internal constructor(
         HudMoment(frame, trail, radar, bestLapMicros, pointToPoint, text)
 
     /** "LAP 7" over the map; null outside a lap. */
-    val mapLap: String? = lap?.let { "$lapCaption ${it.number}" }
+    val mapLap: String? = lap?.let { lapMapCaption(it.number, it.kind, pointToPoint) }
 
     val throttle: Double? = car.throttlePct
     val throttleText: String = percent(car.throttlePct)

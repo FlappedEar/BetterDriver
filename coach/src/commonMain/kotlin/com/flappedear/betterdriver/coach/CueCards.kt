@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.live.lapName
+
 /** The colour of a cue's verdict in the review: plain (dim), gain (green) or loss (red). */
 enum class CueVerdictTone { Plain, Gain, Loss }
 
@@ -26,7 +28,7 @@ fun ReviewedCue.card(): CueCard {
         result.improved -> "Better" to CueVerdictTone.Gain
         else -> "Not yet" to CueVerdictTone.Loss
     }
-    val place = listOfNotNull("Lap ${cue.lap}", cue.heardTurn?.let { "Turn $it" }).joinToString(" · ")
+    val place = listOfNotNull(lapName(cue.lap), cue.heardTurn?.let { "Turn $it" }).joinToString(" · ")
     return CueCard(place, verdict, tone, "“${cue.text}”", cue.confidenceText(), outcome())
 }
 

@@ -318,7 +318,7 @@ private enum LapColors {
 }
 
 /// "Lap 7 · 1:41.89".
-private func lapName(_ l: VideoLap) -> String { "Lap \(l.number) · \(CoreBridge.lapTime(millis: l.timeMillis))" }
+private func lapName(_ l: VideoLap) -> String { "\(l.name) · \(CoreBridge.lapTime(millis: l.timeMillis))" }
 
 /// The lap review screen: the videos on the left with the readout, map and chart on the right on a
 /// wide screen (UI-59 B); stacked on a phone.
