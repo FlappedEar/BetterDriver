@@ -44,9 +44,11 @@ run-name: iOS release ${{ inputs.sha || github.event.workflow_run.head_sha || gi
 permissions:
   contents: read
 
+# Uploads queue one after another. A pull request's check has its own group, so it never holds
+# up an upload (on 4 Nov 2026 a PR check sat 37 min ahead of the 1.33.2 TestFlight run).
 concurrency:
-  group: ios-release
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('ios-release-pr-{0}', github.ref) || 'ios-release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   BUNDLE_ID: com.flappedear.betterdriver
@@ -155,7 +157,9 @@ jobs:
           ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
           print(next(d["udid"] for d in runtimes[ios[-1]] if d["name"].startswith("iPhone")))
           ')
-          if [ "$TESTED" = true ]; then
+          # A pull request only checks the workflow and the release archive: smoke and first-run
+          # tests, never the whole suite on GitHub's runners.
+          if [ "$TESTED" = true ] || [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             selection=(-only-testing:BetterDriverUITests/SmokeTests -only-testing:BetterDriverUITests/FirstRunTests)
           else
             selection=(-only-testing:BetterDriverUITests)
