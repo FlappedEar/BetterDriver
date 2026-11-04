@@ -48,10 +48,7 @@ class TrackEditorState(
     fromSession: Boolean = false,
 ) {
     /** The newest session's drive, the "lap" lines are placed on. */
-    val path: LapPath? = sessions.firstOrNull()?.fixes
-        ?.map { GeoPoint(it.lat, it.lon) }
-        ?.takeIf { it.size >= 2 }
-        ?.let(::LapPath)
+    val path: LapPath? = sessions.firstOrNull()?.fixes?.let(LapPath::of)
 
     var track by mutableStateOf(initial)
         private set

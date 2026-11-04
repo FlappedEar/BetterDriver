@@ -19,6 +19,10 @@ import kotlin.test.assertTrue
  * catches every pass at racing speed that RaceChrono's line (20 to 75 m wide) catches.
  */
 class FittedLineRealTest {
+    /** The drive as the editor gets it, with times: these RaceChrono files are 10 Hz. */
+    private fun drive(fixes: List<RealCorpus.VboFix>) =
+        LapPath(fixes.map { GeoPoint(it.lat, it.lon) }, fixes.indices.map { it * 100_000L })
+
     /** Indices of fixes after which the drive crosses [line] forwards at [minKmh] or more. */
     private fun passes(path: LapPath, kmh: List<Double>, line: TrackLine, minKmh: Double): List<Int> {
         val gate = Gate(line, path.frame)
@@ -34,7 +38,7 @@ class FittedLineRealTest {
         val startWidths = mutableListOf<Double>()
         for (name in RealCorpus.JASTRZAB_DAY + RealCorpus.SILESIA_DAY) {
             val fixes = RealCorpus.fixes(name)
-            val path = LapPath(fixes.map { GeoPoint(it.lat, it.lon) })
+            val path = drive(fixes)
             val kmh = fixes.map { it.kmh }
             for (rc in RealCorpus.raceChronoLines(name)) {
                 val reference = RealCorpus.trackLine(rc)
@@ -54,6 +58,9 @@ class FittedLineRealTest {
         println(rows.joinToString("\n"))
         // Start/finish lines sit on a straight where the laps run close together: well under 30 m.
         assertEquals(9, startWidths.size)
+        // Silesia's pit lane runs 18 m from the straight at 16 to 49 km/h: never part of a start line
+        // fitted on a racing pass (FBBD-454). With it, the 27 Sep 13:00 line was 18.4 m wide.
+        assertTrue(startWidths.all { it <= 16.0 }, startWidths.joinToString())
         assertTrue(startWidths.all { it <= 20.0 }, startWidths.joinToString())
     }
 
@@ -62,12 +69,12 @@ class FittedLineRealTest {
         for (day in listOf(RealCorpus.JASTRZAB_DAY, RealCorpus.SILESIA_DAY)) {
             // The editor places lines on the newest session's drive.
             val newest = RealCorpus.fixes(day.last())
-            val placedOn = LapPath(newest.map { GeoPoint(it.lat, it.lon) })
+            val placedOn = drive(newest)
             for (rc in RealCorpus.raceChronoLines(day.last())) {
                 val fitted = assertNotNull(placedOn.lineAt(rc.first))
                 for (name in day) {
                     val fixes = RealCorpus.fixes(name)
-                    val path = LapPath(fixes.map { GeoPoint(it.lat, it.lon) })
+                    val path = drive(fixes)
                     val kmh = fixes.map { it.kmh }
                     val want = passes(path, kmh, RealCorpus.trackLine(rc), 60.0).size
                     val got = passes(path, kmh, fitted, 60.0).size
