@@ -25,7 +25,13 @@ final class ShareTests: XCTestCase {
         let before = footprint()
         var peak = before
         var last: Int64 = 0
+        var nextLog: Int64 = 0
+        print("PROBE ShareTests before=\(before / 1_000_000) \(self.breakdown())")
         let url = try ReviewBridge.share(id) { written, total in
+            if written >= nextLog {
+                print("PROBE ShareTests written=\(written / 1_000_000) growth=\(Int64(self.footprint() / 1_000_000) - Int64(before / 1_000_000)) \(self.breakdown())")
+                nextLog += 50_000_000
+            }
             XCTAssertGreaterThanOrEqual(written, last)
             XCTAssertLessThanOrEqual(written, total)
             last = written
@@ -65,6 +71,18 @@ final class ShareTests: XCTestCase {
         try handle.truncate(atOffset: videoBytes)
         try handle.close()
         return id
+    }
+
+    private func breakdown() -> String {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        _ = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        let m = { (v: UInt64) in v / 1_000_000 }
+        return "fp=\(m(info.phys_footprint)) internal=\(m(info.internal)) external=\(m(info.external)) compressed=\(m(info.compressed)) reusable=\(m(info.reusable)) purgeable=\(m(info.purgeable_volatile_pmap)) resident=\(m(info.resident_size)) threads=\(Thread.isMainThread)"
     }
 
     /// The app's memory as iOS counts it against its limit (phys_footprint).
