@@ -270,30 +270,21 @@ class OverlayData(
      * that lap's line ([LapPhase.Finished]) its whole trail stays, as its final time does.
      */
     fun paceTrail(sessionMicros: Long): List<TrailPoint?> {
-        if (beforeStartLine(sessionMicros)) return emptyList()
+        // Before the line was first crossed: a single lap's line, else the out lap or before any lap.
+        val started = traces.lastOrNull { it.lap.startMicros <= sessionMicros }
+        val beforeLine = when {
+            hotlap != null -> sessionMicros < hotlap.lap.startMicros
+            traces.isEmpty() -> false
+            else -> started == null || started.lap.kind == LapKind.Out
+        }
+        if (beforeLine) return emptyList()
         val trace = hotlap
             ?: traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
         val lapStart = trace?.lap?.startMicros
         val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
+        // A single lap's trail stops at its line; after it the lap stays drawn as its time does.
         val until = hotlap?.lap?.endMicros?.coerceAtMost(sessionMicros) ?: sessionMicros
-        return trailBetween(start, until, trace)
-    }
-
-    /**
-     * [sessionMicros] is before the start/finish line was first crossed: before a single-lap export's
-     * lap, in the out lap, or before the first lap a saved track's replay found.
-     */
-    private fun beforeStartLine(sessionMicros: Long): Boolean {
-        val lap = hotlap?.lap ?: return traces.isNotEmpty() && (
-            sessionMicros < starts.first() ||
-                traces.lastOrNull { it.lap.startMicros <= sessionMicros }?.lap?.kind == LapKind.Out
-            )
-        return sessionMicros < lap.startMicros
-    }
-
-    /** The trail from [start] to [sessionMicros], at most [TrailMaxPoints] points, paced by [trace]'s delta. */
-    private fun trailBetween(start: Long, sessionMicros: Long, trace: LapTrace?): List<TrailPoint?> {
-        val step = maxOf(TrailMinStepMicros, (sessionMicros - start) / TrailMaxPoints)
+        val step = maxOf(TrailMinStepMicros, (until - start) / TrailMaxPoints)
         val paced = trace?.takeIf { it.lap.kind == LapKind.Timed && referenceFor(it.lap) != null }
         val out = ArrayList<TrailPoint?>()
         var open = false
@@ -310,11 +301,11 @@ class OverlayData(
             }
         }
         var t = start
-        while (t < sessionMicros) {
+        while (t < until) {
             add(t)
             t += step
         }
-        add(sessionMicros)
+        add(until)
         return out
     }
 

@@ -180,7 +180,10 @@ internal fun WatchLayout(
     }
 }
 
-/** The player of [source] and the overlay's painter; the video stops in the background, the screen stays on while it plays. */
+/**
+ * The player of [source] and the overlay's painter. The video stops in the background, and the
+ * screen stays on while it plays.
+ */
 @Composable
 private fun rememberWatch(source: WatchSource): Pair<WatchPlayer, TechHudPainter> {
     val context = LocalContext.current
