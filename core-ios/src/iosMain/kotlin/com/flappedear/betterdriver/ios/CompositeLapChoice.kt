@@ -36,7 +36,8 @@ class CompositeLapChoice(options: CompositeOptions?) {
             CompositePartLine(p.name, detail, video, p.video == PartOnVideo.None)
         }
         val part = DataVideoSession.partOf(o.kind)
-        return CompositeKindLine(part, name, note, o.unavailable, missingText(o), parts, options.canWatch(o.kind))
+        return CompositeKindLine(part, name, note, o.unavailable, missingText(o), parts)
+            .also { it.watchable = options.canWatch(o.kind) }
     }
 }
 
@@ -59,9 +60,11 @@ class CompositeKindLine(
     val unavailable: String?,
     val missing: String?,
     val parts: List<CompositePartLine>,
-    /** The sheet's Watch is on (FBBD-452): the shared core's CompositeOptions.canWatch. */
-    val watchable: Boolean,
 ) {
+    /** The sheet's Watch is on (FBBD-452): the shared core's CompositeOptions.canWatch. */
+    var watchable: Boolean = false
+        internal set
+
     /** It can be filmed. */
     val enabled: Boolean get() = unavailable == null
 }
