@@ -200,6 +200,8 @@ jobs:
         run: |
           xcodebuild -version
           command -v xcodegen || brew install xcodegen
+          # FBBD-457: the machine, to size how many simulators it can run at once.
+          echo "MACHINE $(sysctl -n machdep.cpu.brand_string) cores=$(sysctl -n hw.ncpu) perf=$(sysctl -n hw.perflevel0.physicalcpu 2>/dev/null) eff=$(sysctl -n hw.perflevel1.physicalcpu 2>/dev/null) mem_gb=$(( $(sysctl -n hw.memsize) / 1073741824 )) load=$(sysctl -n vm.loadavg)"
       - name: Pick a simulator
         id: sim
         run: python3 .github/scripts/ios-simulator.py iPhone ${{ runner.environment == 'self-hosted' && '--private' || '' }} >> "$GITHUB_OUTPUT"
