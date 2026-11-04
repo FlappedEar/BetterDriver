@@ -610,7 +610,7 @@ struct TrackScreenModel: Equatable {
         }
         let timing = s.timing
         deltaSeconds = timing?.deltaSeconds?.doubleValue
-        lapNumber = timing.map { Int($0.lapNumber) }
+        lapNumber = timing?.shownLapNumber?.intValue
         lapMillis = timing?.lapMillis?.int64Value
         lastMillis = timing?.lastMillis?.int64Value
         bestMillis = timing?.bestMillis?.int64Value

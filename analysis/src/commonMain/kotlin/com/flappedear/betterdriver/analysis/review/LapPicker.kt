@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.analysis.review
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.live.lapName
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
@@ -12,10 +13,18 @@ import com.flappedear.betterdriver.timing.track.Track
 // tap a slot, then a lap, the other slot is next; Compare opens the two in the lap review.
 
 /** A lap of a saved session the picker offers: its path and times, its session's title and video. */
-class PickerLap(val trace: LapTrace, val sessionTitle: String, private val video: LapVideoSource?) {
+class PickerLap(
+    val trace: LapTrace,
+    val sessionTitle: String,
+    private val video: LapVideoSource?,
+    private val pointToPoint: Boolean = false,
+) {
     /** "session:lap", as Android's LapKey encodes it. */
     val key: String get() = "${trace.sessionId}:${trace.lap.number}"
     val number: Int get() = trace.lap.number
+
+    /** "Lap 7", "Out lap", "Run 2": the number people count, as the session analysis (FBBD-450). */
+    val name: String get() = lapName(trace.lap.number, pointToPoint)
     val timed: Boolean get() = trace.lap.kind == LapKind.Timed
     val timeText: String get() = formatLapTime(trace.lap.timeMillis)
 
@@ -25,7 +34,8 @@ class PickerLap(val trace: LapTrace, val sessionTitle: String, private val video
     /** What Android's row says after the time: "Out lap", "Best", "Video", joined. */
     fun notes(best: Boolean): String = listOfNotNull(
         when (trace.lap.kind) {
-            LapKind.Out -> "Out lap"
+            // The out lap from session start is named "Out lap" already (FBBD-450).
+            LapKind.Out -> "Out lap".takeIf { name != it }
             LapKind.In -> "In lap"
             LapKind.Timed -> null
         },
@@ -34,7 +44,7 @@ class PickerLap(val trace: LapTrace, val sessionTitle: String, private val video
     ).joinToString(" · ")
 
     /** The lap with its session's video, for the lap review. */
-    fun onVideo(): VideoLap = VideoLap(trace, video)
+    fun onVideo(): VideoLap = VideoLap(trace, video, pointToPoint)
 }
 
 /** One session's laps at a track; [bestNumber] is its fastest timed lap. */
@@ -64,7 +74,8 @@ fun pickerSession(data: SessionData, track: Track, title: String, video: LapVide
         if (timed == 1) "1 lap" else "$timed laps",
         best?.let { "best ${formatLapTime(it.timeMillis)}" },
     ).joinToString(" · ")
-    return PickerSession(data.id, title, detail, laps.laps.map { PickerLap(it, title, video) }, best?.number)
+    val picked = laps.laps.map { PickerLap(it, title, video, track.pointToPoint) }
+    return PickerSession(data.id, title, detail, picked, best?.number)
 }
 
 /**

@@ -98,7 +98,7 @@ private fun tileValue(ch: TileChannel, s: TileSources): String? {
         TileIds.LAST_LAP -> timing?.lastMillis?.let(::formatLapTime)
         TileIds.BEST_LAP -> timing?.bestMillis?.let(::formatLapTime)
         TileIds.PREDICTED_LAP -> timing?.predictedMillis?.let(::formatLapTime)
-        TileIds.LAP_NUMBER -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
+        TileIds.LAP_NUMBER -> timing?.shownLapNumber?.toString()
         else -> live?.channels?.get(id)?.let { v -> if (v.isFinite()) formatValue(v, ch.unit) else null }
     }
 }

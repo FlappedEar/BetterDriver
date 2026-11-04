@@ -62,7 +62,7 @@ class FlowSmokeTest {
 
         // The picker: the circuit's sessions, newest first, with their laps. Pick two and compare them.
         // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
-        pickLaps2And3()
+        pickLaps1And2()
         app.withManualClock {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
@@ -80,7 +80,7 @@ class FlowSmokeTest {
         expectPickerWithNothingPicked()
 
         // Change laps also goes to the picker with nothing picked.
-        pickLaps2And3()
+        pickLaps1And2()
         app.withManualClock {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).performClick()
@@ -100,10 +100,11 @@ class FlowSmokeTest {
         assertEquals(2, app.countNodes(hasText("Tap a lap")))
     }
 
-    private fun pickLaps2And3() {
+    private fun pickLaps1And2() {
         app.waitForText(SmokeFixtures.CircuitName, timeoutMs = LoadTimeoutMs).performClick()
-        app.waitFor(hasText("Lap 2") and hasClickAction(), LoadTimeoutMs).performClick()
-        app.waitFor(hasText("Lap 3") and hasClickAction()).performClick()
+        // The first two full laps (FBBD-450: the out lap has no number).
+        app.waitFor(hasText("Lap 1") and hasClickAction(), LoadTimeoutMs).performClick()
+        app.waitFor(hasText("Lap 2") and hasClickAction()).performClick()
         app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
     }
 

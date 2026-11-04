@@ -121,7 +121,7 @@ struct LapPickerScreen: View {
         return Button(action: tap) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Lap \(name)").font(.caption.weight(.semibold)).foregroundStyle(color)
-                Text(lap.map { "Lap \($0.number) · \($0.timeText)" } ?? "Tap a lap")
+                Text(lap.map { "\($0.name) · \($0.timeText)" } ?? "Tap a lap")
                     .font(.headline)
                     .foregroundStyle(Palette.onBackground)
                 Dim(lap?.sessionTitle ?? "")
@@ -159,7 +159,7 @@ private struct PickerLapRow: View {
                     }
                 }
                 .frame(width: 24)
-                Text("Lap \(lap.number)").foregroundStyle(Palette.onBackground).frame(width: 64, alignment: .leading)
+                Text(lap.name).foregroundStyle(Palette.onBackground).frame(width: 64, alignment: .leading)
                 Text(lap.timeText)
                     .font(.body.weight(.semibold).monospacedDigit())
                     .foregroundStyle(best ? Palette.best : (lap.timed ? Palette.onBackground : Palette.onSurfaceVariant))
