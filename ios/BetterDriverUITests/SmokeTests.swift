@@ -120,7 +120,8 @@ final class SmokeTests: XCTestCase {
             let alert = springboard.alerts.firstMatch
             guard alert.waitForExistence(timeout: 2) else { return }
             let allow = ["Allow", "OK", "Allow While Using App", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            guard let allow else { return }
+            // The prompt can go by itself between the look and the tap.
+            guard let allow, allow.isHittable else { return }
             allow.tap()
         }
     }

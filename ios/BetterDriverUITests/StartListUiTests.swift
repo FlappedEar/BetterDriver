@@ -50,8 +50,14 @@ final class StartListUiTests: XCTestCase {
         XCTAssertFalse(row("start.HEART_RATE.Strap A").isSelected)
     }
 
+    private var launched = false
+
     private func openSheet() {
-        if app.state != .runningForeground { app.launch() }
+        // A fresh start for each test: a test before this one can leave the app on its track screen.
+        if !launched {
+            app.launch()
+            launched = true
+        }
         tab("Drive").tap()
         let start = app.buttons["startButton"]
         XCTAssertTrue(start.waitForExistence(timeout: 20), "START on the Drive tab")
@@ -125,7 +131,8 @@ final class StartListUiTests: XCTestCase {
             let alert = springboard.alerts.firstMatch
             guard alert.waitForExistence(timeout: 2) else { return }
             let allow = ["Allow", "OK", "Allow While Using App", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            guard let allow else { return }
+            // The prompt can go by itself between the look and the tap.
+            guard let allow, allow.isHittable else { return }
             allow.tap()
         }
     }
