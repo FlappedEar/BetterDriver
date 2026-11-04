@@ -2,7 +2,11 @@ package com.flappedear.betterdriver.recorder
 
 import com.flappedear.betterdriver.recorder.vbo.VboWriter
 
-/** Parses a VBO produced by this module and checks the structural rules from Racelogic's VBO page. */
+/**
+ * Parses a VBO produced by this module and checks the structural rules from Racelogic's VBO page.
+ * In common tests, so the iOS recorder's export (its own number formatting) is checked too: the VBO
+ * must come out flawless whatever else breaks (Moto Park 2026-11-08).
+ */
 object VboValidator {
     data class Parsed(
         val firstLine: String,
@@ -20,8 +24,11 @@ object VboValidator {
     )
     private val TIME = Regex("""^\d{6}\.\d{2,3}$""")
 
+    /** A plain decimal, as other tools read it: no NaN, no infinity, no exponent, no comma. */
+    private val NUMBER = Regex("""^[+-]?\d+(\.\d+)?$""")
+
     fun parse(text: String): Parsed {
-        require(!text.contains(Regex("(?<!\r)\n"))) { "every line must end with CRLF" }
+        require(!text.replace("\r\n", "").contains('\n')) { "every line must end with CRLF" }
         val lines = text.split("\r\n").dropLastWhile { it.isEmpty() }
         val sections = ArrayList<String>()
         val body = LinkedHashMap<String, MutableList<String>>()
@@ -74,7 +81,7 @@ object VboValidator {
         val timeIdx = p.header.indexOf("time")
         p.rows.forEachIndexed { i, r ->
             check(r.size == p.columnNames.size) { "row $i has ${r.size} values, expected ${p.columnNames.size}" }
-            r.forEach { v -> check(v.toDoubleOrNull() != null) { "row $i: non-numeric '$v'" } }
+            r.forEach { v -> check(NUMBER.matches(v)) { "row $i: not a plain number '$v'" } }
             if (timeIdx >= 0) check(TIME.matches(r[timeIdx])) { "row $i: bad time '${r[timeIdx]}'" }
         }
         // The time column only goes forward (FBBD-436); past midnight it starts again from 000000.

@@ -153,6 +153,8 @@ class TrackDaySoakTest {
         val written = VboExport.export(data, vbo)
         assertEquals(VboExport.Written(sent.fixes, sent.fixes, 0), written, "session $s: VBO")
         assertForward(s, vbo.toString())
+        // The structure other tools read, with the iOS number formatting: one row per fix.
+        assertEquals(sent.fixes, VboValidator.validate(vbo.toString()).rows.size, "session $s: VBO rows")
     }
 
     private fun finished(id: String): Map<String, String> {
@@ -230,6 +232,8 @@ class TrackDaySoakTest {
         assertTrue(data.events.any { it.kind == EventKinds.STORAGE_LOW }, "no storage_low event")
         assertTrue(data.events.any { it.kind == EventKinds.STORAGE_FULL }, "no storage_full event")
         val fixes = data.sampleSets.count { set -> set.values.any { it.channelId == GnssChannels.UTC_MS.id } }
-        assertEquals(fixes, VboExport.export(data, StringBuilder()).fixes)
+        val vbo = StringBuilder()
+        assertEquals(fixes, VboExport.export(data, vbo).fixes)
+        assertEquals(fixes, VboValidator.validate(vbo.toString()).rows.size, "VBO rows after a full disk")
     }
 }
