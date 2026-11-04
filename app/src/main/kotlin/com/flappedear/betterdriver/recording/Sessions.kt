@@ -203,7 +203,9 @@ class Sessions private constructor(private val context: Context) {
                 file.outputStream().buffered().use { out ->
                     when (format) {
                         ExportFormat.Vbo ->
-                            logExport(id, data) { VboExporter.export(data, out, derived = vboAccelerationsOrNone(data)) }
+                            logExport(id, data) {
+                                VboExporter.export(data, out, derived = vboAccelerationsOrNone(data))
+                            }
                         ExportFormat.VboVideo -> {
                             val sessionDir = store.dir(id)
                             val timeline = VideoTimeline.from(data.events, indexedClips(sessionDir))
