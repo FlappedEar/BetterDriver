@@ -17,9 +17,10 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * Pull requests from forks always run on GitHub's runners. The repository is public, and GitHub
   advises against self-hosted runners for public repositories because anyone can open a pull
   request ([secure use](https://docs.github.com/en/actions/reference/security/secure-use)).
-* On a self-hosted runner each job creates its own simulator (`ios-simulator.py --private`,
-  named `BD <runner name> <iPad|iPhone>`) and deletes it at the end, so two runner instances on
-  one Mac never drive the same simulator.
+* Each runner instance keeps its own simulator per device (`ios-simulator.py --private`, named
+  `BD <runner name> <iPad|iPhone> <runtime>`), made once and reused by later jobs, so two runner
+  instances on one Mac never drive the same simulator and no job pays for a first boot. Each job
+  removes the app and its data first, and shuts down the runner's other simulator.
 * `ios-release.yml` (TestFlight) stays on GitHub's runners: the signing key and App Store
   Connect secrets never reach the Mac.
 * Overflow (FBBD-457): a pull request run goes to GitHub's `macos-15` when another unfinished

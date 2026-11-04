@@ -255,12 +255,6 @@ jobs:
             build/xcodebuild-build.log
             */build/reports/tests
           if-no-files-found: ignore
-      # The job's own simulator on a self-hosted Mac (FBBD-434).
-      - name: Delete the job's simulator
-        if: always() && runner.environment == 'self-hosted' && steps.sim.outputs.udid != ''
-        run: |
-          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
-          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
   test:
     name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
@@ -281,8 +275,9 @@ jobs:
       - name: Pick a simulator
         id: sim
         run: python3 .github/scripts/ios-simulator.py ${{ matrix.device }} ${{ runner.environment == 'self-hosted' && '--private' || '' }} >> "$GITHUB_OUTPUT"
-      # Boots while the build downloads.
+      # Boots while the build downloads (a self-hosted runner's own simulator is booted already).
       - name: Boot ${{ steps.sim.outputs.name }}
+        if: runner.environment != 'self-hosted'
         run: nohup xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b > /dev/null 2>&1 &
       - uses: actions/download-artifact@v4
         with:
@@ -305,6 +300,9 @@ jobs:
           # classes between two clones of the simulator, mac-mini-2's keep one, as GitHub's do.
           if [ "$RUNNER_NAME" = mac-mini-1 ]; then parallel=YES; workers=2; else parallel=NO; workers=1; fi
           echo "Parallel testing: $parallel, $workers simulator(s)"
+          # The tests run on xcodebuild's two clones: the runner's own simulator stays shut down,
+          # so the Mac has three booted at most.
+          if [ "$parallel" = YES ]; then xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true; fi
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \
@@ -346,12 +344,6 @@ jobs:
             build/ios-tests.xcresult
             build/xcodebuild.log
           if-no-files-found: ignore
-      # The job's own simulator on a self-hosted Mac (FBBD-434).
-      - name: Delete the job's simulator
-        if: always() && runner.environment == 'self-hosted' && steps.sim.outputs.udid != ''
-        run: |
-          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
-          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
   passed:
     name: iOS app
