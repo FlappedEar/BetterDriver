@@ -184,7 +184,7 @@ private fun LapRow(lap: ReviewLap, best: Boolean, slot: Slot?, onClick: () -> Un
             }
         }
         Spacer(Modifier.width(10.dp))
-        Text("Lap ${lap.number}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(64.dp))
+        Text(lap.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(64.dp))
         Text(
             formatLapTime(lap.timeMillis),
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -197,7 +197,8 @@ private fun LapRow(lap: ReviewLap, best: Boolean, slot: Slot?, onClick: () -> Un
         )
         val notes = listOfNotNull(
             when (lap.kind) {
-                LapKind.Out -> "Out lap"
+                // The out lap from session start is named "Out lap" already (FBBD-450).
+                LapKind.Out -> "Out lap".takeIf { lap.name != it }
                 LapKind.In -> "In lap"
                 LapKind.Timed -> null
             },

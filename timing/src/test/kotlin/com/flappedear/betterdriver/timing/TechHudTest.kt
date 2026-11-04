@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
+import com.flappedear.betterdriver.timing.overlay.trail
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import kotlin.test.Test
 import kotlin.test.assertEquals

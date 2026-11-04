@@ -26,7 +26,8 @@ class CueCardsTest {
     @Test
     fun aCornerCueIsBetterOrNotYetOnceTheCornerWasDrivenAgain() {
         val better = ReviewedCue(corner, result(improved = true)).card()
-        assertEquals("Lap 5 · Turn 2", better.place)
+        // The timer's lap 5 is the analysis's lap 4: the out lap is no numbered lap (FBBD-450).
+        assertEquals("Lap 4 · Turn 2", better.place)
         assertEquals("Better", better.verdict)
         assertEquals(CueVerdictTone.Gain, better.tone)
         assertEquals("“Turn 2, brake at 65, 15 later”", better.quote)
@@ -45,7 +46,8 @@ class CueCardsTest {
     @Test
     fun aLapTimeCueHasNoTurnConfidenceOrOutcome() {
         val card = ReviewedCue(Cue(4, 0, 4, CueKind.LapTime, "1 32 point 4"), null).card()
-        assertEquals("Lap 4", card.place)
+        assertEquals("Lap 3", card.place)
+        assertEquals("Out lap", ReviewedCue(Cue(1, 0, 1, CueKind.LapTime, "1 32 point 4"), null).card().place)
         assertEquals("Lap time" to CueVerdictTone.Plain, card.verdict to card.tone)
         assertNull(card.confidence)
         assertNull(card.outcome)

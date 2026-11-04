@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.smoke
 
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -24,6 +25,7 @@ import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
 import com.flappedear.betterdriver.feature.analysis.ProgressionCornersTag
 import com.flappedear.betterdriver.feature.analysis.ProgressionLinkText
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
+import com.flappedear.betterdriver.videoexport.OptimalWatchTag
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -203,6 +205,17 @@ class AnalysisSmokeTest {
         app.waitForText("Cancel").performClick()
         app.waitUntilGone("Composite lap video")
         check(!app.showsText("Cancel")) { "a composite lap video started" }
+
+        // Watch from the sheet (FBBD-452): the realistic optimal plays in the app with its own data
+        // band, and back returns to the analysis.
+        app.scrollUntilShown(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled())
+            .performClick()
+        app.waitForText("Composite lap video", timeoutMs = LoadTimeoutMs)
+        app.waitFor(hasTestTag(OptimalWatchTag)).assertIsEnabled().performClick()
+        app.waitFor(hasContentDescription("REALISTIC OPTIMAL", substring = true), LoadTimeoutMs)
+        app.waitForText("0:00 / ", substring = true)
+        app.back()
+        app.scrollUntilShown(hasText(RealisticOptimalVideoLabel) and hasClickAction(), timeoutMs = LoadTimeoutMs)
     }
 
     @Test

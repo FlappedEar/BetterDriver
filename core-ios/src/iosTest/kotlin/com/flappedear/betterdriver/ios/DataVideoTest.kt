@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.CarFrame
 import com.flappedear.betterdriver.timing.overlay.GForce
@@ -15,6 +16,8 @@ import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
+import com.flappedear.betterdriver.timing.overlay.Pace
+import com.flappedear.betterdriver.timing.overlay.PaceRun
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
@@ -129,12 +132,21 @@ class DataVideoTest {
         assertEquals("124", m.speed)
         assertFalse(m.gears, "no gearbox in this frame: the speed alone, no RPM number (UI-310 A)")
         assertEquals("—", m.gear)
-        assertEquals("3", m.lapNumber)
+        // The timer's lap 3 is the second full lap, as the session analysis counts it (FBBD-450).
+        assertEquals("2", m.lapNumber)
         assertEquals("1:05.432", m.lapTimeText)
         assertEquals("1:23.456", m.bestText)
         assertEquals("-0.120", m.deltaText)
         assertTrue(m.deltaAhead)
-        assertEquals("LAP 3", m.mapLap)
+        assertEquals("LAP 2", m.mapLap)
+        // The out lap from session start is no numbered lap (FBBD-450), nor an in lap.
+        val outLap = OverlayLap(1, LapKind.Out, 605_529_000, null, isBest = false)
+        val out = HudMoment(frame.copy(lap = outLap), emptyList(), emptyList(), null, false)
+        assertEquals("OUT", out.lapNumber)
+        assertEquals("OUT LAP", out.mapLap)
+        val inLap = HudMoment(frame.copy(lap = lap.copy(kind = LapKind.In)), emptyList(), emptyList(), null, false)
+        assertEquals("IN", inLap.lapNumber)
+        assertEquals("IN LAP", inLap.mapLap)
         assertEquals("88%", m.throttleText)
         assertEquals("—", m.brakeText)
         assertEquals("1.24", m.gText)
@@ -228,13 +240,29 @@ class DataVideoTest {
         assertEquals("-0.310", m.deltaText)
         assertTrue(m.deltaAhead)
         assertEquals("1:50.000", m.bestText)
-        assertEquals("LAP 5", m.mapLap)
+        assertEquals("LAP 4", m.mapLap)
         val plain = HudMoment(frame, emptyList(), emptyList(), null, false)
         val behind = plain.asComposite(text.copy(deltaSeconds = 0.2), null)
         assertEquals("+0.200", behind.deltaText)
         assertFalse(behind.deltaAhead)
         val none = plain.asComposite(text.copy(deltaSeconds = null), null)
         assertNull(none.deltaText)
+    }
+
+    @Test
+    fun theMapTrailIsColouredByPaceExceptOnACompositeLap() {
+        val ahead = PaceRun(listOf(Xy(0.0, 0.0), Xy(1.0, 0.0)), Pace.Ahead)
+        val behind = PaceRun(listOf(Xy(1.0, 0.0), Xy(2.0, 0.0)), Pace.Behind)
+        val single = PaceRun(listOf(Xy(5.0, 0.0), Xy(6.0, 0.0)), null)
+        val frame = OverlayFrame(100.0, null, null, null)
+        val m = HudMoment(frame, listOf(ahead, behind, single).map(::HudTrailRun), emptyList(), null, false)
+        assertEquals(listOf(true, true, false), m.trailRuns.map { it.paced })
+        assertEquals(listOf(true, false, false), m.trailRuns.map { it.ahead })
+        assertEquals(listOf(1.0, 2.0), m.trailRuns[1].points.map { it.x })
+        val text = OptimalOverlayText(listOf("LAP 5"), 42_500_000, -0.31)
+        val composite = m.asComposite(text, null)
+        assertEquals(3, composite.trailRuns.size)
+        assertTrue(composite.trailRuns.none { it.paced })
     }
 
     private companion object {

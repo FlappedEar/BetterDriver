@@ -23,9 +23,13 @@ class VideoExportUiTest {
 
     @Test
     fun lapLinesNameTheLapTimeAndWhatIsSpecial() {
-        assertEquals("Lap 3 · 1:42.37" to "Best lap", lapOptionText(lap(3, best = true)))
-        assertEquals("Lap 1 · 1:42.37" to "Out lap · No video", lapOptionText(lap(1, LapKind.Out, onVideo = false)))
-        assertEquals("Lap 2 · 1:42.37" to "", lapOptionText(lap(2)))
+        // Laps are counted from the first full lap, as the session analysis counts them; the out lap
+        // from session start (the timer's lap 1) has no number (FBBD-450).
+        assertEquals("Lap 2 · 1:42.37" to "Best lap", lapOptionText(lap(3, best = true)))
+        assertEquals("Out lap · 1:42.37" to "No video", lapOptionText(lap(1, LapKind.Out, onVideo = false)))
+        assertEquals("Lap 1 · 1:42.37" to "", lapOptionText(lap(2)))
+        // An out lap after a pit stop keeps its number and says what it is.
+        assertEquals("Lap 4 · 1:42.37" to "Out lap", lapOptionText(lap(5, LapKind.Out)))
     }
 
     @Test
@@ -66,7 +70,8 @@ class VideoExportUiTest {
 
     @Test
     fun fileNamesSayWhichPart() {
-        assertEquals("BetterDriver-abc-lap7.mp4", videoExportFileName("abc", 7))
+        assertEquals("BetterDriver-abc-lap6.mp4", videoExportFileName("abc", 7))
+        assertEquals("BetterDriver-abc-outlap.mp4", videoExportFileName("abc", 1))
         assertEquals("BetterDriver-abc-video.mp4", videoExportFileName("abc", WholeVideo))
     }
 

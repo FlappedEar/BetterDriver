@@ -43,7 +43,12 @@ class LapPickerTest {
         assertTrue(first.detail.startsWith("$timed laps · best 1:49.9"), first.detail)
         assertEquals("one:$best", first.laps.single { it.number == best }.key)
         assertEquals("Best", first.laps.single { it.number == best }.notes(best = true))
-        assertEquals("Out lap", first.laps.first().notes(best = false))
+        // The out lap from session start is named "Out lap", with no number (FBBD-450); the first full
+        // lap is lap 1, as the session analysis counts it.
+        assertEquals("Out lap", first.laps.first().name)
+        assertEquals("", first.laps.first().notes(best = false))
+        assertEquals("Lap 1", first.laps[1].name)
+        assertEquals(2, first.laps[1].number)
         val tracks = pickerTracks(listOf(track.id to second, track.id to first, "gone" to first), listOf(track))
         assertEquals(1, tracks.size)
         assertEquals(listOf("two", "one"), tracks.single().sessions.map { it.id })

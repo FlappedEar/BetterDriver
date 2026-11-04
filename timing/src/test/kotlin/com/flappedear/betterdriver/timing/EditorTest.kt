@@ -129,6 +129,34 @@ class EditorTest {
     }
 
     @Test
+    fun `a slow pass beside the tapped one is the pit lane and stays outside the fitted line`() {
+        // Racing passes north at x = 0 and 6 m at 30 m/s, a pit lane pass at x = 12 m at 10 m/s.
+        val frame = path.frame
+        val points = mutableListOf<GeoPoint>()
+        val times = mutableListOf<Long>()
+        var t = 0L
+        for ((x, speed) in listOf(0.0 to 30.0, 6.0 to 30.0, 12.0 to 10.0)) {
+            for (y in -20..20) {
+                points += frame.toGeo(Xy(x, y.toDouble()))
+                times += t
+                t += (1_000_000 / speed).toLong()
+            }
+            t += 60_000_000
+        }
+        val fitted = assertNotNull(LapPath(points, times).lineAt(frame.toGeo(Xy(0.0, 0.0))))
+        // 0 to 6 m, 4 m more each side: 14 m from x = -4 to 10, short of the pit lane at 12 m.
+        assertEquals(14.0, fitted.widthMeters, 0.05)
+        val ends = listOf(frame.toXy(fitted.left).x, frame.toXy(fitted.right).x).sorted()
+        assertEquals(-4.0, ends[0], 0.05)
+        assertEquals(10.0, ends[1], 0.05)
+        // Tapped on the pit lane itself, the line fits the pit lane: a pit entry or exit line.
+        val pit = assertNotNull(LapPath(points, times).lineAt(frame.toGeo(Xy(12.0, 0.0))))
+        assertEquals(12.0, frame.toXy(midpoint(pit)).x, 0.05)
+        // Without times every pass counts, as before: -4 m to the probe's end at 15 m.
+        assertEquals(19.0, assertNotNull(LapPath(points).lineAt(frame.toGeo(Xy(0.0, 0.0)))).widthMeters, 0.05)
+    }
+
+    @Test
     fun `width is set in 2 m steps, centre and direction kept`() {
         val line = assertNotNull(path.lineAt(ring(90.0), 30.0))
         assertEquals(30.0, line.widthMeters, 0.01)

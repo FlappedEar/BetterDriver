@@ -61,6 +61,15 @@ class TrackTilesTest {
     }
 
     @Test
+    fun aCircuitLapIsNumberedAsTheAnalysis() {
+        val outLap = LiveTimingState.empty(0).copy(lapNumber = 1)
+        assertEquals("Lap", TrackTiles.tile(TileIds.LAP_NUMBER, live, outLap, true)!!.label)
+        assertEquals(TrackTiles.NO_VALUE, TrackTiles.tile(TileIds.LAP_NUMBER, live, outLap, true)!!.value)
+        val firstFull = LiveTimingState.empty(0).copy(lapNumber = 2)
+        assertEquals("1", TrackTiles.tile(TileIds.LAP_NUMBER, live, firstFull, true)!!.value)
+    }
+
+    @Test
     fun eachCarHasItsOwnLayout() {
         val setup = Setup(cars = listOf(CarProfile("frs", "FR-S"), CarProfile("corolla", "Corolla")))
         val changed = TrackTiles.choose(setup, "frs", second = false, slot = 2, id = "obd_coolant_temp")

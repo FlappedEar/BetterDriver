@@ -16,6 +16,11 @@ on:
     workflows: [Release]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner labels as JSON: "macos-26" (GitHub) or ["self-hosted","bd-mac"] (the Mac minis; the App Store Connect key and the signing certificates are then used on them)'
+        required: false
+        default: '"macos-26"'
   # A change to this workflow checks the unsigned release archive; pull requests never upload.
   pull_request:
     paths:
@@ -36,7 +41,9 @@ jobs:
   testflight:
     name: TestFlight
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: macos-15
+    # macos-15 jobs sat queued and were cancelled after 15 min on 4 Nov 2026 (runs 41851537284,
+    # 41857456524); macos-26 also carries Xcode 26. A dispatch can pick the Mac minis instead.
+    runs-on: ${{ fromJSON(inputs.runner || '"macos-26"') }}
     # The smoke gate runs every UI test on one iPhone before the archive; the review tests of
     # PR #411 (some allowed 600 s) push it past an hour on a slow runner.
     timeout-minutes: 120
@@ -84,13 +91,18 @@ jobs:
       - name: Xcode 26
         run: |
           ls -d /Applications/Xcode*.app
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)
-          [ -n "$xcode" ] || { echo "::error::No Xcode 26 on this runner image"; exit 1; }
-          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$xcode" ]; then
+            sudo xcode-select -s "$xcode/Contents/Developer"
+          else
+            # A self-hosted Mac mini keeps its one selected Xcode (FBBD-434); it must be 26 or later.
+            major=$(xcodebuild -version | sed -n 's/^Xcode \([0-9]*\).*/\1/p')
+            [ "${major:-0}" -ge 26 ] || { echo "::error::No Xcode 26 or later on this runner"; exit 1; }
+          fi
       - name: Tools
         run: |
           xcodebuild -version
-          brew install xcodegen
+          command -v xcodegen || brew install xcodegen
       - name: Shared core (release) and the Xcode project
         env:
           BETTERDRIVER_CORE_BUILD: release

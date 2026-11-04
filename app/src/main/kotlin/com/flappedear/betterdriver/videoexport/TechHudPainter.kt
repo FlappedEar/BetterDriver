@@ -13,6 +13,8 @@ import android.graphics.Typeface
 import androidx.core.content.res.ResourcesCompat
 import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.lapMapCaption
+import com.flappedear.betterdriver.timing.live.lapMark
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.HudRowSpec
@@ -21,12 +23,15 @@ import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
+import com.flappedear.betterdriver.timing.overlay.Pace
+import com.flappedear.betterdriver.timing.overlay.PaceRun
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.gearText
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
+import com.flappedear.betterdriver.timing.overlay.paceRuns
 import com.flappedear.betterdriver.timing.overlay.steeringText
 import com.flappedear.betterdriver.timing.overlay.thin
 import java.util.Locale
@@ -101,7 +106,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
                 HudWidget.GRadar -> radar(canvas, b, sessionMicros, f)
                 HudWidget.GReadout -> gReadout(canvas, b, s, f)
                 HudWidget.Steering -> steering(canvas, b, s, f)
-                HudWidget.TrackMap -> map(canvas, b, s, sessionMicros, f)
+                HudWidget.TrackMap -> map(canvas, b, s, f, trailRuns(sessionMicros, paced = optimal == null))
             }
         }
     }
@@ -219,7 +224,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         val caption = lapCaption(optimal, b.width - 2 * p)
         textTop(c, caption.uppercase(Locale.ROOT), b.left + p, b.top + p * 1.2f, semibold)
         if (optimal == null) {
-            val number = lap?.number?.toString() ?: Dash
+            val number = lap?.let { lapMark(it.number, it.kind, data.pointToPoint) } ?: Dash
             setText(bold, h * 0.15f, Amber)
             textTop(c, number, b.right - p * 1.4f - bold.measureText(number), b.top + p, bold)
         }
@@ -556,8 +561,21 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         c.restore()
     }
 
-    // TechTrackMap.qml + TrackMapCore.qml: "TRACK" and the lap, the whole track, the lap's trail, the car.
-    private fun map(c: Canvas, b: Box, s: Float, sessionMicros: Long, f: OverlayFrame) {
+    /**
+     * The map's trail at [sessionMicros] in runs of one pace (FBBD-451); without [paced] (a composite
+     * lap) every run is unpaced, drawn amber.
+     */
+    private fun trailRuns(sessionMicros: Long, paced: Boolean): List<PaceRun> {
+        val runs = paceRuns(data.paceTrail(sessionMicros))
+        return if (paced) runs else runs.map { PaceRun(it.points, null) }
+    }
+
+    /**
+     * TechTrackMap.qml + TrackMapCore.qml: "TRACK" and the lap, the whole track, the lap's [trail], the
+     * car. The trail is green where the lap was ahead of the best lap before it and orange where behind
+     * (FBBD-451); with nothing to compare with it stays amber.
+     */
+    private fun map(c: Canvas, b: Box, s: Float, f: OverlayFrame, trail: List<PaceRun>) {
         panel(c, b, s)
         val p = pad(s)
         val h = b.height
@@ -567,7 +585,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         textTop(c, "TRACK", b.left + p, titleTop, semibold)
         val lap = f.lap
         if (lap != null) {
-            val text = "${if (data.pointToPoint) "RUN" else "LAP"} ${lap.number}"
+            val text = lapMapCaption(lap.number, lap.kind, data.pointToPoint)
             setText(bold, h * 0.065f, Text)
             textTop(c, text, b.right - p - cut * 0.6f - bold.measureText(text), titleTop, bold)
         }
@@ -588,11 +606,14 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         c.drawPath(path, line)
 
         startLine(c, view, side)
-        val trail = data.trail(sessionMicros)
-        if (trail.size > 1) {
-            polyline(trail, view)
-            line.strokeWidth = lw
-            line.color = Amber
+        line.strokeWidth = lw
+        for (run in trail) {
+            polyline(run.points, view)
+            line.color = when (run.pace) {
+                Pace.Ahead -> Green
+                Pace.Behind -> Orange
+                null -> Amber
+            }
             c.drawPath(path, line)
         }
         f.position?.let { car(c, view.px(it), side) }

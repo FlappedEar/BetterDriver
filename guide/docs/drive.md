@@ -55,9 +55,14 @@ save it. A loop has to be 0.8 to 30 km long, so an ordinary road drive gets no l
 The editor shows your recorded lap on a map.
 
 - **Start / finish**: tap your lap where the line goes; it is placed square to the way you drove,
-  as wide as your passes there plus 4 m each side (12 to 30 m). **Width −/+** changes it in 2 m
-  steps (4 to 60 m), or drag its ends to the track edges. The arrow shows the direction; crossings the other
-  way never count. **Flip direction** turns it round.
+  as wide as your passes there plus 4 m each side (12 to 30 m). Passes at a very different speed,
+  such as the pit lane beside the straight, are left out. **Width −/+** changes it in 2 m steps
+  (4 to 60 m), or drag its ends to the track edges. **Two taps** places it exactly where you tap
+  each edge. The arrow shows the direction; crossings the other way never count. **Flip
+  direction** turns it round.
+- **Fixing a line**: tap it in the list, then tap your lap again (or use Two taps) to place it
+  anew; **Remove line** clears it. Lines placed before 1.30.0 keep their old 30 m width until you
+  place them again.
 - **+ Add sector line** adds sector lines. **Pit entry** and **Pit exit** lines let the coach go
   quiet in the pit lane.
 - **Point to point**: for hill climbs and sprints, runs go from a start line to a finish line;
