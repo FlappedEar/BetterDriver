@@ -111,7 +111,8 @@ object TrackTiles {
             TileIds.LAST_LAP -> timing?.lastMillis?.let(::formatLapTime)
             TileIds.BEST_LAP -> timing?.bestMillis?.let(::formatLapTime)
             TileIds.PREDICTED_LAP -> timing?.predictedMillis?.let(::formatLapTime)
-            TileIds.LAP_NUMBER -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
+            // As the main lap indicator and the Android tile (FBBD-450): the out lap shows no number.
+            TileIds.LAP_NUMBER -> timing?.shownLapNumber?.toString()
             else -> live?.channels?.get(id)?.let { v -> if (v.isFinite()) tileNumber(v, ch.unit) else null }
         }
     }
