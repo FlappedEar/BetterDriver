@@ -74,7 +74,8 @@ fun pickerSession(data: SessionData, track: Track, title: String, video: LapVide
         if (timed == 1) "1 lap" else "$timed laps",
         best?.let { "best ${formatLapTime(it.timeMillis)}" },
     ).joinToString(" · ")
-    return PickerSession(data.id, title, detail, laps.laps.map { PickerLap(it, title, video, track.pointToPoint) }, best?.number)
+    val picked = laps.laps.map { PickerLap(it, title, video, track.pointToPoint) }
+    return PickerSession(data.id, title, detail, picked, best?.number)
 }
 
 /**

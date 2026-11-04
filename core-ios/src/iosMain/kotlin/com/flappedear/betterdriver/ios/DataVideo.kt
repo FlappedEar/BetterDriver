@@ -194,7 +194,8 @@ class DataVideoSession internal constructor(
                 },
                 if (onVideo) null else "No video",
             ).joinToString(" · ")
-            DataVideoPart(n, "${lapName(n, pointToPoint)} · ${formatLapTime(t.lap.timeMillis)}", note, onVideo, n == best)
+            val name = "${lapName(n, pointToPoint)} · ${formatLapTime(t.lap.timeMillis)}"
+            DataVideoPart(n, name, note, onVideo, n == best)
         }
         val films = composites(durations)
         val compositeParts = listOf(films.realistic, films.raw).map { film ->
