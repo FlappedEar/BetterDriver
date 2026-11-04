@@ -43,7 +43,10 @@ final class StartListUiTests: XCTestCase {
         pick("start.HEART_RATE.Strap B")
         pick("start.TPMS.Tyre bridge")
         record()
-        // The choice is kept for the next session (UI-313 A).
+        // The choice is kept for the next session (UI-313 A), also after the app is closed.
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-uiTestReset" }
+        launched = false
         openSheet()
         let strapB = reveal("start.HEART_RATE.Strap B")
         XCTAssertTrue(strapB.isSelected, "Strap B still chosen at the next START")
