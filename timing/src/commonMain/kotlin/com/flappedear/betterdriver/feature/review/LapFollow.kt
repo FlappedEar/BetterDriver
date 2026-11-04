@@ -81,6 +81,7 @@ data class FollowStep(val seekMillis: Long?, val speed: Float)
  * [deadbandMillis]: drift left alone while playing. The player with the sound takes
  * [SoundDeadbandMillis]: each of its rate changes restarts its audio, a hitch on the Mac (FBBD-429).
  */
+@Suppress("LongParameterList") // One call per player per display frame with all it needs.
 fun followStep(
     positionMillis: Long,
     targetMillis: Long,

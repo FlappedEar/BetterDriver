@@ -153,9 +153,11 @@ class ComparisonTest {
             FollowStep(null, 1f),
             followStep(1_100, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis),
         )
-        assertEquals(0.86f, followStep(1_140, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis).speed, 1e-6f)
+        val sound140 = followStep(1_140, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis)
+        assertEquals(0.86f, sound140.speed, 1e-6f)
         // Beyond the drift limit both seek.
-        assertEquals(1_000L, followStep(1_400, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis).seekMillis)
+        val sound400 = followStep(1_400, 1_000, 1.0, playing = true, deadbandMillis = SoundDeadbandMillis)
+        assertEquals(1_000L, sound400.seekMillis)
 
         val stats = LapReviewStats()
         assertEquals(null, stats.line(0))
