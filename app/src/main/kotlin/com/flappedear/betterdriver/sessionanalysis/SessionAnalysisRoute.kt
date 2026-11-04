@@ -358,7 +358,14 @@ internal fun SessionAnalysisRoute(
                         onCoachReview = { nav.navigate(Routes.cueReview(id)) },
                     )
                 },
-                optimalVideo = if (offers) optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo) else null,
+                optimalVideo = if (offers) {
+                    // The composite lap sheet's Watch plays it as the Video tab's does (FBBD-452).
+                    optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo) { part ->
+                        nav.navigate(Routes.watchVideo(id, part))
+                    }
+                } else {
+                    null
+                },
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
                 // The Video tab, only for a session with video (FBBD-392), as on iOS.

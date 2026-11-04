@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,7 +87,7 @@ internal fun OptimalVideoAction(
  * optimal or the raw theoretical best (the realistic optimal first), then every part of the chosen
  * one in track order with the lap it comes from and its time, those without video marked and
  * summed up, as they are skipped. [blocked] says why no video can be made right now; [onExport]
- * gets the kind chosen.
+ * gets the kind chosen, [onWatch] plays it in the app (FBBD-452), as the Video tab's Watch.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +95,7 @@ internal fun OptimalVideoSheet(
     options: CompositeOptions,
     blocked: String?,
     onExport: (OptimalKind) -> Unit,
+    onWatch: (OptimalKind) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val c = TrackTheme.colors
@@ -115,10 +119,17 @@ internal fun OptimalVideoSheet(
             }
             missingText(option)?.let { DimText(it, color = c.warning) }
             (option.unavailable ?: blocked)?.let { DimText(it, color = c.loss) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
-                FilledTonalButton(onClick = { onExport(kind) }, enabled = option.enabled && blocked == null) {
+                OutlinedButton(onClick = { onExport(kind) }, enabled = options.canExport(kind, blocked)) {
                     Text("Export")
+                }
+                Button(
+                    onClick = { onWatch(kind) },
+                    enabled = options.canWatch(kind),
+                    modifier = Modifier.testTag(OptimalWatchTag),
+                ) {
+                    Text("Watch")
                 }
             }
         }
@@ -173,3 +184,6 @@ private fun PartLine(p: OptimalPartRow) {
 }
 
 private val PartsMaxHeight = 320.dp
+
+/** The composite lap sheet's Watch (FBBD-452). */
+const val OptimalWatchTag = "optimal-video-watch"

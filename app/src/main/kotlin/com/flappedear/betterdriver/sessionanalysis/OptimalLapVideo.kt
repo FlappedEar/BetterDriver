@@ -21,6 +21,7 @@ import com.flappedear.betterdriver.videoexport.OptimalVideoAction
 import com.flappedear.betterdriver.videoexport.OptimalVideoSheet
 import com.flappedear.betterdriver.videoexport.RealisticOptimalLap
 import com.flappedear.betterdriver.videoexport.VideoExports
+import com.flappedear.betterdriver.videoexport.VideoPart
 import com.flappedear.betterdriver.videoexport.fileDurations
 import com.flappedear.betterdriver.videoexport.optimalVideo
 import com.flappedear.betterdriver.videoexport.videoBlocked
@@ -35,9 +36,15 @@ import kotlinx.coroutines.withContext
  * video ([lapVideo]) off the main thread; the button opens the sheet that offers both (the
  * realistic optimal first) and lists the parts and what is missing, then the file picker, and the
  * export runs in [VideoExports] as a lap's does, its progress shown here and on the session's card.
+ * The sheet's Watch closes it and hands the composite lap's video part to [onWatch] (FBBD-452).
  */
 @Composable
-internal fun OptimalLapVideo(sessionId: String, analysis: SessionAnalysis, lapVideo: LapVideo?) {
+internal fun OptimalLapVideo(
+    sessionId: String,
+    analysis: SessionAnalysis,
+    lapVideo: LapVideo?,
+    onWatch: (VideoPart) -> Unit,
+) {
     val context = LocalContext.current
     val exports = remember(context) { VideoExports.get(context) }
     val recorder = remember(context) { RecorderClient.get(context) }
@@ -69,6 +76,10 @@ internal fun OptimalLapVideo(sessionId: String, analysis: SessionAnalysis, lapVi
                 part = videoPartOf(kind)
                 pickFile.launch(videoExportFileName(sessionId, part))
             },
+            onWatch = { kind ->
+                open = false
+                onWatch(videoPartOf(kind))
+            },
             onDismiss = { open = false },
         )
     }
@@ -79,7 +90,8 @@ internal fun optimalVideoSlot(
     sessionId: String,
     analysis: SessionAnalysis?,
     lapVideo: LapVideo?,
-): (@Composable () -> Unit)? = analysis?.let { a -> @Composable { OptimalLapVideo(sessionId, a, lapVideo) } }
+    onWatch: (VideoPart) -> Unit,
+): (@Composable () -> Unit)? = analysis?.let { a -> @Composable { OptimalLapVideo(sessionId, a, lapVideo, onWatch) } }
 
 /** What the composite laps' videos can be, read from the clip files; never fails the screen. */
 @Suppress("TooGenericExceptionCaught")

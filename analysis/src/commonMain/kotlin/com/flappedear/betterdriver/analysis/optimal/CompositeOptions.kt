@@ -18,6 +18,15 @@ data class CompositeOptions(val realistic: OptimalOption, val raw: OptimalOption
     val preselected: OptimalOption get() = if (realistic.enabled || !raw.enabled) realistic else raw
 
     fun of(kind: OptimalKind): OptimalOption = if (kind == OptimalKind.RealisticOptimal) realistic else raw
+
+    /**
+     * The sheet's Watch (FBBD-452): [kind] has parts on video. Watching makes no file, so neither a
+     * recording nor another export stops it, as the Video tab's Watch.
+     */
+    fun canWatch(kind: OptimalKind): Boolean = of(kind).enabled
+
+    /** The sheet's Export: [kind] has parts on video and nothing [blocked] making a video now. */
+    fun canExport(kind: OptimalKind, blocked: String?): Boolean = of(kind).enabled && blocked == null
 }
 
 /** The composite laps of [films], as the lap analysis offers them. */
