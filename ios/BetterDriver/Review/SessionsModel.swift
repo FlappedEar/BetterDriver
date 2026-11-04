@@ -338,6 +338,8 @@ final class SessionsModel {
         let sessions: [SessionRow]
         let tracks: [String]
         let trackOnRows: Bool
+        /// Each track driven twice that day, as the shared core links them (FBBD-315, FBBD-453).
+        let trackDays: [TrackDayLink]
         var id: Int64 { localDay }
     }
 
@@ -346,7 +348,18 @@ final class SessionsModel {
     var days: [Day] {
         let sorted = sessions.sorted { $0.start > $1.start }
         let byId = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let entries = sorted.map { SessionListEntry(id: $0.id, localDay: Self.localDay($0.start), track: $0.track) }
+        // Each session goes by the saved track its laps are timed at once read (FBBD-453); a listed
+        // session is not recording (the recorder adds it once it ends).
+        let entries = sorted.map {
+            SessionsListKt.sessionListEntry(
+                id: $0.id,
+                localDay: Self.localDay($0.start),
+                recordedTrack: $0.track,
+                facts: rowFacts[$0.id]?.facts,
+                startUtcMillis: Int64(($0.start.timeIntervalSince1970 * 1000).rounded()),
+                recording: false
+            )
+        }
         let listed = SessionsListKt.sessionListDays(entries: entries, today: Self.localDay(Date())) { day in
             Self.dateText(day.int64Value)
         }
@@ -356,7 +369,8 @@ final class SessionsModel {
                 title: day.title,
                 sessions: day.ids.compactMap { byId[$0] },
                 tracks: day.tracks,
-                trackOnRows: day.trackOnRows
+                trackOnRows: day.trackOnRows,
+                trackDays: day.trackDays.map { TrackDayLink(track: $0.track, ids: $0.ids) }
             )
         }
     }

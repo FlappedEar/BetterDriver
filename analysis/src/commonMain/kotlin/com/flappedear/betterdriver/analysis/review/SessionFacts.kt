@@ -3,19 +3,23 @@ package com.flappedear.betterdriver.analysis.review
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.replay.SessionLaps
+import com.flappedear.betterdriver.timing.track.Track
 
 // What a session's row in Sessions says about it (UI-139 C), the same on Android and iOS: "Corolla ·
 // 22 min · 14 laps · Video · OBD · HR" under its time, and its best lap beside it.
 
 /**
  * A session's timed laps and the best one at the saved track it was recorded at, and whether car
- * data (OBD-II) and heart rate were recorded. Unknown until the session has been read.
+ * data (OBD-II) and heart rate were recorded. Unknown until the session has been read. [trackId] and
+ * [trackName]: that saved track (FBBD-453), null when the session is at none.
  */
 data class SessionFacts(
     val laps: Int = 0,
     val bestMillis: Long? = null,
     val obd: Boolean = false,
     val heartRate: Boolean = false,
+    val trackId: String? = null,
+    val trackName: String? = null,
 )
 
 /** The source of the OBD-II channels, and of the heart rate monitor's (HeartRateChannels.SOURCE). */
@@ -35,6 +39,9 @@ fun recordedFacts(data: SessionData): SessionFacts {
     }
     return SessionFacts(obd = ObdSource in found, heartRate = HeartRateSource in found)
 }
+
+/** [this] at the saved [track] its laps are timed at (FBBD-453). */
+fun SessionFacts.atTrack(track: Track): SessionFacts = copy(trackId = track.id, trackName = track.displayName)
 
 /** [this] with the timed laps of [laps] and the best of them. */
 fun SessionFacts.withLaps(laps: SessionLaps): SessionFacts = copy(
