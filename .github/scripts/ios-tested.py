@@ -9,13 +9,15 @@ that only moves betterdriver.version. Examples: the squash of a PR whose base la
 workflow commit, or a release PR that only bumps the version.
 
 Prints the matching job's URL and exits 0, or prints why not and exits 1.
-Usage: ios-tested.py [depth]   (needs gh with GH_TOKEN and a full clone)
+Usage: ios-tested.py [depth]   (needs GH_TOKEN and a full clone)
 """
 import json
 import os
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 
 REPO = os.environ["GITHUB_REPOSITORY"]
 IOS_YML = ".github/workflows/ios.yml"
@@ -26,9 +28,19 @@ def run(*args, check=True):
 
 
 def gh(path):
+    """GET from the GitHub API with GH_TOKEN. Plain urllib: self-hosted Macs may lack the gh CLI
+    (TestFlight 1551 on mbp: "gh: command not found", so the gate ran every UI test)."""
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    req = urllib.request.Request(f"{api}/{path}", headers={
+        "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
     try:
-        return json.loads(run("gh", "api", "-X", "GET", path))
-    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
+        print(f"GitHub API {path}: {e}", file=sys.stderr)
         return None
 
 
