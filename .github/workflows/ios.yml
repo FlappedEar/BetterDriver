@@ -196,16 +196,20 @@ jobs:
         run: echo "${{ steps.sim.outputs.name }}"
       # Only the simulator slice of the core: the tests never run on a device (ios-release.yml
       # builds the device slice). Wrapped as the XCFramework the Xcode project links.
+      # FBBD-457: the app's tests link the optimised (release) core, as TestFlight's build does:
+      # the UI tests spend most of their time in the core (demo sessions, analysis, video), which
+      # the debug build of Kotlin/Native runs several times slower. The core's own tests
+      # (iosSimulatorArm64Test) still run on the debug build.
       - name: Shared core on the iOS simulator
         run: |
           ./gradlew -Pbetterdriver.coreOnly -PiosSimulator=${{ steps.sim.outputs.udid }} \
-            iosSimulatorArm64Test :core-ios:linkDebugFrameworkIosSimulatorArm64 --stacktrace
-          rm -rf core-ios/build/XCFrameworks/debug
+            iosSimulatorArm64Test :core-ios:linkReleaseFrameworkIosSimulatorArm64 --stacktrace
+          rm -rf core-ios/build/XCFrameworks/release
           xcodebuild -create-xcframework \
-            -framework core-ios/build/bin/iosSimulatorArm64/debugFramework/BetterDriverCore.framework \
-            -output core-ios/build/XCFrameworks/debug/BetterDriverCore.xcframework
+            -framework core-ios/build/bin/iosSimulatorArm64/releaseFramework/BetterDriverCore.framework \
+            -output core-ios/build/XCFrameworks/release/BetterDriverCore.xcframework
       - name: Generate the Xcode project
-        run: SKIP_CORE=1 ios/generate.sh
+        run: SKIP_CORE=1 BETTERDRIVER_CORE_BUILD=release ios/generate.sh
       # The full log goes to the artifact; the step log keeps the errors.
       - name: Build the app and its tests
         shell: bash
