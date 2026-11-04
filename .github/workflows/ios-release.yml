@@ -6,8 +6,10 @@ name: iOS release
 # simulator (BetterDriverUITests: fresh install, START with camera, OBD, heart rate and coach on,
 # stop, open the saved session). When ios.yml's full suite already passed on an app identical to
 # the released one (.github/scripts/ios-tested.py, FBBD-457), the gate runs SmokeTests and
-# FirstRunTests on this release build; otherwise every
-# UI test.
+# FirstRunTests on this release build; otherwise every UI test.
+#
+# When GitHub's hosted macOS gives the job no machine (it is cancelled while still queued),
+# ios-release-fallback.yml dispatches this workflow again for the same commit on the Mac minis.
 #
 # Runs after each successful Release (the Android release, same version and commit) and
 # from the Actions tab. Signing is automatic from the App Store Connect API key in the
@@ -24,12 +26,20 @@ on:
         description: 'Runner labels as JSON: "macos-26" (GitHub) or ["self-hosted","bd-mac"] (the Mac minis; the App Store Connect key and the signing certificates are then used on them)'
         required: false
         default: '"macos-26"'
+      sha:
+        description: 'Commit to build (default: the branch tip); ios-release-fallback.yml passes the released commit'
+        required: false
+        default: ''
   # A change to this workflow checks the unsigned release archive; pull requests never upload.
   pull_request:
     paths:
       - ".github/workflows/ios-release.yml"
       - ".github/scripts/ios-tested.py"
       - "ios/ci/**"
+
+# The run's title carries the commit it builds, so ios-release-fallback.yml can build the same one
+# when this run never got a machine.
+run-name: iOS release ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
 
 permissions:
   contents: read
@@ -61,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # The released commit; its commit count (plus 1000, below) is the build number.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-java@v4
         with:

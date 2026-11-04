@@ -1,0 +1,59 @@
+name: iOS release fallback
+
+# FBBD-457: on 4 Nov 2026 GitHub's hosted macOS runners (macos-15, macos-26) handed out no machine
+# for hours, and the queued TestFlight jobs were cancelled after ~15 min without starting (runs
+# 41851537284, 41857456524, 41893794430). When an iOS release run ends cancelled and its TestFlight
+# job never got a runner on hosted macOS, this dispatches iOS release again for the same commit on
+# the Mac minis (["self-hosted","bd-mac"]; the App Store Connect key and the signing certificates
+# are then used there). A run that already asked for the Mac minis is never retried, so this
+# cannot loop; neither is a pull request's run, one cancelled after it started, or one cancelled
+# in the queue before 14 min (somebody cancelled it on purpose).
+on:
+  workflow_run:
+    workflows: [iOS release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  retry:
+    name: TestFlight on the Mac minis
+    if: >-
+      github.event.workflow_run.conclusion == 'cancelled' &&
+      github.event.workflow_run.event != 'pull_request' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Retry on the Mac minis when hosted macOS gave no machine
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs" --jq '.jobs[] | select(.name == "TestFlight")')
+          if [ -z "$job" ]; then
+            echo "No TestFlight job (the run was replaced in the ios-release queue): no retry."; exit 0
+          fi
+          labels=$(echo "$job" | jq -c '.labels')
+          runner=$(echo "$job" | jq -r '.runner_name // ""')
+          queued=$(echo "$job" | jq '((.completed_at | fromdate) - (.created_at | fromdate)) / 60 | floor')
+          echo "TestFlight job: labels $labels, runner '${runner}', ${queued} min from queued to cancelled"
+          if echo "$labels" | jq -e 'index("bd-mac")' > /dev/null; then
+            echo "It already asked for the Mac minis: no retry."; exit 0
+          fi
+          if [ -n "$runner" ]; then
+            echo "It got a machine and was cancelled while running: no retry."; exit 0
+          fi
+          if [ "$queued" -lt 14 ]; then
+            echo "Cancelled after ${queued} min in the queue, before GitHub's ~15 min: somebody cancelled it, no retry."; exit 0
+          fi
+          sha=$(echo "$TITLE" | grep -oE '[0-9a-f]{40}' | head -n 1)
+          if [ -z "$sha" ]; then
+            echo "::error::No commit in the run title '$TITLE'"; exit 1
+          fi
+          echo "Hosted macOS gave no machine: iOS release for $sha on the Mac minis."
+          gh workflow run ios-release.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f runner='["self-hosted","bd-mac"]' -f sha="$sha"
