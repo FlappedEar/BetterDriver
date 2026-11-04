@@ -102,6 +102,13 @@ class PaceTrailTest {
         }
         // Over the line, the lap's trail starts.
         assertTrue(data.paceTrail(lap(2).startMicros + 5_000_000).filterNotNull().size > 2)
+
+        // A session stopped in its first full lap: past the line the trail is drawn, though that lap never finished.
+        val stop = lap(2).startMicros + 20_000_000
+        val cut = sets.filter { it.tMicros <= stop }
+        val short = OverlayData(cut, replayLaps("s", cut, track))
+        assertTrue(short.paceTrail(stop - 1).filterNotNull().size > 2)
+        assertTrue(short.paceTrail(lap(1).startMicros + 10_000_000).isEmpty())
     }
 
     @Test

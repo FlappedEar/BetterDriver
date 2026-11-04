@@ -275,7 +275,8 @@ class OverlayData(
         val beforeLine = when {
             hotlap != null -> sessionMicros < hotlap.lap.startMicros
             traces.isEmpty() -> false
-            else -> started == null || started.lap.kind == LapKind.Out
+            // The out lap until its end only: a session stopped before its first full lap has no later trace.
+            else -> started == null || started.lap.kind == LapKind.Out && sessionMicros < started.lap.endMicros
         }
         if (beforeLine) return emptyList()
         val trace = hotlap
