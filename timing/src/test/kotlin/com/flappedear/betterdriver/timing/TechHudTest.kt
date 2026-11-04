@@ -148,6 +148,23 @@ class TechHudTest {
     }
 
     @Test
+    fun `an imported RaceChrono session shows its strap's heart rate, a 0 is no beat`() {
+        // FBBD-458: RaceChrono exports the strap as "heart_rate-hrm" (the Jastrząb demo sessions).
+        val drive = circuit.drive(listOf(1.0))
+        val channels = listOf(ChannelDef(330, "heart_rate-hrm", "", "vbo", 0))
+        val half = drive.fixes[drive.fixes.size / 2].tMicros
+        val sets = session(drive) { t -> listOf(ChannelValue(330, if (t < half) 0.0 else 135.0)) }
+        val data = OverlayData(sets, null, channels = channels)
+        assertEquals(setOf(CarValue.HeartRate), data.carValues)
+        assertTrue(HudWidget.HeartRate in hudWidgets(data))
+        assertEquals(135.0, data.at(drive.fixes.last().tMicros).car.heartRate)
+        assertNull(data.at(drive.fixes[10].tMicros).car.heartRate, "a strap's 0 is no beat, not 0 bpm")
+
+        val noBeat = OverlayData(session(drive) { listOf(ChannelValue(330, 0.0)) }, null, channels = channels)
+        assertTrue(HudWidget.HeartRate !in hudWidgets(noBeat), "only zeros: no heart rate, no widget")
+    }
+
+    @Test
     fun `a temperature polled every 5 s is shown between readings, the engine speed is not held that long`() {
         val drive = circuit.drive(listOf(1.0))
         val channels = listOf(

@@ -344,7 +344,8 @@ private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<Car
     val samples = HashMap<Int, ArrayList<Pair<Long, Double>>>()
     for (s in sorted) {
         for (v in s.values) {
-            if (v.channelId in byId && v.value.isFinite()) {
+            val values = byId[v.channelId] ?: continue
+            if (v.value.isFinite() && !(v.value == 0.0 && values.all { it.zeroIsNone })) {
                 samples.getOrPut(v.channelId) { ArrayList() } += s.tMicros to v.value
             }
         }
