@@ -56,7 +56,8 @@ final class ObdPageModel: ObservableObject {
             scanning = false
             return
         }
-        let setup = SettingsModel.shared.setup
+        // Outside a session every listed adapter, whatever the list at START chose (FBBD-446), as Android.
+        let setup = SettingsModel.shared.setup.chooseCarData(id: nil)
         let adapters = setup.active().carData.map { "\($0.id) \($0.address ?? "")" }
         if let open = link, adapters != linkedTo {
             open.stop()
@@ -107,7 +108,9 @@ struct ObdContent: View {
 
     var body: some View {
         // Only listed adapters read the car (FBBD-349), as on Android: with none, the page says so.
-        let adapter = settings.setup.active().obdShownFor(adapter: model.status?.adapter)
+        // During a session the session's adapter; outside one every listed one (FBBD-446).
+        let setup = model.recording ? settings.setup : settings.setup.chooseCarData(id: nil)
+        let adapter = setup.active().obdShownFor(adapter: model.status?.adapter)
         let name = adapter?.name ?? "OBD adapter"
         let wifi = adapter?.modelName == ModelName.obdWifi
         if adapter == nil {

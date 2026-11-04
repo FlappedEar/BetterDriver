@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -19,44 +20,49 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.flappedear.betterdriver.setup.Equipment
-import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
+import com.flappedear.betterdriver.setup.StartGroup
+import com.flappedear.betterdriver.setup.StartRow
+import com.flappedear.betterdriver.setup.chooseAtStart
+import com.flappedear.betterdriver.setup.startGroups
 
-private enum class Picker { Car, Gnss }
+/** The sheet's own start button: the ring on Drive opens the sheet, this starts the session. */
+const val StartSessionLabel = "Start session"
 
 /**
- * "This session" on home (UI-36 option A): the car, the GNSS receiver and a switch per camera.
- * Track-screen tiles are changed on the track screen (UI-123 B). The last choice is kept, so on a normal
- * day Arek only presses START. A camera turned off here does not start. While a session starts or
- * records the card is [locked]: it shows what the running session uses and nothing can change.
- * Without camera access ([cameraAllowed] false) the phone camera says so instead of silently not recording.
+ * The list at START (FBBD-446, UI-311 A): the car, then every item listed in Settings › Equipment,
+ * grouped, each in the same row: its name, whether it is in range now ([reach], by item id) and what
+ * it is, and its choice. Where one item records (receiver, car data, heart rate, tyres) it is one of
+ * the group or None; each camera has a switch. A camera's video mode is shown and changed in Settings
+ * › Equipment (UI-312 B). The choice is kept for the next session (UI-313 A), so on a normal day Arek
+ * only presses Start. Without camera access ([cameraAllowed] false) the phone camera says so instead
+ * of silently not recording. [onStart] null leaves the start button out.
  */
+@Suppress("LongParameterList") // The setup, how it changes, what is in range, and the start.
 @Composable
 internal fun SessionCard(
     setup: Setup,
     actions: SessionCardActions,
-    locked: Boolean = false,
     cameraAllowed: Boolean = true,
+    reach: Map<String, Reach> = emptyMap(),
+    onStart: (() -> Unit)? = null,
 ) {
     val active = setup.active()
-    var picker by rememberSaveable { mutableStateOf<Picker?>(null) }
-    ShellCard {
-        SectionLabel("This session")
+    var pickingCar by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("This session", style = MaterialTheme.typography.titleLarge)
         val car = active.car?.name ?: if (setup.cars.isEmpty()) "Add a car" else "None"
-        ListRow("Car", car, divider = false, onClick = { picker = Picker.Car }.takeUnless { locked })
-        ListRow("GNSS", active.gnss?.name ?: "None", onClick = { picker = Picker.Gnss }.takeUnless { locked })
-        setup.ofKind(EquipmentKind.CAMERA).forEach { cam ->
-            val on = cam.id in setup.session.cameraIds
-            ListRow(cam.name, cameraNote(cam, cameraAllowed)) {
-                Switch(
-                    checked = on,
-                    onCheckedChange = { v -> actions.update { it.useCamera(cam.id, v) } },
-                    enabled = !locked,
-                )
-            }
+        ShellCard { ListRow("Car", car, divider = false, onClick = { pickingCar = true }) }
+        startGroups(setup).forEach { group ->
+            SectionLabel(group.title, Modifier.padding(top = 4.dp, start = 4.dp))
+            val noAccess = setup.equipment.filter { !cameraAllowed && it.model == EquipmentModel.PHONE_CAMERA }
+            ShellCard { StartGroupRows(group, reach, noAccess.map { it.id }.toSet(), actions) }
+        }
+        if (active.gnss == null) {
+            ShellCard { AddRow("Add receiver", actions.onAddReceiver, divider = false) }
         }
         if (!cameraAllowed && active.uses(EquipmentModel.PHONE_CAMERA)) {
             DimText(
@@ -64,58 +70,67 @@ internal fun SessionCard(
                     "Allow it in Settings › App › Run setup again.",
             )
         }
-        if (locked) DimText("Recording. This session's choice is fixed until it stops.")
+        if (onStart != null) {
+            Button(
+                onClick = onStart,
+                enabled = active.gnss != null,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("startSession"),
+            ) { Text(StartSessionLabel, style = MaterialTheme.typography.titleMedium) }
+        }
     }
-    when (picker.takeUnless { locked }) {
-        Picker.Car -> ChoiceDialog(
-            title = "Car",
-            options = setup.cars.map { it.id to it.name },
-            selected = active.car?.id,
-            addLabel = "Add car",
-            onChoose = { id -> actions.update { it.chooseCar(id) } },
-            onAdd = actions.onAddCar,
-            onClose = { picker = null },
-        )
-        Picker.Gnss -> ChoiceDialog(
-            title = "GNSS receiver",
-            options = setup.ofKind(EquipmentKind.GNSS).map { it.id to it.name },
-            selected = active.gnss?.id,
-            addLabel = "Add receiver",
-            onChoose = { id -> actions.update { it.chooseGnss(id) } },
-            onAdd = actions.onAddReceiver,
-            onClose = { picker = null },
-        )
-        null -> Unit
+    if (pickingCar) {
+        CarDialog(setup, actions, onClose = { pickingCar = false })
     }
 }
 
-private fun cameraNote(cam: Equipment, cameraAllowed: Boolean): String? = when {
-    !cam.model.controlledByApp -> "Start by hand"
-    cam.model == EquipmentModel.PHONE_CAMERA && !cameraAllowed -> "No camera access"
-    else -> null
-}
-
-/** A radio list with "None" last and an Add button; choosing closes it. */
-@Suppress("LongParameterList")
 @Composable
-private fun ChoiceDialog(
-    title: String,
-    options: List<Pair<String, String>>,
-    selected: String?,
-    addLabel: String,
-    onChoose: (String?) -> Unit,
-    onAdd: () -> Unit,
-    onClose: () -> Unit,
+private fun StartGroupRows(
+    group: StartGroup,
+    reach: Map<String, Reach>,
+    noCameraAccess: Set<String>,
+    actions: SessionCardActions,
 ) {
+    group.rows.forEachIndexed { i, row ->
+        val choose = { on: Boolean -> actions.update { it.chooseAtStart(group.kind, row.id, on) } }
+        ListRow(
+            row.name,
+            divider = i > 0,
+            onClick = if (group.oneOf) ({ choose(true) }) else null,
+            supporting = rowDetail(row, reach[row.id], noAccess = row.id in noCameraAccess),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                reach[row.id]?.state?.let { StatusDot(it) }
+                if (group.oneOf) {
+                    RadioButton(selected = row.on, onClick = { choose(true) })
+                } else {
+                    Switch(checked = row.on, onCheckedChange = choose)
+                }
+            }
+        }
+    }
+    if (group.oneOf) {
+        val none = { actions.update { it.chooseAtStart(group.kind, null) } }
+        ListRow("None", onClick = none) { RadioButton(selected = group.noneOn, onClick = none) }
+    }
+}
+
+/** What a row says under its name: whether it is in range, then what it is or its video mode. */
+private fun rowDetail(row: StartRow, reach: Reach?, noAccess: Boolean): String {
+    val what = if (noAccess) "No camera access" else row.detail
+    return listOfNotNull(reach?.label?.takeUnless { it == what }, what).joinToString(" · ")
+}
+
+@Composable
+private fun CarDialog(setup: Setup, actions: SessionCardActions, onClose: () -> Unit) {
     AlertDialog(
         onDismissRequest = onClose,
-        title = { Text(title) },
+        title = { Text("Car") },
         text = {
             Column {
-                val all: List<Pair<String?, String>> = options + (null to "None")
+                val all: List<Pair<String?, String>> = setup.cars.map { it.id to it.name } + (null to "None")
                 all.forEach { (id, name) ->
-                    RadioLine(name, selected == id) {
-                        onChoose(id)
+                    RadioLine(name, setup.session.carId == id) {
+                        actions.update { it.chooseCar(id) }
                         onClose()
                     }
                 }
@@ -124,8 +139,8 @@ private fun ChoiceDialog(
         confirmButton = {
             TextButton(onClick = {
                 onClose()
-                onAdd()
-            }) { Text(addLabel) }
+                actions.onAddCar()
+            }) { Text("Add car") }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
     )
