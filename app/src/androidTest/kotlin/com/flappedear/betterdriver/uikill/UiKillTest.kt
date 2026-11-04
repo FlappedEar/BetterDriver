@@ -178,14 +178,15 @@ class UiKillTest {
     }
 
     /**
-     * The track screen with its status strip (GNSS) and recording clock (REC), and the recorder
+     * The track screen with its status strip (the GNSS icon, found by its description) and recording
+     * clock (REC), and the recorder
      * reporting fixes. The strip's values are drawn as number text UiAutomator does not read, so the
      * GNSS state comes from the recorder. Android's first-time "Viewing full screen" hint is dismissed
      * so it is not in the way of the hold.
      */
     private fun waitForTrackScreen() {
         val shown = device.wait(Until.hasObject(By.text("REC")), LoadTimeoutMs) == true &&
-            device.hasObject(By.text("GNSS"))
+            device.hasObject(By.desc("GNSS"))
         check(shown) { "no track screen. ${screen()}" }
         waitForRecorder("live GNSS") { it.live?.gnss == GnssState.Ok }
         device.findObject(By.text("Got it"))?.click()

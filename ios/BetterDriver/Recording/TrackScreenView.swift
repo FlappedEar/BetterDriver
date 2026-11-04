@@ -226,7 +226,8 @@ private struct TopStrip: View {
                             Dot(color: tint)
                             Text(item.label).font(TrackFonts.text(13, .medium)).foregroundStyle(TrackColors.textDim)
                         }
-                        if !item.ok || item.keepValue {
+                        // Only the heart rate keeps its value (Arek 2026-11-03): the rest are icons, amber when wrong.
+                        if item.keepValue {
                             Text(item.value)
                                 .font(TrackFonts.number(15, .semibold))
                                 .foregroundStyle(item.ok ? TrackColors.text : TrackColors.warning)

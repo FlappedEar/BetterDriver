@@ -55,6 +55,11 @@ final class TpmsBridgeLink: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         queue.async { self.end() }
     }
 
+    /// The bridge for the track screen's status strip (FBBD-444); nil while it shows nothing.
+    var status: TpmsStatus? {
+        queue.sync { session?.status() }
+    }
+
     private func end() {
         running = false
         watch?.cancel()

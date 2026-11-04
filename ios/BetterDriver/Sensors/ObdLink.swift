@@ -6,6 +6,33 @@ import Network
 /// How long an adapter gets to connect and turn its notifications on, as on Android (BleObdTarget).
 private let setupTimeoutSeconds = 15.0
 
+/// The choices ObdLink makes on CoreBluetooth's connection events (FBBD-271), apart from it so the
+/// tests can check them without Bluetooth (the simulator has none).
+enum ObdConnectRules {
+    /// Whether a setup that timed out leaves its connect asked instead of cancelling it: only one that
+    /// never reached the adapter ([linkUp] false, CoreBluetooth still [connecting]) while the link
+    /// runs. CoreBluetooth's connect never times out and completes the moment the adapter advertises,
+    /// also with the phone locked, when a scan finds nothing; cancelled, an adapter back during the
+    /// retry wait (up to 20 s) is only tried at the next round. One that connected and stalled in
+    /// setup is cancelled as before, so the next round starts it afresh.
+    static func keepsConnectAsked(linkUp: Bool, connecting: Bool, running: Bool) -> Bool {
+        running && !linkUp && connecting
+    }
+
+    /// Whether a didDisconnect for the peripheral of a port that has not connected yet ([linkUp]
+    /// false) is the end of an earlier connection to it: a port closed (Scan car restarts at once)
+    /// and the next one asked to connect before CoreBluetooth reported the cancel. A connect not yet
+    /// made fails by didFailToConnect, never by didDisconnect, so it is not this port's.
+    static func isEarlierConnectionsEnd(linkUp: Bool) -> Bool { !linkUp }
+
+    /// Whether a connect that completed with no port waiting for it is kept for the next round: only
+    /// one left asked after a timeout ([kept]) while the link runs and no other port is connecting or
+    /// open ([portBusy]); any other is cancelled, so the adapter is not held for nobody.
+    static func keepsUnclaimedConnect(kept: Bool, running: Bool, portBusy: Bool) -> Bool {
+        kept && running && !portBusy
+    }
+}
+
 /// OBD-II in a recording on iOS (FBBD-333): the shared ObdFeed reads the car on a thread of its own,
 /// exactly as on Android, over a Bluetooth LE ELM327 (the Vgate vLinker MC+) reached through
 /// CoreBluetooth, or over Wi-Fi to a Wi-Fi ELM327 at 192.168.0.10 port 35000 (the phone joined to its
@@ -27,6 +54,10 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// OBD adapters nearby that Settings › Equipment does not list, logged once each and never tried.
     private var notListed: Set<UUID> = []
     private var port: ObdBlePortLink?
+    /// Listed adapters whose connect a timed-out setup left asked (FBBD-271, [ObdConnectRules]), and
+    /// those of them connected since, kept for the next round's port.
+    private var kept: [UUID: CBPeripheral] = [:]
+    private var keptUp: Set<UUID> = []
     /// When an adapter seen before, advertising again, last ended a retry delay early.
     private var seenRetryAt = Date.distantPast
     /// The Wi-Fi network as iOS reports it: logged, and a network coming back is tried at once.
@@ -94,6 +125,12 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             self.wifi = nil
             self.port?.cancel()
             self.port = nil
+            // A connect left asked would otherwise connect the adapter after the session, for nobody.
+            if self.central?.state == .poweredOn {
+                self.kept.values.forEach { self.central.cancelPeripheralConnection($0) }
+            }
+            self.kept.removeAll()
+            self.keptUp.removeAll()
         }
     }
 
@@ -139,7 +176,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         guard !listed.isEmpty, central?.state == .poweredOn else { return [] }
         var list: [CBPeripheral] = []
         for item in listed {
-            if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
+            if let known = kept[item.id] ?? seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
                 list.append(known)
             }
         }
@@ -166,15 +203,37 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         if central.isScanning { central.stopScan() }
         self.port = port
         port.peripheral.delegate = port
-        log(text: "connecting \(port.peripheral.name ?? "?") \(port.peripheral.identifier.uuidString)")
         port.connectStarted = Date()
+        let id = port.peripheral.identifier
+        kept[id] = nil
+        // A connect left asked that has connected since (FBBD-271): set up at once, no didConnect comes.
+        if keptUp.remove(id) != nil, port.peripheral.state == .connected {
+            log(text: "connected already \(port.peripheral.name ?? "?") \(id.uuidString)")
+            port.connected()
+            return
+        }
+        log(text: "connecting \(port.peripheral.name ?? "?") \(id.uuidString)")
         central.connect(port.peripheral)
     }
 
     fileprivate func disconnect(_ port: ObdBlePortLink) {
         if self.port === port { self.port = nil }
-        central?.cancelPeripheralConnection(port.peripheral)
+        // With Bluetooth off or resetting there is no connection left to cancel (and asking is misuse).
+        if central?.state == .poweredOn { central.cancelPeripheralConnection(port.peripheral) }
         // A failed or ended connection: look for adapters again, the didDisconnect callback no longer will.
+        scan()
+    }
+
+    /// The port's setup timed out (FBBD-271): a connect that never reached the adapter stays asked
+    /// ([ObdConnectRules.keepsConnectAsked]), any other is cancelled as before.
+    fileprivate func timedOut(_ port: ObdBlePortLink) {
+        let p = port.peripheral
+        let keep = ObdConnectRules.keepsConnectAsked(linkUp: port.linkUp, connecting: p.state == .connecting, running: running)
+        guard keep else { return disconnect(port) }
+        if self.port === port { self.port = nil }
+        if kept.updateValue(p, forKey: p.identifier) == nil {
+            log(text: "\(p.name ?? "?") not in range: its connect stays asked, so it connects when it is back")
+        }
         scan()
     }
 
@@ -190,6 +249,15 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             scan()
             feed.retryNow()
         } else {
+            // Bluetooth off, or resetting mid-session (FBBD-271): every connection and connect asked is
+            // gone, and below powered off CoreBluetooth's peripheral objects are no longer valid, so a
+            // round after it is back would connect a stale one and time out every 15 s. The adapters
+            // are found afresh (retrievePeripherals, the scan) once it is on again.
+            seen.removeAll()
+            kept.removeAll()
+            keptUp.removeAll()
+            let port = self.port
+            self.port = nil
             port?.lost(central.state == .unauthorized ? "Bluetooth not allowed" : "Bluetooth off")
         }
     }
@@ -239,19 +307,55 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        guard let port, port.peripheral === peripheral else { return }
-        port.connected()
+        if let port, port.peripheral === peripheral {
+            port.connected()
+            return
+        }
+        // No port waits for it: a connect left asked after a timeout, the adapter back (FBBD-271).
+        // Kept for the next round, which starts now; any other is let go, so the adapter is free.
+        let id = peripheral.identifier
+        if ObdConnectRules.keepsUnclaimedConnect(kept: kept[id] != nil, running: running, portBusy: port != nil) {
+            keptUp.insert(id)
+            log(text: "\(peripheral.name ?? "?") back in range, connected")
+            feed.retryNow()
+        } else {
+            kept[id] = nil
+            central.cancelPeripheralConnection(peripheral)
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        guard let port, port.peripheral === peripheral else { return }
+        guard let port, port.peripheral === peripheral else {
+            forget(peripheral)
+            return
+        }
         port.lost(error?.localizedDescription ?? "connect failed")
+        // The connect stopped the scan; without it an adapter back during the retry wait is not seen.
+        scan()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        guard let port, port.peripheral === peripheral else { return }
+        guard let port, port.peripheral === peripheral else {
+            forget(peripheral)
+            return
+        }
+        // The end of the connection a port closed just before this one asked (Scan car restarts at
+        // once), not this port's: its connect is asked again in case the cancel took it along.
+        if ObdConnectRules.isEarlierConnectionsEnd(linkUp: port.linkUp) {
+            central.connect(peripheral)
+            return
+        }
         self.port = nil
         port.lost(error?.localizedDescription ?? "disconnected")
+        scan()
+    }
+
+    /// A connect left asked that failed, or a kept connection that dropped: no longer kept, looked for again.
+    private func forget(_ peripheral: CBPeripheral) {
+        let id = peripheral.identifier
+        guard kept[id] != nil || keptUp.contains(id) else { return }
+        kept[id] = nil
+        keptUp.remove(id)
         scan()
     }
 }
@@ -273,6 +377,8 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     private var writeCh: CBCharacteristic?
     private var withResponse = true
     private var writePending = false
+    /// CoreBluetooth reported this port's connection made (didConnect, or kept from an earlier connect).
+    fileprivate private(set) var linkUp = false
     private(set) var payload: Int32 = 20
     /// When the connect was asked for, and what setup found, for the log (as Android's MTU line, FBBD-333).
     fileprivate var connectStarted = Date()
@@ -296,7 +402,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
                 if !self.setUp {
                     self.failure = "setup timed out"
                     self.setUp = true
-                    link.disconnect(self)
+                    link.timedOut(self)
                 }
             }
         }
@@ -339,6 +445,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     // MARK: Driven by ObdLink and CoreBluetooth, on the queue
 
     fileprivate func connected() {
+        linkUp = true
         link?.log(text: String(format: "connected in %.1f s, discovering services", Date().timeIntervalSince(connectStarted)))
         peripheral.discoverServices(nil)
     }

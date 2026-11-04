@@ -85,6 +85,7 @@ final class RecordingController: ObservableObject {
     private var tcpGps: GnssTcpLink?
     private var bleGps: GnssBleLink?
     private var imu: PhoneImuLink?
+    private var keepAlive: BackgroundKeepAlive?
     private var camera: PhoneCamera?
     /// The GNSS state at the last refresh, for the lost and back sounds.
     private var lastGnss: GnssState?
@@ -176,6 +177,12 @@ final class RecordingController: ObservableObject {
         session = live
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
+        // Phone GPS keeps the app running in the background itself; every other receiver needs this.
+        if receiver != .phone {
+            let alive = BackgroundKeepAlive()
+            keepAlive = alive
+            alive.start()
+        }
         // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
         // Not with the Demo track, whose made-up drive it would not match (as Android's Sources).
         if receiver != .demoTrack {
@@ -399,6 +406,8 @@ final class RecordingController: ObservableObject {
         bleGps = nil
         listedState = nil
         imu = nil
+        keepAlive?.stop()
+        keepAlive = nil
         camera?.stop()
         camera = nil
         // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
@@ -457,7 +466,8 @@ final class RecordingController: ObservableObject {
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
-            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus,
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, tyres: tyres?.status,
+            camera: cameraStatus,
             tileIds: tileIds, secondTileIds: secondTileIds
         )
         screen = model
@@ -473,7 +483,7 @@ struct TrackScreenModel: Equatable {
         let ok: Bool
         /// An SF Symbol in place of the dot and the label (UI-110 B); the label is then only read out.
         var icon: String? = nil
-        /// The value stays on the quiet strip while ok, as for the heart rate (UI-141 B).
+        /// The value is shown on the strip, only for the heart rate; the rest are icons (Arek 2026-11-03).
         var keepValue = false
         var id: String { label }
     }
@@ -549,35 +559,46 @@ struct TrackScreenModel: Equatable {
     static let radarColumns = 3
 
     static let noValue = TrackTiles.shared.NO_VALUE
+    /// Android's StatusIcon.Gnss (gps_fixed): a crosshair.
+    static let gnssIcon = "scope"
+    /// The car dashboard's tyre pressure symbol, as Android's StatusIcon.Tyre (FBBD-444).
+    static let tyreIcon = "exclamationmark.tirepressure"
     /// A fresh install's main screen: speed, G and four empty slots.
     static let defaultTiles = TrackTiles.shared.ids(setup: SettingsCore.shared.freshSetup(id: "default"), carId: nil, second: false)
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
-    /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
+    /// strap's, when one records (FBBD-333). [tyres] is the TPMS bridge's, while it streams (FBBD-444).
+    /// [camera]: the phone camera's line, when it records video.
     /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot;
     /// [secondTileIds] its second screen.
     init(
         _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
-        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles, secondTileIds: [String] = []
+        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
+        secondTileIds: [String] = []
     ) {
         let live = s.live
         let gnss: Status = switch s.gnss {
-        case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false)
-        case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false)
-        default: Status(label: "GNSS", value: "\(s.shownRateHz) Hz · \(live.sats.map { "\($0.intValue)" } ?? Self.noValue) sats", ok: true)
+        case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false, icon: Self.gnssIcon)
+        case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false, icon: Self.gnssIcon)
+        default: Status(
+            label: "GNSS", value: "\(s.shownRateHz) Hz · \(live.sats.map { "\($0.intValue)" } ?? Self.noValue) sats", ok: true,
+            icon: Self.gnssIcon
+        )
         }
         // The quiet strip (UI-141 B) names the track only when a saved track has no timing.
         let place = s.place.flatMap { name in
-            s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
+            s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false, icon: "flag.fill") : nil
         }
         let obd = obdConnected ? Status(label: "OBD", value: "Connected", ok: true, icon: "car.fill") : nil
         // Heart rate (FBBD-268): shown only while it arrives, the strap's last value, never older than 5 s.
         let heart = heartRate?.bpm.map { bpm in
             Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
         }
+        // The TPMS bridge (FBBD-444): the tyre icon while values arrive, amber with the wheels at fault.
+        let tyre = tyres.map { Status(label: "Tyres", value: $0.value, ok: $0.ok, icon: Self.tyreIcon) }
         // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
-        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
-        status = [place, gnss, video, obd, heart].compactMap { $0 }
+        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok, icon: "video.fill") }
+        status = [place, gnss, video, obd, heart, tyre].compactMap { $0 }
         coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {

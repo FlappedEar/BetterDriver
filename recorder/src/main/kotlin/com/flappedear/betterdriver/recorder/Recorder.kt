@@ -157,6 +157,9 @@ class Recording internal constructor(
 
     val isStopped: Boolean get() = stopped.count == 0L
 
+    /** Tests only: records waiting for the writer, so a fast test producer can keep to what real sources do. */
+    internal val queuedForTest: Int get() = queue.size
+
     internal fun begin(lock: SessionFiles.SessionLock) {
         val input = WriterInput(queue, pendingChannels, dropped, nanoTime, ::nowMicros) { stopIntake() }
         val writer = RecordingWriter(dir, config, storage, input, listeners)

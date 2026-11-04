@@ -142,6 +142,10 @@ class Recording internal constructor(
     @Volatile
     internal var writeDelayMicrosForTest: Int = 0
 
+    /** Free bytes the storage check sees instead of the volume's, so a test can fill the disk on cue. */
+    @Volatile
+    internal var freeBytesForTest: (() -> Long)? = null
+
     /** Tests only: the app is gone; the writer stops between two frames, as the process would. */
     @Volatile
     private var killedForTest = false
@@ -456,7 +460,7 @@ class Recording internal constructor(
         val last = lastStorageCheckMs
         if (last != null && now - last < config.storageCheckIntervalMs) return false
         lastStorageCheckMs = now
-        val free = PosixFiles.usableBytes(dir)
+        val free = freeBytesForTest?.invoke() ?: PosixFiles.usableBytes(dir)
         // From here on every write adds exactly its own frame: a rotation's channel table would eat
         // the space kept for the end record.
         if (free < config.storageStopBytes) rotate = false

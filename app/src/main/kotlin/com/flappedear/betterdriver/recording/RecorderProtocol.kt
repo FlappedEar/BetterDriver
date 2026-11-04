@@ -63,6 +63,10 @@ internal object RecorderProtocol {
     const val KEY_CAMERA_STATUS = "cameraStatus"
     const val KEY_CAMERA_OK = "cameraOk"
 
+    /** The TPMS bridge's status strip line and whether it is fine (FBBD-444); absent while it shows nothing. */
+    const val KEY_TYRES = "tyres"
+    const val KEY_TYRES_OK = "tyresOk"
+
     /**
      * Camera to service: one [com.flappedear.betterdriver.recorder.video.VideoSink] call, in msg.data.
      * Ignored unless [VIDEO_SESSION] is the running session.

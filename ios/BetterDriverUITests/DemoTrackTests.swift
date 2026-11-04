@@ -94,7 +94,9 @@ final class DemoTrackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(times.count, 3, "no lap timed in 6 minutes: \(times.allElementsBoundByIndex.map(\.label))")
 
         // The 3 s hold stops the session; it opens from Sessions.
-        screen.press(forDuration: 4)
+        // In the middle of the screen: the first element with the screen's id can be a status icon at the
+        // screen's very edge, where iOS keeps a touch for its own edge gestures.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 4)
         XCTAssertTrue(start.waitForExistence(timeout: 30), "back on Drive after the stop")
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
         tab("Sessions").tap()

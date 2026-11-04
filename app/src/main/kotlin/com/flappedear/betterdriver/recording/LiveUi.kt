@@ -42,28 +42,33 @@ internal fun shownRateHz(live: LiveSnapshot): Int = if (live.receiverRateHz > 0)
 fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Boolean): TrackScreenState {
     val live = state.live
     val gnss = if (live == null) {
-        StatusItem("GNSS", NoValue, ok = false)
+        StatusItem("GNSS", NoValue, ok = false, icon = StatusIcon.Gnss)
     } else {
         when (live.gnss) {
-            GnssState.Waiting -> StatusItem("GNSS", "Waiting", ok = false)
-            GnssState.Lost -> StatusItem("GNSS", "Lost", ok = false)
-            GnssState.Ok -> StatusItem("GNSS", "${shownRateHz(live)} Hz · ${live.sats ?: NoValue} sats")
+            GnssState.Waiting -> StatusItem("GNSS", "Waiting", ok = false, icon = StatusIcon.Gnss)
+            GnssState.Lost -> StatusItem("GNSS", "Lost", ok = false, icon = StatusIcon.Gnss)
+            GnssState.Ok ->
+                StatusItem("GNSS", "${shownRateHz(live)} Hz · ${live.sats ?: NoValue} sats", icon = StatusIcon.Gnss)
         }
     }
     val timing = state.timing
     val sources = TileSources(live, timing, receiverHasG)
     // The quiet strip (UI-141 B) names the track only when something is wrong there: a saved track
     // without timing, in amber. A circuit from the built-in list is only where the car is, not a problem.
-    val place = state.place?.takeIf { state.placeSaved && timing == null }?.let { StatusItem("Track", it, ok = false) }
+    val place = state.place?.takeIf { state.placeSaved && timing == null }
+        ?.let { StatusItem("Track", it, ok = false, icon = StatusIcon.Track) }
+    // GNSS and camera as icons, as OBD and heart rate (Arek 2026-11-03: fewer words on the strip).
     // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
-    val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
+    val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok, icon = StatusIcon.Camera) }
     // OBD and heart rate (FBBD-268): an icon and a value, shown only while their data arrives (UI-110 B,
     // UI-111 B, UI-112 A). The heart rate is the strap's last value, never older than 5 s.
     val obd = state.obd?.takeIf { it.state == ObdLinkState.Connected }
         ?.let { StatusItem("OBD", "Connected", icon = StatusIcon.Car) }
     val heart = state.heartRate?.bpm?.let { StatusItem("Heart rate", "$it", icon = StatusIcon.Heart, keepValue = true) }
+    // The TPMS bridge (FBBD-444): the tyre icon while values arrive, amber with the wheels at fault.
+    val tyres = state.tyres?.let { StatusItem("Tyres", it.value, ok = it.ok, icon = StatusIcon.Tyre) }
     val screen = TrackScreenState(
-        status = listOfNotNull(place, gnss, camera, obd, heart),
+        status = listOfNotNull(place, gnss, camera, obd, heart, tyres),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,
