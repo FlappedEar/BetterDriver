@@ -53,6 +53,28 @@ final class StartListUiTests: XCTestCase {
         XCTAssertFalse(row("start.HEART_RATE.Strap A").isSelected)
     }
 
+    /// Two sessions back to back, as on a track day (FBBD-456): after a stop, one tap on START opens the
+    /// sheet again, without closing the app.
+    func testTwoSessionsBackToBack() throws {
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad has no Drive tab")
+        openSheet()
+        pickSimulated()
+        record()
+        // The track screen's slide away ends within a second; a person taps after it.
+        sleep(2)
+        let start = app.buttons["startButton"]
+        start.tap()
+        allowSystemAlerts()
+        let sheet = app.descendants(matching: .any)["receiverSheet"]
+        if !sheet.waitForExistence(timeout: 8) {
+            print("START LIST app:\n\(app.debugDescription)")
+            let tree = app.debugDescription.split(separator: "\n").prefix(40).joined(separator: " / ")
+            XCTFail("one START tap after a stop opens no sheet; START value '\(start.value as? String ?? "")', hittable \(start.isHittable), windows \(app.windows.count), sheets \(app.sheets.count); on screen: \(onScreen()); tree: \(tree)")
+        }
+        pickSimulated()
+        record()
+    }
+
     private var launched = false
 
     private func openSheet() {
@@ -132,8 +154,15 @@ final class StartListUiTests: XCTestCase {
             XCTAssertEqual(app.state, .runningForeground, "the app is still running while recording")
         }
         XCTAssertTrue(screen.exists, "still recording after 10 s")
-        screen.press(forDuration: 4)
-        XCTAssertTrue(app.buttons["startButton"].waitForExistence(timeout: 20), "back on Drive after the stop")
+        // The hold at the middle of the window, as SmokeTests: in landscape an element's own centre can
+        // be outside the turned screen, and the press then never reaches the track screen.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 4)
+        // START is under the track screen all along, so the stop is seen by the track screen going away.
+        let start = app.buttons["startButton"]
+        if !screen.waitForNonExistence(timeout: 20) {
+            XCTFail("the track screen after the 4 s hold; START value '\(start.value as? String ?? "")'")
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 20), "back on Drive after the stop")
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
     }
 
