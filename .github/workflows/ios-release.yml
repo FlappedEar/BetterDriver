@@ -4,8 +4,9 @@ name: iOS release
 #
 # Gate: nothing is archived or uploaded unless the UI smoke test passes first on an iPhone
 # simulator (BetterDriverUITests: fresh install, START with camera, OBD, heart rate and coach on,
-# stop, open the saved session). When ios.yml's full suite already passed on the released tree
-# (FBBD-457), the gate runs SmokeTests and FirstRunTests on this release build; otherwise every
+# stop, open the saved session). When ios.yml's full suite already passed on an app identical to
+# the released one (.github/scripts/ios-tested.py, FBBD-457), the gate runs SmokeTests and
+# FirstRunTests on this release build; otherwise every
 # UI test.
 #
 # Runs after each successful Release (the Android release, same version and commit) and
@@ -27,6 +28,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/ios-release.yml"
+      - ".github/scripts/ios-tested.py"
       - "ios/ci/**"
 
 permissions:
@@ -115,30 +117,20 @@ jobs:
         env:
           BETTERDRIVER_CORE_BUILD: release
         run: ios/generate.sh
-      # FBBD-457: ios.yml's full suite (iPad and iPhone, every UI test) names the tree it passed
-      # on in its "iOS passed (tree X)" job, on the released commit's main run or on the head of
-      # the pull request it came from. When it passed on this exact tree, the gate runs only the
-      # smoke and first-run tests on this release build instead of every UI test again (~50 min).
-      - name: iOS CI on this tree
+      # FBBD-457: ios.yml's full suite (iPad and iPhone, every UI test) ends with an "iOS passed
+      # (tree X)" job. When it passed on a recent main commit or merged pull request head that
+      # differs from this commit only outside ios.yml's path filter (docs, workflows, Android-only
+      # code, a version-only gradle.properties bump), the gate runs only the smoke and first-run
+      # tests on this release build instead of every UI test again (~35 min). Before, the tree had
+      # to match exactly: TestFlight 1550 ran the full suite because #547's base lacked a docs and
+      # a workflow commit.
+      - name: iOS CI on this app
         id: tested
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sha=$(git rev-parse HEAD)
-          tree=$(git rev-parse 'HEAD^{tree}')
-          passed=false
-          heads=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" --jq '.[] | select(.merged_at != null) | .head.sha' || true)
-          for commit in $sha $heads; do
-            url=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$commit/check-runs" -f check_name="iOS passed (tree $tree)" \
-              --jq '[.check_runs[] | select(.conclusion == "success")][0].html_url // empty' || true)
-            if [ -n "$url" ]; then
-              echo "iOS CI passed on tree $tree: $url"
-              passed=true
-              break
-            fi
-          done
-          if [ "$passed" = false ]; then echo "No iOS CI pass on tree $tree: the gate runs every UI test."; fi
+          if python3 .github/scripts/ios-tested.py; then passed=true; else passed=false; echo "The gate runs every UI test."; fi
           echo "passed=$passed" >> "$GITHUB_OUTPUT"
       - name: Smoke test on the iPhone simulator (gate)
         shell: bash
