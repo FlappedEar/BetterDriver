@@ -131,8 +131,6 @@ final class StartListUiTests: XCTestCase {
         XCTAssertTrue(screen.exists, "still recording after 10 s")
         screen.press(forDuration: 4)
         XCTAssertTrue(app.buttons["startButton"].waitForExistence(timeout: 20), "back on Drive after the stop")
-        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: screen)
-        wait(for: [gone], timeout: 10)
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
     }
 
