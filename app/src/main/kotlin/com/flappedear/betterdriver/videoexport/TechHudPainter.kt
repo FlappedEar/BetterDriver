@@ -234,7 +234,9 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
 
         val bottom = b.bottom - p * 0.9f
         setText(semibold, h * 0.1f, Dim)
-        val best = data.bestLapMicros?.let(::lapTime) ?: Dash
+        // The best lap so far (FBBD-449); a composite lap compares with the session's best.
+        val bestMicros = if (optimal != null) data.bestLapMicros else f.bestLapMicros
+        val best = bestMicros?.let(::lapTime) ?: Dash
         val x = textBottom(c, "BEST ", b.left + p, bottom, semibold)
         semibold.color = Text
         textBottom(c, best, x, bottom, semibold)

@@ -306,15 +306,18 @@ class PointToPointTest {
         val data = OverlayData(sets, laps)
         assertTrue(data.pointToPoint)
 
-        // Part way up run 1: the run, its time and the delta to run 2, the best.
+        // Part way up run 1: the run and its time; no delta, as no run was timed before it (FBBD-449).
         val inRun = assertNotNull(data.at(sectors[0].roundToLong()).lap)
         assertEquals(1, inRun.number)
         assertEquals(LapKind.Timed, inRun.kind)
         assertFalse(inRun.isBest)
         assertEquals(sectors[0] - starts[0], inRun.lapMicros.toDouble(), 2_000.0)
-        val gap = (sectors[0] - starts[0]) - (sectors[1] - starts[1])
-        assertEquals(gap, assertNotNull(inRun.deltaMicros).toDouble(), 30_000.0)
-        assertTrue(assertNotNull(data.at(sectors[1].roundToLong()).lap).isBest)
+        assertNull(inRun.deltaMicros)
+        // Part way up run 2, the best: its gain on run 1, the best before it.
+        val bestRun = assertNotNull(data.at(sectors[1].roundToLong()).lap)
+        assertTrue(bestRun.isBest)
+        val gap = (sectors[1] - starts[1]) - (sectors[0] - starts[0])
+        assertEquals(gap, assertNotNull(bestRun.deltaMicros).toDouble(), 30_000.0)
 
         // Before the first run, on the drive back and after the last finish: no run, as on the track screen.
         assertNull(data.at(starts[0].roundToLong() - 1_000_000).lap)
