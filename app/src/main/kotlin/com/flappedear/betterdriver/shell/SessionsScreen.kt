@@ -133,9 +133,9 @@ fun SessionsScreen(
             LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 val byId = sessions.associateBy { it.id }
                 // The days, their headings and whether a card names its track come from the shared core (FBBD-360).
-                sessionDays(sessions).forEach { day ->
+                sessionDays(sessions, facts).forEach { day ->
                     val list = day.ids.map(byId::getValue)
-                    item(key = "day-${day.localDay}") { DayHeading(day, list, onTrackDay, facts) }
+                    item(key = "day-${day.localDay}") { DayHeading(day, onTrackDay, facts) }
                     // Two session cards a row (UI-308 A); the track on each when the day had more than one.
                     val oneTrack = !day.trackOnRows
                     items(list.chunked(CardsPerRow), key = { "row-" + it.first().id }) { pair ->
@@ -156,7 +156,11 @@ fun SessionsScreen(
                                     onAnalyse = { onAnalyse(s) },
                                     onActions = { actionsFor = s.id },
                                     modifier = Modifier.weight(1f),
-                                    title = rowTitle(s, withTrack = !oneTrack),
+                                    title = rowTitle(
+                                        s,
+                                        withTrack = !oneTrack,
+                                        track = facts[s.id]?.trackName ?: s.info.track,
+                                    ),
                                 )
                             }
                             if (pair.size < CardsPerRow) Spacer(Modifier.weight(1f))
@@ -246,10 +250,18 @@ private val TimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault(
 /** The test tag of the Sessions row of session [id]: tests find a row by it, not by its time text. */
 internal fun sessionRowTag(id: String) = "session-row-$id"
 
-/** "16:23 · Silesia Ring": when the session started, and where ([withTrack]; "16:23" without). */
-internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault(), withTrack: Boolean = true): String {
+/**
+ * "16:23 · Silesia Ring": when the session started, and where ([withTrack]; "16:23" without). [track]:
+ * the saved track its laps are timed at once read, as the day groups it (FBBD-453).
+ */
+internal fun rowTitle(
+    s: SessionSummary,
+    zone: ZoneId = ZoneId.systemDefault(),
+    withTrack: Boolean = true,
+    track: String = s.info.track,
+): String {
     val time = TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
-    return sessionRowTitle(time, s.info.track, withTrack)
+    return sessionRowTitle(time, track, withTrack)
 }
 
 /** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded (shared with iOS). */
