@@ -67,6 +67,8 @@ class LapNumbersTest {
         val pickedBest = picker.laps.single { it.number == picker.bestNumber }
         assertEquals("Lap ${best.number}", pickedBest.name, asset)
         assertEquals("Out lap", picker.laps.first().name)
+        // Opened on video, a picked lap keeps its name (FBBD-450).
+        assertEquals(pickedBest.name, pickedBest.onVideo().name)
     }
 
     @Test

@@ -44,7 +44,7 @@ class PickerLap(
     ).joinToString(" · ")
 
     /** The lap with its session's video, for the lap review. */
-    fun onVideo(): VideoLap = VideoLap(trace, video)
+    fun onVideo(): VideoLap = VideoLap(trace, video, pointToPoint)
 }
 
 /** One session's laps at a track; [bestNumber] is its fastest timed lap. */
