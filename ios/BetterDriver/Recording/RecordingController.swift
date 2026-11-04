@@ -85,6 +85,7 @@ final class RecordingController: ObservableObject {
     private var tcpGps: GnssTcpLink?
     private var bleGps: GnssBleLink?
     private var imu: PhoneImuLink?
+    private var keepAlive: BackgroundKeepAlive?
     private var camera: PhoneCamera?
     /// The GNSS state at the last refresh, for the lost and back sounds.
     private var lastGnss: GnssState?
@@ -176,6 +177,12 @@ final class RecordingController: ObservableObject {
         session = live
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
+        // Phone GPS keeps the app running in the background itself; every other receiver needs this.
+        if receiver != .phone {
+            let alive = BackgroundKeepAlive()
+            keepAlive = alive
+            alive.start()
+        }
         // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
         // Not with the Demo track, whose made-up drive it would not match (as Android's Sources).
         if receiver != .demoTrack {
@@ -399,6 +406,8 @@ final class RecordingController: ObservableObject {
         bleGps = nil
         listedState = nil
         imu = nil
+        keepAlive?.stop()
+        keepAlive = nil
         camera?.stop()
         camera = nil
         // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
