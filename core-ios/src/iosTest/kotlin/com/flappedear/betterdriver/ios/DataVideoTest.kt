@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.CarFrame
 import com.flappedear.betterdriver.timing.overlay.GForce
@@ -15,6 +16,8 @@ import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
+import com.flappedear.betterdriver.timing.overlay.Pace
+import com.flappedear.betterdriver.timing.overlay.PaceRun
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
@@ -235,6 +238,25 @@ class DataVideoTest {
         assertFalse(behind.deltaAhead)
         val none = plain.asComposite(text.copy(deltaSeconds = null), null)
         assertNull(none.deltaText)
+    }
+
+    @Test
+    fun theMapTrailIsColouredByPaceExceptOnACompositeLap() {
+        val ahead = PaceRun(listOf(Xy(0.0, 0.0), Xy(1.0, 0.0)), Pace.Ahead)
+        val behind = PaceRun(listOf(Xy(1.0, 0.0), Xy(2.0, 0.0)), Pace.Behind)
+        val single = PaceRun(listOf(Xy(5.0, 0.0), Xy(6.0, 0.0)), null)
+        val frame = OverlayFrame(100.0, null, null, null)
+        val m = HudMoment(
+            frame, emptyList(), emptyList(), null, false,
+            trailRuns = listOf(ahead, behind, single).map(::HudTrailRun),
+        )
+        assertEquals(listOf(true, true, false), m.trailRuns.map { it.paced })
+        assertEquals(listOf(true, false, false), m.trailRuns.map { it.ahead })
+        assertEquals(listOf(2.0, 0.0), m.trailRuns[1].points.map { it.x }.reversed())
+        val text = OptimalOverlayText(listOf("LAP 5"), 42_500_000, -0.31)
+        val composite = m.asComposite(text, null)
+        assertEquals(3, composite.trailRuns.size)
+        assertTrue(composite.trailRuns.none { it.paced })
     }
 
     private companion object {

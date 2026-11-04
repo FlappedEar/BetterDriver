@@ -10,6 +10,8 @@ import com.flappedear.betterdriver.timing.overlay.HudRowSpec
 import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
+import com.flappedear.betterdriver.timing.overlay.Pace
+import com.flappedear.betterdriver.timing.overlay.PaceRun
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.gearText
@@ -40,13 +42,22 @@ class HudPlace(val widget: HudWidget, val box: Box, val stack: StackPosition)
 /** Rows [top] to [bottom] of the picture, in pixels. */
 class HudSpan(val top: Int, val bottom: Int)
 
+/**
+ * A stretch of the map's trail drawn in one colour (FBBD-451), as Android's TechHudPainter: with
+ * [paced], green when [ahead] of the best lap before this one, else orange; without, amber.
+ */
+class HudTrailRun internal constructor(val points: List<Xy>, val paced: Boolean, val ahead: Boolean) {
+    internal constructor(run: PaceRun) : this(run.points, run.pace != null, run.pace == Pace.Ahead)
+}
+
 /** A dot of the radar's last second: the G then, [fade] from near 0 (oldest) to near 1. */
 class HudRadarDot(val g: GForce, val fade: Float)
 
 /**
  * What the Tech HUD shows at one moment (FBBD-347), with the texts as Android's TechHudPainter writes
  * them; a value the session has none of is null, its text a dash. [trail] is the map's trail of the
- * lap so far, in runs without gaps; [radar] the G radar's last second. With [optimal] (a composite
+ * lap so far, in runs without gaps, and [trailRuns] the same split by pace (FBBD-451); [radar] the G
+ * radar's last second. With [optimal] (a composite
  * lap's video, FBBD-163, iOS FBBD-370) the lap tile shows the lap the part comes from over the
  * theoretical lap's running time and its gain on the fastest lap, as Android's TechHudPainter.
  */
@@ -57,6 +68,7 @@ class HudMoment internal constructor(
     private val bestLapMicros: Long?,
     private val pointToPoint: Boolean,
     private val optimal: OptimalOverlayText? = null,
+    val trailRuns: List<HudTrailRun> = emptyList(),
 ) {
     private val car = frame.car
     private val lap = frame.lap
@@ -99,9 +111,15 @@ class HudMoment internal constructor(
     val deltaText: String? = deltaSeconds?.let(::lapDelta)
     val deltaAhead: Boolean = (deltaSeconds ?: 0.0) <= 0.0
 
-    /** This moment with a composite lap's tile (FBBD-370), its BEST the session's [sessionBestMicros] (FBBD-449). */
+    /**
+     * This moment with a composite lap's tile (FBBD-370), its BEST the session's [sessionBestMicros]
+     * (FBBD-449), its trail in one colour (FBBD-451).
+     */
     internal fun asComposite(text: OptimalOverlayText, sessionBestMicros: Long?): HudMoment =
-        HudMoment(frame, trail, radar, sessionBestMicros, pointToPoint, text)
+        HudMoment(
+            frame, trail, radar, sessionBestMicros, pointToPoint, text,
+            trailRuns.map { HudTrailRun(it.points, paced = false, ahead = false) },
+        )
 
     /** "LAP 7" over the map; null outside a lap. */
     val mapLap: String? = lap?.let { "$lapCaption ${it.number}" }
