@@ -127,10 +127,12 @@ final class DataVideoTests: XCTestCase {
         keep("No video entry points in the session")
     }
 
-    /// Waits until [element]'s label holds [text].
+    /// Waits until [element]'s label holds [text]. The row's facts are read off the main queue for every
+    /// demo session (the Silesia one is 47 min): 120 s as the other waits here, since 60 s ran out on a
+    /// runner shared with a release build (PR #549, the label held "18 laps" just after).
     private func waitForLabel(_ element: XCUIElement, containing text: String) {
         let has = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [has], timeout: 60), .completed, "\(text) not in \(element.label)")
+        XCTAssertEqual(XCTWaiter.wait(for: [has], timeout: 120), .completed, "\(text) not in \(element.label)")
     }
 
     /// The seek bar moves the video (FBBD-428, Arek 2026-11-02: in the app on a Mac AVKit's bar did not
