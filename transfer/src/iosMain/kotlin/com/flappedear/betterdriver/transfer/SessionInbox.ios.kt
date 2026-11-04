@@ -18,6 +18,7 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSUUID
 import platform.posix.FILE
 import platform.posix.fclose
+import platform.posix.fcntl
 import platform.posix.ferror
 import platform.posix.fflush
 import platform.posix.fileno
@@ -247,6 +248,7 @@ private class TrackFiles(root: String) {
  */
 internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     val input = fopen(path, "rb") ?: throw ImportFileException("cannot open $path")
+    noCache(input)
     val buffer = ByteArray(ReadBytes)
     try {
         // A short read is the end of the file, or an error ferror tells apart.
@@ -261,9 +263,24 @@ internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     }
 }
 
+/**
+ * Reads and writes of [file] bypass the system's file cache (F_NOCACHE): a session's video is
+ * copied once. Suspected, not proven: the copy's cached pages counted against the app's memory,
+ * 125-157 MB for a 400 MB video in ShareTests (FBBD-393, Nov 2026), so a 25 min track session's
+ * video could get the app killed.
+ * Best effort: a file system that refuses it is copied as before.
+ */
+private fun noCache(file: CPointer<FILE>) {
+    fcntl(fileno(file), FNoCache, 1)
+}
+
+/** F_NOCACHE in Darwin's sys/fcntl.h. */
+private const val FNoCache = 48
+
 /** A new file at [path], written from Kotlin's bytes with stdio, as [pump] reads (FBBD-393). */
 internal class FileWriter(private val path: String) {
-    private var file: CPointer<FILE>? = fopen(path, "wb") ?: throw ImportFileException("cannot create $path")
+    private var file: CPointer<FILE>? = (fopen(path, "wb") ?: throw ImportFileException("cannot create $path"))
+        .also(::noCache)
 
     fun write(bytes: ByteArray, from: Int, to: Int) {
         if (to <= from) return
