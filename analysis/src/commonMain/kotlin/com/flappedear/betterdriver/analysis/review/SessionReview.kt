@@ -67,12 +67,15 @@ fun savedTrackId(events: List<RecorderEvent>): String? {
  * from the track, or the track was made from it afterwards, FBBD-151). The track's current lines
  * are used, so a line set after the session still works. Android and iOS pick it the same way.
  */
-@Suppress("ReturnCount")
-fun trackFor(data: SessionData, saved: List<Track>): Track? {
-    val withLine = saved.filter { it.timeable }
-    savedTrackId(data.events)?.let { id -> withLine.firstOrNull { it.id == id }?.let { return it } }
-    return trackAlong(sessionPositions(data), withLine)
-}
+fun trackFor(data: SessionData, saved: List<Track>): Track? =
+    recordedTrack(data, saved) ?: trackAlong(sessionPositions(data), saved.filter { it.timeable })
+
+/**
+ * The saved track with a line that [data] recorded when it started, or null: [trackFor]'s first
+ * choice, from the session's events alone, so a session read without its samples is enough (FBBD-393).
+ */
+fun recordedTrack(data: SessionData, saved: List<Track>): Track? =
+    savedTrackId(data.events)?.let { id -> saved.firstOrNull { it.timeable && it.id == id } }
 
 /** The session's positions in time order; fixes a receiver reports without a position are left out. */
 fun sessionPositions(data: SessionData): Sequence<GeoPoint> = sessionFixes(data).asSequence()
