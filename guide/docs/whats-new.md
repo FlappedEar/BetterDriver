@@ -13,6 +13,12 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.4
+
+- iPhone: the chosen GPS receiver, OBD adapter, heart-rate strap and tyre bridge stay connected from the moment they are chosen until the app closes.
+- iPhone **START** sheet: a picked GPS receiver no longer deselects itself a few seconds later.
+- iPhone: the app log records whether a share (AirDrop, Files) completed, was cancelled or failed.
+
 ## 1.33.3
 
 - iPhone: phone video is written without movie fragments again, as before the failed video files of 3 Nov.
