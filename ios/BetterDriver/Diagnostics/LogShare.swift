@@ -89,9 +89,24 @@ enum LogShare {
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
             popover.permittedArrowDirections = []
         }
-        top.present(sheet, animated: true)
         let more = urls.count > 1 ? " and \(urls.count - 1) more" : ""
-        AppLog.i(tag, "share sheet shown for \(first.lastPathComponent)\(more)")
+        let name = first.lastPathComponent
+        let shown = Date()
+        // The result is logged too, so a drive log says whether the AirDrop to the iPad went through
+        // (FBBD-462; 5 Nov log: only "shown" was in it; the 8 GB AirDrop's result was only in the system log).
+        sheet.completionWithItemsHandler = { activity, completed, _, error in
+            AppLog.i(tag, resultLine(name: name, activity: activity?.rawValue, completed: completed,
+                                     error: error, seconds: Date().timeIntervalSince(shown)))
+        }
+        top.present(sheet, animated: true)
+        AppLog.i(tag, "share sheet shown for \(name)\(more)")
+    }
+
+    /// The line logged when the share sheet closes: where it went (AirDrop, Files…), done or cancelled.
+    static func resultLine(name: String, activity: String?, completed: Bool, error: Error?, seconds: TimeInterval) -> String {
+        let to = activity.map { $0.replacingOccurrences(of: "com.apple.UIKit.activity.", with: "") } ?? "none"
+        let outcome = error.map { "failed: \($0.localizedDescription)" } ?? (completed ? "completed" : "cancelled")
+        return "share of \(name) \(outcome), to \(to), after \(String(format: "%.0f", seconds)) s"
     }
 
     private static let tag = "DebugLogs"
