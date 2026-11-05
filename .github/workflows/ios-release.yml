@@ -131,7 +131,11 @@ jobs:
           # Connect key. Point Python at certifi's bundle for every later step.
           python3 -m pip install --quiet --break-system-packages certifi
           echo "SSL_CERT_FILE=$(python3 -m certifi)" >> "$GITHUB_ENV"
-          python3 -c 'import urllib.request; urllib.request.urlopen("https://api.github.com", timeout=30); print("Python HTTPS ok")'
+          # TLS check only: any HTTP answer (a 403 rate limit too) means the certificate verified.
+          python3 -c 'import urllib.request, urllib.error
+          try: urllib.request.urlopen("https://api.github.com", timeout=30)
+          except urllib.error.HTTPError: pass
+          print("Python HTTPS ok")'
       - name: Shared core (release) and the Xcode project
         env:
           BETTERDRIVER_CORE_BUILD: release
