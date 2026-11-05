@@ -14,24 +14,24 @@ post-release PR, or with the next PR). A new page gets a row; a deleted page los
 
 | Page id | Title | Checked at |
 |---|---|---|
-| 12648561 | BetterDriver Home | 1.33.5 |
-| 12976129 | BetterDriver status | 1.33.5 |
-| 16482306 | What blocks 1.0 | 1.33.5 |
-| 14483457 | BetterDriver plan of record: closed-loop coach | 1.33.5 |
-| 32505866 | Getting faster loop (line, coach, 3D, proof) | 1.33.5 |
-| 15007745 | BetterDriver validation without test drives | 1.33.5 |
-| 36372481 | iOS / iPadOS app plan | 1.33.5 |
-| 39682049 | Android and iOS feature parity | 1.33.5 |
-| 12779559 | Architecture | 1.33.5 |
-| 42369289 | Coach algorithm (how the live coach decides what to say) | 1.33.5 |
-| 12615683 | Recorder: crash-safe session format and VBO export | 1.33.5 |
-| 12910622 | RaceBox Micro BLE protocol | 1.33.5 |
-| 14417921 | VBO video format (Circuit Tools) | 1.33.5 |
-| 25919489 | Steering angle: CAN listen beside OBD-II polling | 1.33.5 |
-| 12648641 | BetterDriver Build Plan | 1.33.5 |
-| 12877846 | Roadmap | 1.33.5 |
-| 12746768 | BetterDriver Development Workflow | 1.33.5 |
-| 12976197 | Design and UI | 1.33.5 |
-| 12812319 | BetterDriver UI decisions | 1.33.5 |
-| 40665106 | Working rules | 1.33.5 |
+| 12648561 | BetterDriver Home | 1.33.6 |
+| 12976129 | BetterDriver status | 1.33.6 |
+| 16482306 | What blocks 1.0 | 1.33.6 |
+| 14483457 | BetterDriver plan of record: closed-loop coach | 1.33.6 |
+| 32505866 | Getting faster loop (line, coach, 3D, proof) | 1.33.6 |
+| 15007745 | BetterDriver validation without test drives | 1.33.6 |
+| 36372481 | iOS / iPadOS app plan | 1.33.6 |
+| 39682049 | Android and iOS feature parity | 1.33.6 |
+| 12779559 | Architecture | 1.33.6 |
+| 42369289 | Coach algorithm (how the live coach decides what to say) | 1.33.6 |
+| 12615683 | Recorder: crash-safe session format and VBO export | 1.33.6 |
+| 12910622 | RaceBox Micro BLE protocol | 1.33.6 |
+| 14417921 | VBO video format (Circuit Tools) | 1.33.6 |
+| 25919489 | Steering angle: CAN listen beside OBD-II polling | 1.33.6 |
+| 12648641 | BetterDriver Build Plan | 1.33.6 |
+| 12877846 | Roadmap | 1.33.6 |
+| 12746768 | BetterDriver Development Workflow | 1.33.6 |
+| 12976197 | Design and UI | 1.33.6 |
+| 12812319 | BetterDriver UI decisions | 1.33.6 |
+| 40665106 | Working rules | 1.33.6 |
 | 12648738 | Racelogic VBOX track maps evaluation | won't change |
