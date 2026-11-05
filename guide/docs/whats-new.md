@@ -13,6 +13,10 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.5
+
+- Android: the chosen GPS receiver, OBD adapter, heart-rate strap and tyre bridge stay connected from the moment they are chosen until the app closes; **Equipment** and **START** show them as **Connected**.
+
 ## 1.33.4
 
 - iPhone: the chosen GPS receiver, OBD adapter, heart-rate strap and tyre bridge stay connected from the moment they are chosen until the app closes.
