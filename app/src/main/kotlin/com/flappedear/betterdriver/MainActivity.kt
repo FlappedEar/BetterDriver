@@ -21,6 +21,7 @@ import com.flappedear.betterdriver.recording.UiChecks
 import com.flappedear.betterdriver.sharing.Backups
 import com.flappedear.betterdriver.sharing.Imports
 import com.flappedear.betterdriver.shell.RestoreUnfinished
+import com.flappedear.betterdriver.shell.SetupRepo
 
 class MainActivity : ComponentActivity() {
     private lateinit var recorder: RecorderClient
@@ -70,6 +71,10 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(importRunning) {
                 if (!importRunning) DebugGuards.allowDisk { pendingImport.edit().remove(KeyImporting).commit() }
             }
+            // The chosen devices' Bluetooth links stay open from their choice until the app closes
+            // (FBBD-464): every change of the setup holds the devices it now chooses.
+            val setup = SetupRepo.get(this).setup
+            LaunchedEffect(setup) { holdLinks() }
             val recording = recorder.state.recording
             // The screen stays on for the whole outing, on every screen, not only the track screen.
             LaunchedEffect(recording) {
@@ -132,6 +137,19 @@ class MainActivity : ComponentActivity() {
         if (::recorder.isInitialized) recorder.bind(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Back from the permission dialog or Android's settings with the Bluetooth permissions granted,
+        // the links are held too: the dialog pauses this activity and resumes it.
+        if (::recorder.isInitialized) holdLinks()
+    }
+
+    /** Holds the chosen devices' links (FBBD-464); not on a tablet, which only analyses (no recording). */
+    private fun holdLinks() {
+        if (resources.configuration.smallestScreenWidthDp >= TabletSmallestWidthDp) return
+        HeldLinks.get(this).follow(SetupRepo.get(this).setup)
+    }
+
     override fun onStop() {
         if (::recorder.isInitialized) recorder.unbind(this)
         super.onStop()
@@ -140,5 +158,6 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val KeyImporting = "importing"
         const val PendingImportFile = "pending_import"
+        const val TabletSmallestWidthDp = 600
     }
 }

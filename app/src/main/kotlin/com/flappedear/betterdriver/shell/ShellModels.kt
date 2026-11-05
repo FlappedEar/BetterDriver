@@ -49,6 +49,9 @@ enum class SettingsTopic(val title: String) {
  */
 enum class Reach(val label: String, val state: DeviceState?) {
     InRange("In range", DeviceState.Ready),
+
+    /** Held connected by the app (FBBD-464): a connected device no longer advertises, so no scan hears it. */
+    Connected("Connected", DeviceState.Ready),
     NotSeen("Not seen", DeviceState.Off),
     BuiltIn("Built in", DeviceState.Ready),
     ByHand("Start by hand", DeviceState.Off),

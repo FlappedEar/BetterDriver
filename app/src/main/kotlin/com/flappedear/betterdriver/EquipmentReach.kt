@@ -34,6 +34,7 @@ internal fun rememberEquipmentReach(prefs: AppPrefs, repo: SetupRepo): Map<Strin
     val searching = remember(recording) { !recording && prefs.hasRequiredPermissions() }
     val found by rememberNearby(searching)
     val heard = found.map { it.address.uppercase() }.toSet()
+    val held = HeldLinks.get(context).connected
     val setup = if (recording) repo.forSession() else repo.setup
     val inSession = setup.active().let { a -> listOfNotNull(a.gnss) + a.cameras + a.sensors + a.carData }
         .map { it.id }.toSet()
@@ -47,7 +48,8 @@ internal fun rememberEquipmentReach(prefs: AppPrefs, repo: SetupRepo): Map<Strin
         val reach = if (recording) {
             Reach.InSession.takeIf { e.id in inSession }
         } else {
-            reachOf(e, classic = e.model in ClassicModels || e.id in classicObd, heard = heard.takeIf { searching })
+            val classic = e.model in ClassicModels || e.id in classicObd
+            reachOf(e, classic = classic, heard = heard.takeIf { searching }, held = held)
         }
         reach?.let { e.id to it }
     }.toMap()
@@ -71,13 +73,14 @@ private fun LogReach(searching: Boolean, equipment: List<Equipment>, reach: Map<
     }
 }
 
-/** [heard] is the addresses the scan heard, null while it does not look. */
-private fun reachOf(e: Equipment, classic: Boolean, heard: Set<String>?): Reach? = when {
+/** [heard] is the addresses the scan heard, null while it does not look; [held] the ones held connected. */
+private fun reachOf(e: Equipment, classic: Boolean, heard: Set<String>?, held: Set<String>): Reach? = when {
     e.model == EquipmentModel.PHONE_CAMERA || e.model == EquipmentModel.PHONE_GPS -> Reach.BuiltIn
     !e.model.controlledByApp -> Reach.ByHand
     e.model in MadeUpModels -> Reach.MadeUp
     e.model in WifiModels -> Reach.WiFi
     classic -> Reach.Paired
+    e.address.orEmpty().uppercase() in held -> Reach.Connected
     heard == null || e.address == null -> null
     e.address.orEmpty().uppercase() in heard -> Reach.InRange
     else -> Reach.NotSeen
