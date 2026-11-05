@@ -60,6 +60,7 @@ struct DriveView: View {
         // sheet is still going away, which can drop it (FBBD-456).
         .sheet(isPresented: $picking, onDismiss: startPicked) {
             ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera, videoMode: $videoMode) { receiver in
+                AppLog.i("Recording", PhoneVideoMode.startSheetLine(camera: camera, mode: videoMode))
                 recorder.phoneCamera = camera
                 recorder.phoneVideoMode = videoMode
                 pendingStart = receiver
@@ -340,6 +341,13 @@ struct ReceiverSheet: View {
             }
         }
         // The receiver picked is connected and held from the moment it is picked.
+        // Each camera or video-mode change in the log, as the GPS pick below.
+        .onChange(of: camera) { _, on in
+            AppLog.i("Recording", "START sheet phone camera pick: \(on ? "on" : "off")")
+        }
+        .onChange(of: videoMode) { old, mode in
+            AppLog.i("Recording", "START sheet video pick: \(old.label) -> \(mode.label)")
+        }
         .onChange(of: picked) { old, receiver in
             // Each change in the log, so a drive log shows whether a pick came undone (FBBD-463).
             AppLog.i("Recording", "START sheet GPS pick: \(old?.name ?? "none") -> \(receiver?.name ?? "none")")
