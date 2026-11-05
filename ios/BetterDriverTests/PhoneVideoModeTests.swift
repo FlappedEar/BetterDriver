@@ -11,6 +11,12 @@ final class PhoneVideoModeTests: XCTestCase {
         XCTAssertEqual(PhoneVideoMode.named("4K · 30").label, "4K · 30")
     }
 
+    /// The line START writes, so a drive log shows the rate and size each session was set to.
+    func testTheStartSheetLineNamesTheCameraAndMode() {
+        XCTAssertEqual(PhoneVideoMode.startSheetLine(camera: true, mode: .standard), "START sheet phone camera: on, video 1080p · 60")
+        XCTAssertEqual(PhoneVideoMode.startSheetLine(camera: false, mode: PhoneVideoMode(size: .fhd, fps: 30)), "START sheet phone camera: off, video 1080p · 30")
+    }
+
     func testTheLadderKeepsTheFrameRateFirst() {
         XCTAssertEqual(PhoneVideoMode(size: .uhd, fps: 60).ladder.map(\.label), ["4K · 60", "1080p · 60", "720p · 60", "720p · 30"])
         XCTAssertEqual(PhoneVideoMode(size: .fhd, fps: 30).ladder.map(\.label), ["1080p · 30", "720p · 30"])

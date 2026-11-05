@@ -39,6 +39,12 @@ struct PhoneVideoMode: Hashable, Identifiable {
         all.first { $0.label == label } ?? standard
     }
 
+    /// The START sheet's log line for the phone camera's choice, so a drive log shows a change of the
+    /// frame rate or size (a 30 fps file with no line that said why: Arek's drive log 2026-11-05 14:53).
+    static func startSheetLine(camera: Bool, mode: PhoneVideoMode) -> String {
+        "START sheet phone camera: \(camera ? "on" : "off"), video \(mode.label)"
+    }
+
     /// The modes this phone's back camera can record, largest first; read from its formats.
     static func supported() -> [PhoneVideoMode] {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return [] }
