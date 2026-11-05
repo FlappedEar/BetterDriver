@@ -14,6 +14,8 @@ struct BetterDriverApp: App {
         FirstRunGate.shared.decideAtLaunch()
         // The Health-like bars (UI-307 A, FBBD-421), before the first screen draws them.
         HealthStyle.applyBars()
+        // The chosen devices' Bluetooth links stay open from now until the app closes (Arek 2026-11-05).
+        HeldConnections.shared.follow(SettingsModel.shared)
     }
 
     var body: some Scene {

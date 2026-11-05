@@ -20,6 +20,10 @@ struct FoundRaceBoxDevice: Identifiable, Equatable {
     let rssi: Int
 
     var isMicro: Bool { name.hasPrefix(RaceBoxIds.shared.MICRO_PREFIX) }
+
+    /// The same RaceBox whatever its signal: every advertisement brings a new [rssi], and a pick
+    /// compared with it would come undone on the START sheet a moment later (Arek 2026-11-05).
+    static func == (a: FoundRaceBoxDevice, b: FoundRaceBoxDevice) -> Bool { a.id == b.id }
 }
 
 private let uartService = CBUUID(string: RaceBoxIds.shared.UART_SERVICE)
