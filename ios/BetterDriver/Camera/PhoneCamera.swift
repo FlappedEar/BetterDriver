@@ -246,8 +246,11 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let w = try AVAssetWriter(outputURL: dir.appendingPathComponent(name), fileType: .mp4)
-            // An app killed before finishWriting answers (FBBD-350) keeps a file that plays up to its last fragment.
-            w.movieFragmentInterval = Self.fragmentInterval
+            // FBBD-441: fragments are off. The -11800/-16341 failures of 3 Nov (12 files lost in 34 min)
+            // came only after they were turned on (#476, 1 Nov); the drives of 30 Oct without them were
+            // clean. Not proven: the next drive logs are the A/B. A killed app loses that file's index
+            // again (FBBD-350), as before 1 Nov; the data recording never depends on the camera.
+            if Self.fragmented { w.movieFragmentInterval = Self.fragmentInterval }
             // Settings the writer refuses would also throw in the input: no video then, never a crash.
             let settings = videoSettings(for: frame)
             guard w.canApply(outputSettings: settings, forMediaType: .video) else { throw CameraError.notSupported }
@@ -282,6 +285,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             audioAppended = 0
             audioRefused = 0
             log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: recording.fps)
+            AppLog.i(Self.tag, "\(name) writing: fragments \(Self.fragmented ? "on" : "off")")
             // Green at the chosen mode, amber once stepped down (UI-07).
             status(recording.label, ok: recording == mode)
         } catch {
@@ -295,6 +299,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     /// How often the file is written as a playable fragment: a file cut off by a killed app or a crash
     /// during its finish loses at most this much at its end, instead of all of it (no MP4 index).
     static let fragmentInterval = CMTime(value: 2, timescale: 1)
+    /// Whether session files are written in fragments (FBBD-441: off until a drive log clears them).
+    static let fragmented = false
 
     /// The file's video settings, made from the frame's size and the mode's rate: H.264, or HEVC when
     /// the phone records this mode only in HEVC (a 4K or 10-bit format). Not the output's recommended

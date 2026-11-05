@@ -199,6 +199,9 @@ object VboExport {
                     row[width - 2] = index
                     row[width - 1] = sync
                 }
+                // A value that is not a number (a source handing over NaN) would make the whole file
+                // unreadable to other tools: written as 0, as a channel with no reading yet.
+                for (i in row.indices) if (!row[i].isFinite()) row[i] = 0.0
                 yield(row)
             }
         }
