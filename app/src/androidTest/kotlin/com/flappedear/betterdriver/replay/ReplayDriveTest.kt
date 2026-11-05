@@ -211,15 +211,17 @@ class ReplayDriveTest {
     }
 
     /**
-     * The runner's speed (FBBD-461): [CpuSpeed] before the drive and now, against [SpeedReferenceMillis]
-     * from a normal runner. The scale is 1 on a normal or faster runner and at most [MaxSpeedScale], so a
+     * The runner's speed (FBBD-461): the faster of [CpuSpeed] before the drive and now, against
+     * [SpeedReferenceMillis] from a normal runner. The faster one, as a slow runner is slow all along
+     * while one disturbed measurement (121 against 66 ms on the same normal runner) must not widen the
+     * budget. The scale is 1 on a normal or faster runner and at most [MaxSpeedScale], so a
      * slow runner gets room in proportion and a process doing several times more work still fails.
      */
     private fun runnerSpeed(): RunnerSpeed {
         val before = d.loadProps(marker).getProperty(KeySpeed)?.toDoubleOrNull()
         val after = CpuSpeed.millis()
-        val mean = listOfNotNull(before, after).average()
-        return RunnerSpeed(before, after, (mean / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
+        val fastest = listOfNotNull(before, after).min()
+        return RunnerSpeed(before, after, (fastest / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
     }
 
     private data class RunnerSpeed(val beforeMillis: Double?, val afterMillis: Double, val scale: Double) {
@@ -335,10 +337,11 @@ class ReplayDriveTest {
          * the CI machines' spread but not for a new busy loop.
          */
         /**
-         * [CpuSpeed]'s workload on a normal runner (FBBD-461), ms of CPU. Slow runners measured 1.8 to 2.0
-         * times the normal CPU time in every process for the same work.
+         * [CpuSpeed]'s workload on a normal runner (FBBD-461), ms of CPU: 66 ms on PR #561's run (AMD EPYC
+         * 9V45, main 6.9 %), with a little room. Slow runners measured 1.8 to 2.0 times the normal CPU time
+         * in every process for the same work.
          */
-        const val SpeedReferenceMillis = 100.0
+        const val SpeedReferenceMillis = 70.0
 
         /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
         const val MaxSpeedScale = 2.5

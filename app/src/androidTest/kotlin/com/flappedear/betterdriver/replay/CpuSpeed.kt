@@ -44,7 +44,7 @@ object CpuSpeed {
 
     private const val Size = 1 shl 16
     private const val Passes = 40
-    private const val WarmUps = 3
+    private const val WarmUps = 10
     private const val Rounds = 7
     private const val Mul = 2_654_435_761L
     private const val Add = 12_345L
