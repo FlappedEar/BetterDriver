@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.analysis.review.TrackProposal
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.pickerSession
 import com.flappedear.betterdriver.analysis.review.pickerTracks
+import com.flappedear.betterdriver.analysis.review.recordedTrack
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.sessionVideoSource
@@ -153,10 +154,14 @@ class ReviewLibrary(base: String) {
     /**
      * The saved track session [id] is timed with, as its review finds it: the one it recorded at
      * start (Android's share sends that one), else the saved track it was driven at. None if unreadable.
+     * The recorded one is found from the session's events alone, as Android's Transfers.trackOf: its
+     * samples are read only for a session that recorded none (FBBD-393), as a long session's samples
+     * take tens to hundreds of MB, on top of the copy of its video that follows.
      */
     @Suppress("TooGenericExceptionCaught")
     private fun timedTrack(id: String): Track? = try {
-        trackFor(store.read(id), tracks())
+        val saved = tracks()
+        recordedTrack(store.read(id, samples = false), saved) ?: trackFor(store.read(id), saved)
     } catch (_: Exception) {
         null
     }
