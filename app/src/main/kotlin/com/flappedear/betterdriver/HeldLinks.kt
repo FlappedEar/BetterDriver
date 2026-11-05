@@ -140,7 +140,8 @@ class HeldLinks private constructor(private val context: Context) {
             context,
             receiver,
             IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
+            // Bluetooth's state comes from the Bluetooth process, which an unexported receiver never hears.
+            ContextCompat.RECEIVER_EXPORTED,
         )
     }
 

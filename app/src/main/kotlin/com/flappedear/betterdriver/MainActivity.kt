@@ -134,11 +134,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (::recorder.isInitialized) {
-            recorder.bind(this)
-            // Back from Android's settings with the Bluetooth permissions granted, the links are held too.
-            holdLinks()
-        }
+        if (::recorder.isInitialized) recorder.bind(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from the permission dialog or Android's settings with the Bluetooth permissions granted,
+        // the links are held too: the dialog pauses this activity and resumes it.
+        if (::recorder.isInitialized) holdLinks()
     }
 
     /** Holds the chosen devices' links (FBBD-464); not on a tablet, which only analyses (no recording). */
