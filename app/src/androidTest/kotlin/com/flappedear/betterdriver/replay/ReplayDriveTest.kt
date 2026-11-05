@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
 import com.flappedear.betterdriver.coach.CoachLanguage
+import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachSettingsStore
@@ -38,6 +39,7 @@ import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.smoke.appPermissions
 import com.flappedear.betterdriver.timing.demo.SessionReplay
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.uikill.UiKillPhase
@@ -105,16 +107,31 @@ class ReplayDriveTest {
      * names no session, as none is on the phone, so the library keeps it instead of rebuilding it.
      */
     private fun earlierOuting() {
-        val asset = { name: String -> d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
         // Saving a track already on the phone raises its revision, and a reference fits one revision only:
         // it is built for the track as saved (Codex).
-        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset("silesia-ring.track.json")))
-        val replay = SessionReplay.read(asset("silesia-ring.replay"), 0L)
+        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset(TrackAsset)))
+        val reference = outingReference(track)
+        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
+    }
+
+    private fun asset(name: String) = d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() }
+
+    /** The coach's reference from one drive round the built-in laps: the earlier outing's work. */
+    private fun outingReference(track: Track): CoachReference {
+        val replay = SessionReplay.read(asset(ReplayAsset), 0L)
         val fixes = (0 until LoopSeconds * replay.rateHz).asSequence().mapNotNull { n ->
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
-        val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
+        return checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
+    }
+
+    /**
+     * The runner's speed at the app's own code (FBBD-461): [outingReference] timed by [CpuSpeed], with the
+     * track and laps read once outside the timing. Same assets, same work on every run.
+     */
+    private fun speedMillis(): Double {
+        val track = TrackJson.decode(asset(TrackAsset))
+        return CpuSpeed.millis { outingReference(track) }
     }
 
     /**
@@ -127,6 +144,8 @@ class ReplayDriveTest {
     @Test
     fun drive() {
         d.openApp()
+        // The runner's speed before the drive, outside the recording (FBBD-461).
+        val speed = speedMillis()
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).start(CarName, "", GnssRef.DemoTrack) }
         val live = checkNotNull(
             d.waitForRecorder("the recording with live GNSS", StartTimeoutMs) {
@@ -134,7 +153,7 @@ class ReplayDriveTest {
             }.live,
         )
         val id = live.sessionId
-        d.saveProps(marker, KeySession to id)
+        d.saveProps(marker, KeySession to id, KeySpeed to speed.toString())
         val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
         // What makes the track screen's slow frames slow (FBBD-266), beside the drive check's frame time.
         val parts = FrameParts()
@@ -168,7 +187,8 @@ class ReplayDriveTest {
         val report = driveChecks(lines).singleOrNull { it.sessionId == id }
         val events = d.store.read(id).events
         val coach = coachReplayChecks(events, language.tag)
-        File(d.app.filesDir, ReportName).writeText(markdown(report?.metrics.orEmpty(), coach, events))
+        val speed = runnerSpeed()
+        File(d.app.filesDir, ReportName).writeText(markdown(report?.metrics.orEmpty(), coach, events, speed))
         // A drive past the learning laps says corner cues; none means the coach or its voice did not run.
         check(replayCues(events).any { it.kind == "Corner" }) {
             "no corner cue said; coach problems: " +
@@ -189,7 +209,7 @@ class ReplayDriveTest {
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
         checkStartUpFrames(report.metrics)
-        checkCpuBudget(report.metrics)
+        checkCpuBudget(report.metrics, speed)
         d.checkNoAppErrors()
     }
 
@@ -208,19 +228,42 @@ class ReplayDriveTest {
     }
 
     /**
-     * The performance budget (FBBD-281): each process's mean CPU over the drive, from its load lines,
-     * within [CpuBudget], so work added to a recording shows up here before it reaches Arek's phone.
+     * The runner's speed (FBBD-461): the faster of [speedMillis] before the drive and now, against
+     * [SpeedReferenceMillis] from a normal runner. The faster one, as a slow runner is slow all along
+     * while one disturbed measurement (121 against 66 ms on the same normal runner) must not widen the
+     * budget. The scale is 1 on a normal or faster runner and at most [MaxSpeedScale], so a
+     * slow runner gets room in proportion and a process doing several times more work still fails.
      */
-    private fun checkCpuBudget(metrics: List<QualityMetric>) {
+    private fun runnerSpeed(): RunnerSpeed {
+        val before = d.loadProps(marker).getProperty(KeySpeed)?.toDoubleOrNull()
+        val after = speedMillis()
+        val fastest = listOfNotNull(before, after).min()
+        return RunnerSpeed(before, after, (fastest / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
+    }
+
+    private data class RunnerSpeed(val beforeMillis: Double?, val afterMillis: Double, val scale: Double) {
+        fun text() = "runner speed (FBBD-461): workload %s / %.0f ms CPU before / after the drive, normal %.0f ms; "
+            .format(beforeMillis?.let { "%.0f".format(it) } ?: "-", afterMillis, SpeedReferenceMillis) +
+            "budget x %.2f".format(scale)
+    }
+
+    /**
+     * The performance budget (FBBD-281): each process's mean CPU over the drive, from its load lines,
+     * within [CpuBudget] times the runner's [RunnerSpeed.scale], so work added to a recording shows up
+     * here before it reaches Arek's phone, and a slow runner (FBBD-461) does not fail the same work.
+     */
+    private fun checkCpuBudget(metrics: List<QualityMetric>, speed: RunnerSpeed) {
+        Log.i(Tag, speed.text())
         val cpu = CpuBudget.mapValues { (process, _) -> metrics.firstOrNull { it.id == loadCpuId(process) } }
         val missing = cpu.filterValues { it?.value == null }.keys
         check(missing.isEmpty()) { "no load lines from the ${missing.joinToString()} process (FBBD-281)" }
-        val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > CpuBudget.getValue(process) }
+        val limit = { process: String -> CpuBudget.getValue(process) * speed.scale }
+        val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > limit(process) }
         check(over.isEmpty()) {
             over.entries.joinToString("\n") { (process, m) ->
                 // m.how holds "% of one core": appended after format(), never part of the pattern
                 "CPU budget (FBBD-281): $process process %.1f %% > %.1f %%; "
-                    .format(m?.value, CpuBudget.getValue(process)) + m?.how
+                    .format(m?.value, limit(process)) + m?.how + "; " + speed.text()
             }
         }
     }
@@ -229,6 +272,7 @@ class ReplayDriveTest {
         drive: List<QualityMetric>,
         coach: List<QualityMetric>,
         events: List<RecorderEvent>,
+        speed: RunnerSpeed,
     ) = buildString {
         fun table(metrics: List<QualityMetric>) {
             appendLine("| Check | Value | Verdict | How |")
@@ -259,6 +303,9 @@ class ReplayDriveTest {
         appendLine("### Drive checks from the continuous log (emulator: hardware values are not the phone's)")
         appendLine()
         table(drive)
+        appendLine()
+        val budget = CpuBudget.entries.joinToString { (process, max) -> "$process %.1f %%".format(max * speed.scale) }
+        appendLine("CPU budget: $budget; " + speed.text())
     }.also { Log.i(Tag, it) }
 
     private fun session(): String =
@@ -268,7 +315,10 @@ class ReplayDriveTest {
         const val Tag = "ReplayDriveTest"
         const val CarName = "Replay car"
         const val KeySession = "session"
+        const val KeySpeed = "cpu_speed_ms"
         const val ReportName = "replay-drive.md"
+        const val TrackAsset = "silesia-ring.track.json"
+        const val ReplayAsset = "silesia-ring.replay"
         const val SaveTimeoutMs = 60_000L
         const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
@@ -305,6 +355,16 @@ class ReplayDriveTest {
          * about 1.6 times the first measured drive (PR #275: main 8.2, recorder 2.8, coach 1.7), room for
          * the CI machines' spread but not for a new busy loop.
          */
+        /**
+         * [speedMillis] on a normal runner (FBBD-461), ms of CPU: 1051 and 1141 ms on an AMD EPYC 7763 runner
+         * (PR #561, main process 8.9 %), the slower of the normal runners seen, so no normal runner widens
+         * the budget. Slow runners used 1.8 to 2.0 times the normal CPU time in every process.
+         */
+        const val SpeedReferenceMillis = 1_100.0
+
+        /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
+        const val MaxSpeedScale = 2.5
+
         val CpuBudget = mapOf(
             "main" to 13.0,
             "recorder" to 5.0,
