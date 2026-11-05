@@ -140,4 +140,19 @@ final class AppLogTests: XCTestCase {
         )
         XCTAssertEqual(line, "3 open files, 1 locked: ~/Library/b.lock (locked), ~/Library/a.log, /tmp/c")
     }
+    /// The share sheet's result goes in the log, so a drive log says whether the AirDrop went through.
+    func testShareResultLine() {
+        XCTAssertEqual(
+            LogShare.resultLine(name: "a.bdsession", activity: "com.apple.UIKit.activity.AirDrop",
+                                completed: true, error: nil, seconds: 937.4),
+            "share of a.bdsession completed, to AirDrop, after 937 s")
+        XCTAssertEqual(
+            LogShare.resultLine(name: "a.zip", activity: nil, completed: false, error: nil, seconds: 3),
+            "share of a.zip cancelled, to none, after 3 s")
+        let error = NSError(domain: "t", code: 1, userInfo: [NSLocalizedDescriptionKey: "no room"])
+        XCTAssertEqual(
+            LogShare.resultLine(name: "a.vbo", activity: "com.apple.DocumentManagerUICore.SaveToFiles",
+                                completed: false, error: error, seconds: 12),
+            "share of a.vbo failed: no room, to com.apple.DocumentManagerUICore.SaveToFiles, after 12 s")
+    }
 }
