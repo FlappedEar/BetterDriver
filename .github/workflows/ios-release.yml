@@ -26,6 +26,11 @@ on:
         description: 'Runner labels as JSON: "macos-26" (GitHub) or ["self-hosted","bd-mac"] (the Mac minis; the App Store Connect key and the signing certificates are then used on them)'
         required: false
         default: '"macos-26"'
+      upload:
+        description: 'Upload to TestFlight (false: sign and archive only, to check signing on a runner)'
+        type: boolean
+        required: false
+        default: true
       sha:
         description: 'Commit to build (default: the branch tip); ios-release-fallback.yml passes the released commit'
         required: false
@@ -44,10 +49,11 @@ run-name: iOS release ${{ inputs.sha || github.event.workflow_run.head_sha || gi
 permissions:
   contents: read
 
-# Uploads queue one after another. A pull request's check has its own group, so it never holds
-# up an upload (on 4 Nov 2026 a PR check sat 37 min ahead of the 1.33.2 TestFlight run).
+# Uploads queue one after another. A pull request's check, or a dispatch that only checks signing
+# (upload false), has its own group, so it never holds up an upload (on 4 Nov 2026 a PR check sat
+# 37 min ahead of the 1.33.2 TestFlight run).
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('ios-release-pr-{0}', github.ref) || 'ios-release' }}
+  group: ${{ (github.event_name == 'pull_request' || inputs.upload == false) && format('ios-release-check-{0}', github.ref) || 'ios-release' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -233,6 +239,29 @@ jobs:
             echo "::warning::Hotspot Configuration is off for $BUNDLE_ID: this build cannot join a GoPro's Wi-Fi"
             echo "entitlements=" >> "$GITHUB_OUTPUT"
           fi
+      # A self-hosted Mac runs as a service with its login keychain locked, so Xcode's automatic
+      # signing could not store the run's development certificate there ("User interaction is not
+      # allowed", then "No profiles for ... were found": run 41954872980 on mac-mini-2). The run gets
+      # its own unlocked keychain as the default one instead; the last steps put the runner user's
+      # keychains back and delete it. Nothing in the user's own keychains is read or changed.
+      - name: Signing keychain for this run (self-hosted)
+        id: keychain
+        if: steps.signing.outputs.ready == 'true' && runner.environment == 'self-hosted'
+        run: |
+          kc="$RUNNER_TEMP/bd-signing.keychain-db"
+          pw=$(uuidgen)
+          echo "::add-mask::$pw"
+          security list-keychains -d user | tr -d ' "' > "$RUNNER_TEMP/keychains-before"
+          security default-keychain -d user | tr -d ' "' > "$RUNNER_TEMP/default-keychain-before"
+          security delete-keychain "$kc" 2>/dev/null || true
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 7200 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$kc" $(cat "$RUNNER_TEMP/keychains-before")
+          security default-keychain -d user -s "$kc"
+          echo "path=$kc" >> "$GITHUB_OUTPUT"
+          echo "Keychain $kc is the default for this run; before: $(cat "$RUNNER_TEMP/default-keychain-before")"
       - name: Archive (signed)
         if: steps.signing.outputs.ready == 'true'
         shell: bash
@@ -273,7 +302,7 @@ jobs:
           done
           exit $status
       - name: Upload to TestFlight
-        if: steps.signing.outputs.ready == 'true'
+        if: steps.signing.outputs.ready == 'true' && inputs.upload != false
         shell: bash
         run: |
           set -o pipefail
@@ -308,6 +337,18 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: ASC_KEY_PATH="${{ steps.team.outputs.key }}" python3 ios/ci/asc.py ci-certs
+      - name: Put the runner's keychains back (self-hosted)
+        if: always() && steps.keychain.outputs.path != ''
+        run: |
+          if [ -s "$RUNNER_TEMP/default-keychain-before" ]; then
+            security default-keychain -d user -s "$(cat "$RUNNER_TEMP/default-keychain-before")"
+          fi
+          if [ -s "$RUNNER_TEMP/keychains-before" ]; then
+            # shellcheck disable=SC2046
+            security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains-before")
+          fi
+          security delete-keychain "${{ steps.keychain.outputs.path }}" || true
+          security list-keychains -d user
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
