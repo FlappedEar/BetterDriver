@@ -340,7 +340,9 @@ struct ReceiverSheet: View {
             }
         }
         // The receiver picked is connected and held from the moment it is picked.
-        .onChange(of: picked) { _, receiver in
+        .onChange(of: picked) { old, receiver in
+            // Each change in the log, so a drive log shows whether a pick came undone (FBBD-463).
+            AppLog.i("Recording", "START sheet GPS pick: \(old?.name ?? "none") -> \(receiver?.name ?? "none")")
             if let receiver { HeldConnections.shared.choose(receiver) }
         }
     }
@@ -457,6 +459,7 @@ struct ReceiverSheet: View {
     }
 
     private func choose(_ kind: StartKind, _ id: String?) {
+        AppLog.i("Recording", "START sheet \(kind.name) pick: \(id ?? "none")")
         // A Kotlin extension of a Kotlin class is a method of that class in Swift.
         settings.update { $0.chooseAtStart(kind: kind, id: id, on: true) }
     }
