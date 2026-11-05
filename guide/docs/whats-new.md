@@ -13,6 +13,12 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.3
+
+- iPhone: phone video is written without movie fragments again, as before the failed video files of 3 Nov.
+- iPhone: **Video with data** keeps saving with the screen locked or another app in front.
+- The VBO export is always written, without the G columns if their analysis fails, and never with a value that is not a number.
+
 ## 1.33.2
 
 - **Watch video** and **Video with data** show the heart rate of imported RaceChrono sessions.
