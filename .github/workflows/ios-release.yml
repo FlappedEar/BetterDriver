@@ -27,7 +27,7 @@ on:
         required: false
         default: '"macos-26"'
       upload:
-        description: 'Upload to TestFlight (false: sign and archive only, to check signing on a runner)'
+        description: 'Upload to TestFlight (false: sign and archive only, to check signing on a runner; it still queues with the uploads)'
         type: boolean
         required: false
         default: true
@@ -49,11 +49,13 @@ run-name: iOS release ${{ inputs.sha || github.event.workflow_run.head_sha || gi
 permissions:
   contents: read
 
-# Uploads queue one after another. A pull request's check, or a dispatch that only checks signing
-# (upload false), has its own group, so it never holds up an upload (on 4 Nov 2026 a PR check sat
-# 37 min ahead of the 1.33.2 TestFlight run).
+# Signed runs queue one after another: each one revokes the development certificates earlier runs
+# made (asc.py ci-certs), which would break a signed run going on at the same time, so a sign-only
+# dispatch (upload false) queues with them. A pull request's check signs nothing and has its own
+# group, so it never holds up an upload (on 4 Nov 2026 a PR check sat 37 min ahead of the 1.33.2
+# TestFlight run).
 concurrency:
-  group: ${{ (github.event_name == 'pull_request' || inputs.upload == false) && format('ios-release-check-{0}', github.ref) || 'ios-release' }}
+  group: ${{ github.event_name == 'pull_request' && format('ios-release-pr-{0}', github.ref) || 'ios-release' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
