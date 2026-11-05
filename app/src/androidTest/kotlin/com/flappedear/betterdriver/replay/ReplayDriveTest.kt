@@ -127,6 +127,8 @@ class ReplayDriveTest {
     @Test
     fun drive() {
         d.openApp()
+        // The runner's speed before the drive, outside the recording (FBBD-461).
+        val speed = CpuSpeed.millis()
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).start(CarName, "", GnssRef.DemoTrack) }
         val live = checkNotNull(
             d.waitForRecorder("the recording with live GNSS", StartTimeoutMs) {
@@ -134,7 +136,7 @@ class ReplayDriveTest {
             }.live,
         )
         val id = live.sessionId
-        d.saveProps(marker, KeySession to id)
+        d.saveProps(marker, KeySession to id, KeySpeed to speed.toString())
         val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
         // What makes the track screen's slow frames slow (FBBD-266), beside the drive check's frame time.
         val parts = FrameParts()
@@ -168,7 +170,8 @@ class ReplayDriveTest {
         val report = driveChecks(lines).singleOrNull { it.sessionId == id }
         val events = d.store.read(id).events
         val coach = coachReplayChecks(events, language.tag)
-        File(d.app.filesDir, ReportName).writeText(markdown(report?.metrics.orEmpty(), coach, events))
+        val speed = runnerSpeed()
+        File(d.app.filesDir, ReportName).writeText(markdown(report?.metrics.orEmpty(), coach, events, speed))
         // A drive past the learning laps says corner cues; none means the coach or its voice did not run.
         check(replayCues(events).any { it.kind == "Corner" }) {
             "no corner cue said; coach problems: " +
@@ -189,7 +192,7 @@ class ReplayDriveTest {
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
         checkStartUpFrames(report.metrics)
-        checkCpuBudget(report.metrics)
+        checkCpuBudget(report.metrics, speed)
         d.checkNoAppErrors()
     }
 
@@ -208,19 +211,40 @@ class ReplayDriveTest {
     }
 
     /**
-     * The performance budget (FBBD-281): each process's mean CPU over the drive, from its load lines,
-     * within [CpuBudget], so work added to a recording shows up here before it reaches Arek's phone.
+     * The runner's speed (FBBD-461): [CpuSpeed] before the drive and now, against [SpeedReferenceMillis]
+     * from a normal runner. The scale is 1 on a normal or faster runner and at most [MaxSpeedScale], so a
+     * slow runner gets room in proportion and a process doing several times more work still fails.
      */
-    private fun checkCpuBudget(metrics: List<QualityMetric>) {
+    private fun runnerSpeed(): RunnerSpeed {
+        val before = d.loadProps(marker).getProperty(KeySpeed)?.toDoubleOrNull()
+        val after = CpuSpeed.millis()
+        val mean = listOfNotNull(before, after).average()
+        return RunnerSpeed(before, after, (mean / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
+    }
+
+    private data class RunnerSpeed(val beforeMillis: Double?, val afterMillis: Double, val scale: Double) {
+        fun text() = "runner speed (FBBD-461): workload %s / %.0f ms CPU before / after the drive, normal %.0f ms; "
+            .format(beforeMillis?.let { "%.0f".format(it) } ?: "-", afterMillis, SpeedReferenceMillis) +
+            "budget x %.2f".format(scale)
+    }
+
+    /**
+     * The performance budget (FBBD-281): each process's mean CPU over the drive, from its load lines,
+     * within [CpuBudget] times the runner's [RunnerSpeed.scale], so work added to a recording shows up
+     * here before it reaches Arek's phone, and a slow runner (FBBD-461) does not fail the same work.
+     */
+    private fun checkCpuBudget(metrics: List<QualityMetric>, speed: RunnerSpeed) {
+        Log.i(Tag, speed.text())
         val cpu = CpuBudget.mapValues { (process, _) -> metrics.firstOrNull { it.id == loadCpuId(process) } }
         val missing = cpu.filterValues { it?.value == null }.keys
         check(missing.isEmpty()) { "no load lines from the ${missing.joinToString()} process (FBBD-281)" }
-        val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > CpuBudget.getValue(process) }
+        val limit = { process: String -> CpuBudget.getValue(process) * speed.scale }
+        val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > limit(process) }
         check(over.isEmpty()) {
             over.entries.joinToString("\n") { (process, m) ->
                 // m.how holds "% of one core": appended after format(), never part of the pattern
                 "CPU budget (FBBD-281): $process process %.1f %% > %.1f %%; "
-                    .format(m?.value, CpuBudget.getValue(process)) + m?.how
+                    .format(m?.value, limit(process)) + m?.how + "; " + speed.text()
             }
         }
     }
@@ -229,6 +253,7 @@ class ReplayDriveTest {
         drive: List<QualityMetric>,
         coach: List<QualityMetric>,
         events: List<RecorderEvent>,
+        speed: RunnerSpeed,
     ) = buildString {
         fun table(metrics: List<QualityMetric>) {
             appendLine("| Check | Value | Verdict | How |")
@@ -259,6 +284,9 @@ class ReplayDriveTest {
         appendLine("### Drive checks from the continuous log (emulator: hardware values are not the phone's)")
         appendLine()
         table(drive)
+        appendLine()
+        val budget = CpuBudget.entries.joinToString { (process, max) -> "$process %.1f %%".format(max * speed.scale) }
+        appendLine("CPU budget: $budget; " + speed.text())
     }.also { Log.i(Tag, it) }
 
     private fun session(): String =
@@ -268,6 +296,7 @@ class ReplayDriveTest {
         const val Tag = "ReplayDriveTest"
         const val CarName = "Replay car"
         const val KeySession = "session"
+        const val KeySpeed = "cpu_speed_ms"
         const val ReportName = "replay-drive.md"
         const val SaveTimeoutMs = 60_000L
         const val StartTimeoutMs = 90_000L
@@ -305,6 +334,15 @@ class ReplayDriveTest {
          * about 1.6 times the first measured drive (PR #275: main 8.2, recorder 2.8, coach 1.7), room for
          * the CI machines' spread but not for a new busy loop.
          */
+        /**
+         * [CpuSpeed]'s workload on a normal runner (FBBD-461), ms of CPU. Slow runners measured 1.8 to 2.0
+         * times the normal CPU time in every process for the same work.
+         */
+        const val SpeedReferenceMillis = 100.0
+
+        /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
+        const val MaxSpeedScale = 2.5
+
         val CpuBudget = mapOf(
             "main" to 13.0,
             "recorder" to 5.0,

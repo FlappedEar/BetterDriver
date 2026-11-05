@@ -109,6 +109,8 @@ for _ in $(seq 18); do
   [ "$settled" -ge 2 ] && break
 done
 echo "Emulator CPUs ${b:-?} % busy before the drive."
+# Which host CPU this runner has (FBBD-461): the CPU budget is scaled by the runner's measured speed.
+echo "Runner CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs), $(nproc) cores."
 echo "Replaying for $minutes min."
 # One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
 # thread's state and slices and who held the CPUs (track-trace.py).
