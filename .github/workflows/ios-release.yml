@@ -130,7 +130,8 @@ jobs:
           # (run 41947199549, mac-mini-1) ran every UI test and then stopped at the App Store
           # Connect key. Point Python at certifi's bundle for every later step.
           python3 -m pip install --quiet --break-system-packages certifi
-          echo "SSL_CERT_FILE=$(python3 -m certifi)" >> "$GITHUB_ENV"
+          export SSL_CERT_FILE="$(python3 -m certifi)"
+          echo "SSL_CERT_FILE=$SSL_CERT_FILE" >> "$GITHUB_ENV"
           # TLS check only: any HTTP answer (a 403 rate limit too) means the certificate verified.
           python3 -c 'import urllib.request, urllib.error
           try: urllib.request.urlopen("https://api.github.com", timeout=30)
