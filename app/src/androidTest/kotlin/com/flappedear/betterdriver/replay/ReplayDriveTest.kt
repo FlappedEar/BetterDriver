@@ -356,10 +356,11 @@ class ReplayDriveTest {
          * the CI machines' spread but not for a new busy loop.
          */
         /**
-         * [speedMillis] on a normal runner (FBBD-461), ms of CPU, measured on PR #561's runs. Slow runners
-         * used 1.8 to 2.0 times the normal CPU time in every process for the same work.
+         * [speedMillis] on a normal runner (FBBD-461), ms of CPU: 1051 and 1141 ms on an AMD EPYC 7763 runner
+         * (PR #561, main process 8.9 %), the slower of the normal runners seen, so no normal runner widens
+         * the budget. Slow runners used 1.8 to 2.0 times the normal CPU time in every process.
          */
-        const val SpeedReferenceMillis = 1_000_000.0
+        const val SpeedReferenceMillis = 1_100.0
 
         /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
         const val MaxSpeedScale = 2.5
