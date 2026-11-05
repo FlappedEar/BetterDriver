@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
 import com.flappedear.betterdriver.coach.CoachLanguage
+import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachSettingsStore
@@ -38,6 +39,7 @@ import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.smoke.appPermissions
 import com.flappedear.betterdriver.timing.demo.SessionReplay
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.uikill.UiKillPhase
@@ -105,16 +107,31 @@ class ReplayDriveTest {
      * names no session, as none is on the phone, so the library keeps it instead of rebuilding it.
      */
     private fun earlierOuting() {
-        val asset = { name: String -> d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
         // Saving a track already on the phone raises its revision, and a reference fits one revision only:
         // it is built for the track as saved (Codex).
-        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset("silesia-ring.track.json")))
-        val replay = SessionReplay.read(asset("silesia-ring.replay"), 0L)
+        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset(TrackAsset)))
+        val reference = outingReference(track)
+        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
+    }
+
+    private fun asset(name: String) = d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() }
+
+    /** The coach's reference from one drive round the built-in laps: the earlier outing's work. */
+    private fun outingReference(track: Track): CoachReference {
+        val replay = SessionReplay.read(asset(ReplayAsset), 0L)
         val fixes = (0 until LoopSeconds * replay.rateHz).asSequence().mapNotNull { n ->
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
-        val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
+        return checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
+    }
+
+    /**
+     * The runner's speed at the app's own code (FBBD-461): [outingReference] timed by [CpuSpeed], with the
+     * track and laps read once outside the timing. Same assets, same work on every run.
+     */
+    private fun speedMillis(): Double {
+        val track = TrackJson.decode(asset(TrackAsset))
+        return CpuSpeed.millis { outingReference(track) }
     }
 
     /**
@@ -128,7 +145,7 @@ class ReplayDriveTest {
     fun drive() {
         d.openApp()
         // The runner's speed before the drive, outside the recording (FBBD-461).
-        val speed = CpuSpeed.millis()
+        val speed = speedMillis()
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).start(CarName, "", GnssRef.DemoTrack) }
         val live = checkNotNull(
             d.waitForRecorder("the recording with live GNSS", StartTimeoutMs) {
@@ -211,7 +228,7 @@ class ReplayDriveTest {
     }
 
     /**
-     * The runner's speed (FBBD-461): the faster of [CpuSpeed] before the drive and now, against
+     * The runner's speed (FBBD-461): the faster of [speedMillis] before the drive and now, against
      * [SpeedReferenceMillis] from a normal runner. The faster one, as a slow runner is slow all along
      * while one disturbed measurement (121 against 66 ms on the same normal runner) must not widen the
      * budget. The scale is 1 on a normal or faster runner and at most [MaxSpeedScale], so a
@@ -219,7 +236,7 @@ class ReplayDriveTest {
      */
     private fun runnerSpeed(): RunnerSpeed {
         val before = d.loadProps(marker).getProperty(KeySpeed)?.toDoubleOrNull()
-        val after = CpuSpeed.millis()
+        val after = speedMillis()
         val fastest = listOfNotNull(before, after).min()
         return RunnerSpeed(before, after, (fastest / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
     }
@@ -300,6 +317,8 @@ class ReplayDriveTest {
         const val KeySession = "session"
         const val KeySpeed = "cpu_speed_ms"
         const val ReportName = "replay-drive.md"
+        const val TrackAsset = "silesia-ring.track.json"
+        const val ReplayAsset = "silesia-ring.replay"
         const val SaveTimeoutMs = 60_000L
         const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
@@ -337,11 +356,10 @@ class ReplayDriveTest {
          * the CI machines' spread but not for a new busy loop.
          */
         /**
-         * [CpuSpeed]'s workload on a normal runner (FBBD-461), ms of CPU: 66 ms on PR #561's run (AMD EPYC
-         * 9V45, main 6.9 %), with a little room. Slow runners measured 1.8 to 2.0 times the normal CPU time
-         * in every process for the same work.
+         * [speedMillis] on a normal runner (FBBD-461), ms of CPU, measured on PR #561's runs. Slow runners
+         * used 1.8 to 2.0 times the normal CPU time in every process for the same work.
          */
-        const val SpeedReferenceMillis = 70.0
+        const val SpeedReferenceMillis = 1_000_000.0
 
         /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
         const val MaxSpeedScale = 2.5
