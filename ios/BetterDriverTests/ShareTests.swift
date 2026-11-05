@@ -22,22 +22,30 @@ final class ShareTests: XCTestCase {
 
     func testSharingAndImportingASessionWithALongVideoKeepsMemoryFlat() throws {
         let id = try sessionWithVideo()
+        // Earlier tests' garbage goes first: the share is measured, not when the core's collector runs.
+        CoreMemory.shared.collect()
         let before = footprint()
         var peak = before
         var last: Int64 = 0
+        var atPeak = ""
         let url = try ReviewBridge.share(id) { written, total in
             XCTAssertGreaterThanOrEqual(written, last)
             XCTAssertLessThanOrEqual(written, total)
             last = written
-            peak = max(peak, self.footprint())
+            let now = self.footprint()
+            if now > peak {
+                peak = now
+                atPeak = "at \(written / 1_000_000) MB written: \(self.breakdown())"
+            }
         }
         files.append(url)
         XCTAssertGreaterThan(last, Int64(videoBytes), "the video was not in the bundle")
         let size = try XCTUnwrap(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
         XCTAssertGreaterThan(UInt64(size), videoBytes)
-        XCTAssertLessThan(peak - before, allowedGrowth, "sharing grew the memory by \((peak - before) / 1_000_000) MB")
+        XCTAssertLessThan(peak - before, allowedGrowth, "sharing grew the memory by \((peak - before) / 1_000_000) MB; \(atPeak)")
 
         // The same bundle read back, as AirDrop or Files hands it to the app.
+        CoreMemory.shared.collect()
         let start = footprint()
         var importPeak = start
         let received = try ReviewBridge.receive(url) { _, _ in importPeak = max(importPeak, self.footprint()) }
@@ -67,8 +75,18 @@ final class ShareTests: XCTestCase {
         return id
     }
 
+    /// What the footprint is made of, for a failure to say where the memory went.
+    private func breakdown() -> String {
+        let info = vmInfo()
+        let mb = { (v: UInt64) in v / 1_000_000 }
+        return "footprint \(mb(info.phys_footprint)) MB: internal \(mb(info.internal)), compressed \(mb(info.compressed)), " +
+            "external \(mb(info.external)), resident \(mb(info.resident_size))"
+    }
+
     /// The app's memory as iOS counts it against its limit (phys_footprint).
-    private func footprint() -> UInt64 {
+    private func footprint() -> UInt64 { vmInfo().phys_footprint }
+
+    private func vmInfo() -> task_vm_info_data_t {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {
@@ -76,6 +94,6 @@ final class ShareTests: XCTestCase {
                 task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
             }
         }
-        return result == KERN_SUCCESS ? info.phys_footprint : 0
+        return result == KERN_SUCCESS ? info : task_vm_info_data_t()
     }
 }
