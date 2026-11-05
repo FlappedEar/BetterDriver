@@ -255,6 +255,8 @@ struct ReceiverSheet: View {
     @State private var scanner: RaceBoxScanner?
     @State private var modes: [PhoneVideoMode] = [PhoneVideoMode.standard]
     @State private var picked: Receiver?
+    /// The RaceBoxes the app holds connected (HeldConnections).
+    @State private var heldIds: Set<UUID> = []
 
     private var devices: [FoundRaceBoxDevice] {
         found.values.sorted { a, b in
@@ -328,6 +330,24 @@ struct ReceiverSheet: View {
             if picked == nil { picked = lastNotRaceBox }
         }
         .onDisappear { scanner?.stop() }
+        // A RaceBox the app holds connected no longer advertises: the held link lists it (Arek 2026-11-05).
+        .onReceive(HeldConnections.shared.$connected) { held in
+            for (id, name) in held where FoundRaceBox.companion.isRaceBox(name: name) {
+                heldIds.insert(id)
+                if found[id] == nil { found[id] = FoundRaceBoxDevice(id: id, name: name, rssi: 0) }
+                if picked == nil, name == lastUsed, let device = found[id] { picked = .raceBox(device) }
+            }
+        }
+        // The receiver picked is connected and held from the moment it is picked.
+        .onChange(of: picked) { _, receiver in
+            if let receiver { HeldConnections.shared.choose(receiver) }
+        }
+    }
+
+    /// Under a RaceBox's name: connected (held by the app) or in range, and whether it was used last.
+    private func rowDetail(_ device: FoundRaceBoxDevice) -> String {
+        let state = heldIds.contains(device.id) ? "Connected" : "In range"
+        return device.name == lastUsed ? "\(state) · last used" : state
     }
 
     /// The car, chosen as in Settings › Cars.
@@ -368,7 +388,7 @@ struct ReceiverSheet: View {
                 .accessibilityIdentifier("receiver.simulated")
         }
         ForEach(devices) { device in
-            pickRow(device.name, device.name == lastUsed ? "In range · last used" : "In range", on: picked == .raceBox(device)) {
+            pickRow(device.name, rowDetail(device), on: picked == .raceBox(device)) {
                 picked = .raceBox(device)
             }
         }
