@@ -125,6 +125,18 @@ jobs:
         run: |
           xcodebuild -version
           command -v xcodegen || brew install xcodegen
+          # The python.org Python on the Mac minis has no CA certificates of its own, so urllib
+          # (ios-tested.py, ios/ci/asc.py) failed with CERTIFICATE_VERIFY_FAILED: TestFlight 1.33.3
+          # (run 41947199549, mac-mini-1) ran every UI test and then stopped at the App Store
+          # Connect key. Point Python at certifi's bundle for every later step.
+          python3 -m pip install --quiet --break-system-packages certifi
+          export SSL_CERT_FILE="$(python3 -m certifi)"
+          echo "SSL_CERT_FILE=$SSL_CERT_FILE" >> "$GITHUB_ENV"
+          # TLS check only: any HTTP answer (a 403 rate limit too) means the certificate verified.
+          python3 -c 'import urllib.request, urllib.error
+          try: urllib.request.urlopen("https://api.github.com", timeout=30)
+          except urllib.error.HTTPError: pass
+          print("Python HTTPS ok")'
       - name: Shared core (release) and the Xcode project
         env:
           BETTERDRIVER_CORE_BUILD: release
