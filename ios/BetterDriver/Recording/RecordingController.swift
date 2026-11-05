@@ -171,6 +171,8 @@ final class RecordingController: ObservableObject {
             return
         }
         self.receiver = receiver
+        // The receiver's link stays open after the session too, until the app closes (Arek 2026-11-05).
+        HeldConnections.shared.choose(receiver)
         let setup = SettingsModel.shared.setup
         tileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false)
         secondTileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: true)
@@ -391,6 +393,8 @@ final class RecordingController: ObservableObject {
     }
 
     private func end() {
+        // The held links go on; a device the recording met first is held from now on too.
+        HeldConnections.shared.choose(nil)
         activity.end()
         frames?.stop()
         frames = nil
