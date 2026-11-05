@@ -332,8 +332,9 @@ struct ReceiverSheet: View {
         .onDisappear { scanner?.stop() }
         // A RaceBox the app holds connected no longer advertises: the held link lists it (Arek 2026-11-05).
         .onReceive(HeldConnections.shared.$connected) { held in
+            // Each snapshot in full: a RaceBox dropped or let go is no longer shown connected.
+            heldIds = Set(held.filter { FoundRaceBox.companion.isRaceBox(name: $0.value) }.keys)
             for (id, name) in held where FoundRaceBox.companion.isRaceBox(name: name) {
-                heldIds.insert(id)
                 if found[id] == nil { found[id] = FoundRaceBoxDevice(id: id, name: name, rssi: 0) }
                 if picked == nil, name == lastUsed, let device = found[id] { picked = .raceBox(device) }
             }

@@ -43,11 +43,19 @@ final class HeldConnections: NSObject, ObservableObject, CBCentralManagerDelegat
 
     private static let gnssIdKey = "heldGnssId"
     private static let gnssNameKey = "heldGnssName"
+    /// The receiver picked is one listed in Settings › Equipment (a RaceBox is found by its scan).
+    private static let gnssListedKey = "heldGnssListed"
 
-    /// The Bluetooth LE GPS receiver picked last at START, nil for none (phone GPS, Wi-Fi, the demo).
-    static var chosenGnss: (id: UUID, name: String)? {
-        guard let text = UserDefaults.standard.string(forKey: gnssIdKey), let id = UUID(uuidString: text) else { return nil }
-        return (id, UserDefaults.standard.string(forKey: gnssNameKey) ?? "GPS receiver")
+    /// The Bluetooth LE GPS receiver picked last at START, nil for none (phone GPS, Wi-Fi, the demo)
+    /// or for a listed receiver since removed from [setup].
+    static func chosenGnss(_ setup: Setup) -> (id: UUID, name: String)? {
+        let defaults = UserDefaults.standard
+        guard let text = defaults.string(forKey: gnssIdKey), let id = UUID(uuidString: text) else { return nil }
+        if defaults.bool(forKey: gnssListedKey),
+           !setup.equipment.contains(where: { $0.address.flatMap(UUID.init(uuidString:)) == id }) {
+            return nil
+        }
+        return (id, defaults.string(forKey: gnssNameKey) ?? "GPS receiver")
     }
 
     /// The Bluetooth LE device [receiver] records from, nil when it has none.
@@ -69,6 +77,9 @@ final class HeldConnections: NSObject, ObservableObject, CBCentralManagerDelegat
         if let device {
             UserDefaults.standard.set(device.id.uuidString, forKey: Self.gnssIdKey)
             UserDefaults.standard.set(device.name, forKey: Self.gnssNameKey)
+            var listed = false
+            if case .listed = receiver { listed = true }
+            UserDefaults.standard.set(listed, forKey: Self.gnssListedKey)
         } else if receiver != nil {
             UserDefaults.standard.removeObject(forKey: Self.gnssIdKey)
             UserDefaults.standard.removeObject(forKey: Self.gnssNameKey)
@@ -103,7 +114,7 @@ final class HeldConnections: NSObject, ObservableObject, CBCentralManagerDelegat
     @MainActor
     private func refresh(_ setup: Setup) {
         guard Self.holds else { return }
-        let devices = Self.devices(setup, gnss: Self.chosenGnss)
+        let devices = Self.devices(setup, gnss: Self.chosenGnss(setup))
         queue.async { self.hold(devices) }
     }
 

@@ -75,6 +75,20 @@ final class HeldConnectionsTests: XCTestCase {
         XCTAssertNil(HeldConnections.bluetoothDevice(.demoTrack))
     }
 
+    /// A listed Bluetooth LE GPS picked at START is let go once it is removed from Equipment.
+    func testARemovedListedReceiverIsNoLongerHeld() {
+        let model = sunday()
+        let gps = "88888888-8888-8888-8888-888888888888"
+        model.update { add($0, ModelName.lnsGnss, "BLE GPS", gps, "gps") }
+        let item = model.setup.equipment.first { $0.id == "gps" }!
+        HeldConnections.shared.choose(.listed(item))
+        XCTAssertEqual(HeldConnections.chosenGnss(model.setup)?.id.uuidString, gps)
+        model.update { $0.removeEquipment(id: "gps") }
+        XCTAssertNil(HeldConnections.chosenGnss(model.setup))
+        HeldConnections.shared.choose(.phone)
+        XCTAssertNil(HeldConnections.chosenGnss(model.setup))
+    }
+
     /// The START sheet's GPS pick came undone with the next advertisement's signal (Arek 2026-11-05).
     func testAPickedRaceBoxStaysPickedAsItsSignalChanges() {
         let picked = Receiver.raceBox(FoundRaceBoxDevice(id: raceBox, name: "RaceBox Micro 3242703553", rssi: -60))
