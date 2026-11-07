@@ -29,6 +29,8 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     private let lock = NSLock()
     private var current: [ObjectIdentifier: CoachSpeech] = [:]
     private var playing = 0
+    /// Set by [shutdown]: a phrase asked for after the session ended is not said (audit BD-T09).
+    private var closed = false
     private var routeObserver: NSObjectProtocol?
     /// Who else uses the audio session: it is not given back while the camera records sound (FBBD-466).
     private let use: AudioSessionUse
@@ -119,6 +121,14 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     }
 
     func say(text: String, speech: CoachSpeech) -> Bool {
+        lock.lock()
+        let ended = closed
+        lock.unlock()
+        // Work the coach queued before STOP must not speak after it, nor into the next session.
+        if ended {
+            AppLog.i("Voice", "phrase asked for after the session ended, not said")
+            return false
+        }
         if let sound = clips?.cache.phrase(text: text), play(sound, speech) { return true }
         guard voice != nil else { return false }
         let utterance = AVSpeechUtterance(string: text)
@@ -235,6 +245,9 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
 
     /// Stops speaking and gives the other apps' audio back; at the end of a recording.
     func shutdown() {
+        lock.lock()
+        closed = true
+        lock.unlock()
         if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
         routeObserver = nil
         onDelay = nil

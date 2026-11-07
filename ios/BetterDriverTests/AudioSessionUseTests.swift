@@ -109,6 +109,18 @@ final class AudioSessionUseTests: XCTestCase {
         XCTAssertEqual(made.count, 0, "the camera gives the session back when it stops")
     }
 
+    /// Work the coach queued before STOP never speaks after it, nor into the next session (audit BD-T09).
+    func testAPhraseAskedForAfterTheSessionEndedIsNotSaid() {
+        let use = AudioSessionUse {}
+        let voice = CoachVoice(settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0), use: use)
+        voice.shutdown()
+        let late = Heard(expectation(description: "never said"))
+        late.done.isInverted = true
+        XCTAssertFalse(voice.say(text: "Turn 3", speech: late))
+        XCTAssertFalse(voice.speaking)
+        wait(for: [late.done], timeout: 1)
+    }
+
     /// Lets queued main-queue work (a clip's end) run.
     private func settle() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))

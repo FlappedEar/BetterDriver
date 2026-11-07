@@ -212,6 +212,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             try audio.setActive(true)
             return true
         } catch {
+            AppLog.w(tag, "no sound: audio session not set up: \(error.localizedDescription)")
             return false
         }
     }

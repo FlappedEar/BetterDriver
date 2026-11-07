@@ -12,6 +12,8 @@ final class AudioSessionUse {
 
     private let lock = NSLock()
     private var microphones = 0
+    /// Whether this recording's "kept" line is logged already: once per recording, not per phrase.
+    private var keptLogged = false
     private let deactivate: () throws -> Void
 
     /// [deactivate] gives the session back; tests pass their own.
@@ -30,6 +32,7 @@ final class AudioSessionUse {
     func microphoneStarted() {
         lock.lock()
         microphones += 1
+        keptLogged = false
         lock.unlock()
     }
 
@@ -46,9 +49,23 @@ final class AudioSessionUse {
     func giveBack() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard microphones == 0 else { return false }
-        return (try? deactivate()) != nil
+        guard microphones == 0 else {
+            if !keptLogged {
+                keptLogged = true
+                AppLog.i(Self.tag, "session kept active: the camera's microphone records")
+            }
+            return false
+        }
+        do {
+            try deactivate()
+            return true
+        } catch {
+            AppLog.w(Self.tag, "session not given back: \(error.localizedDescription)")
+            return false
+        }
     }
+
+    private static let tag = "AudioSession"
 
     /// As [giveBack], tried up to [tries] times, [wait] apart, off the calling queue: deactivating
     /// blocks, and fails, while audio still runs. Stops trying once a recording keeps the session.
