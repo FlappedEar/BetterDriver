@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.timing.track
 
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.timing.geo.GeoPoint
 
 /**
  * The session's record of where it was, logged once when the track is picked (FBBD-55):
@@ -27,6 +28,23 @@ object TrackEvent {
         val ends = listOf(line.left.lat, line.left.lon, line.right.lat, line.right.lon).joinToString(" ")
         return "line $ends at ${track.id} ${track.displayName}"
     }
+
+    /**
+     * The provisional start/finish live timing placed in the session (FBBD-335), from its
+     * [PROVISIONAL_KIND] event; null when it placed none or the text cannot be read.
+     */
+    fun provisionalLine(events: List<RecorderEvent>): TrackLine? {
+        val parts = events.lastOrNull { it.kind == PROVISIONAL_KIND }?.text?.split(' ').orEmpty()
+        val ends = parts.takeIf { it.size >= ProvisionalParts && it[0] == "line" }
+            ?.subList(1, ProvisionalParts)
+            ?.map { it.toDoubleOrNull() ?: Double.NaN }
+            ?.takeIf { n -> n.all { it.isFinite() } }
+        val points = ends?.chunked(2) { GeoPoint(it[0], it[1]) } ?: return null
+        return TrackLine(points[0], points[1])
+    }
+
+    /** "line", then the four coordinates. */
+    private const val ProvisionalParts = 5
 
     /** Id of the saved track the session was timed with, or null when it had none. */
     fun savedTrackId(events: List<RecorderEvent>): String? = events
