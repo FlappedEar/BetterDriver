@@ -123,4 +123,16 @@ class NewTrackCoachTest {
         val reference = IosCoachLibrary(sessions, references).reference(track, exclude = "", plan = null)
         assertTrue(reference == null || reference.sessions.isEmpty(), reference?.sessions.toString())
     }
+
+    @Test
+    fun aNearbyLoopThatNeverCrossesTheTracksLineIsNotInTheReference() {
+        drive(speaker = null).stop()
+        val library = TrackLibrary(tracks, sessions)
+        // Inside the track's radius, but its start/finish 550 m off the ring: no timed lap through it.
+        val made = library.createAt(gnss.centerLat, gnss.centerLon, "Other loop")
+        val line = TrackLine(GeoPoint(gate.lat1 + 0.005, gate.lon1), GeoPoint(gate.lat2 + 0.005, gate.lon2))
+        val track = library.save(made.copy(startFinish = line))
+        val reference = IosCoachLibrary(sessions, references).reference(track, exclude = "", plan = null)
+        assertTrue(reference == null || reference.sessions.isEmpty(), reference?.sessions.toString())
+    }
 }

@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
 import com.flappedear.betterdriver.timing.geo.GeoPoint
+import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
@@ -271,9 +272,9 @@ internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) : Coa
     /**
      * Whether session [s] was recorded at [track], from its events: the saved track it was timed with;
      * or, recorded at no saved track, the provisional line live timing placed there (FBBD-335) lies
-     * within [track]'s radius. So the first session at a new place feeds the reference of the track
-     * made from it, as Android's CoachLibrary matches it by place: the second session is coached
-     * against the first one's laps (FBBD-469).
+     * within [track]'s radius and the session has a timed lap through [track]'s lines. So the first
+     * session at a new place feeds the reference of the track made from it, as Android's CoachLibrary
+     * matches it by place: the second session is coached against the first one's laps (FBBD-469).
      */
     // A damaged session is skipped, never a reason to stop coaching.
     @Suppress("TooGenericExceptionCaught")
@@ -283,14 +284,21 @@ internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) : Coa
         if (saved != null) {
             saved == track.id
         } else {
-            TrackEvent.provisionalLine(events)?.let { line ->
+            val near = TrackEvent.provisionalLine(events)?.let { line ->
                 val middle = GeoPoint((line.left.lat + line.right.lat) / 2, (line.left.lon + line.right.lon) / 2)
                 distanceMeters(middle, track.center) <= track.radiusMeters
             } == true
+            // Only with a timed lap through [track]'s own lines, as Android's CoachLibrary.timedAt: another
+            // loop nearby never counts, so it cannot make a same day or a first day there.
+            near && readOrNull(s.id)?.let { timedAt(track, it.coachFixes()) } == true
         }
     } catch (_: Exception) {
         false
     }
+
+    /** Whether [fixes] drive a timed lap through [track]'s lines. */
+    private fun timedAt(track: Track, fixes: Sequence<CoachFix>) =
+        tracedLaps(track, fixes).any { it.lap.kind == LapKind.Timed }
 
     @Suppress("TooGenericExceptionCaught")
     private fun readOrNull(id: String) = try {
