@@ -12,8 +12,8 @@ final class AudioSessionUse {
 
     private let lock = NSLock()
     private var microphones = 0
-    /// Whether this recording's "kept" line is logged already: once per recording, not per phrase.
-    private var keptLogged = false
+    /// What the recording's microphone has taken so far, for the log after each phrase; set by the camera.
+    private var report: (() -> String)?
     private let deactivate: () throws -> Void
 
     /// [deactivate] gives the session back; tests pass their own.
@@ -29,10 +29,11 @@ final class AudioSessionUse {
     }
 
     /// A recording's microphone started taking sound through the session.
-    func microphoneStarted() {
+    /// [report] says what it has recorded, for the line logged after each coach phrase.
+    func microphoneStarted(report: (() -> String)? = nil) {
         lock.lock()
         microphones += 1
-        keptLogged = false
+        if let report { self.report = report }
         lock.unlock()
     }
 
@@ -40,6 +41,7 @@ final class AudioSessionUse {
     func microphoneStopped() {
         lock.lock()
         microphones = max(microphones - 1, 0)
+        if microphones == 0 { report = nil }
         lock.unlock()
     }
 
@@ -49,19 +51,30 @@ final class AudioSessionUse {
     func giveBack() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard microphones == 0 else {
-            if !keptLogged {
-                keptLogged = true
-                AppLog.i(Self.tag, "session kept active: the camera's microphone records")
-            }
-            return false
-        }
+        guard microphones == 0 else { return false }
         do {
             try deactivate()
             return true
         } catch {
             AppLog.w(Self.tag, "session not given back: \(error.localizedDescription)")
             return false
+        }
+    }
+
+    /// A coach phrase ended: the session goes back to the other apps unless the camera records sound.
+    /// Logged per phrase, with what the camera's sound has taken [checkAfter] later, so a drive log
+    /// shows the video's sound going on after each phrase.
+    func phraseEnded(checkAfter: TimeInterval = 2) {
+        let gaveBack = giveBack()
+        lock.lock()
+        let held = microphones > 0
+        let report = self.report
+        lock.unlock()
+        let session = gaveBack ? "given back" : held ? "kept for the camera's microphone" : "not given back"
+        AppLog.i(Self.tag, "coach phrase ended: session \(session)")
+        guard held, let report else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + checkAfter) {
+            AppLog.i(Self.tag, "\(Int(checkAfter)) s after the coach phrase: camera \(report())")
         }
     }
 

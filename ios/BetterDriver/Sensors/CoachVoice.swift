@@ -239,7 +239,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
             defer { self.engineLock.unlock() }
             guard !self.speaking else { return }
             self.engine.pause()
-            self.use.giveBack()
+            self.use.phraseEnded()
         }
     }
 
@@ -284,7 +284,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
 
     private func finished(_ utterance: AVSpeechUtterance, _ end: String) {
         take(utterance, remove: true)?.ended(end: end)
-        if !speaking { use.giveBack() }
+        if !speaking { use.phraseEnded() }
     }
 
     // MARK: AVSpeechSynthesizerDelegate
