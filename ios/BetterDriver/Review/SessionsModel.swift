@@ -307,7 +307,8 @@ final class SessionsModel {
             case .success(let url):
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
                 AppLog.i(Self.shareTag, "\(id): \(url.lastPathComponent), \(size) bytes, ready in \(String(format: "%.1f", Date().timeIntervalSince(started))) s, opening the share sheet")
-                LogShare.share(url)
+                // The bundle is a second full copy of the session and its video: gone once sent (FBBD-467).
+                LogShare.share(url) { LeftoverCopies.discard([url]) }
             case .failure(let error):
                 AppLog.w(Self.shareTag, "\(id): could not share: \(error.localizedDescription)")
                 message = "Could not share the session: \(error.localizedDescription)"
@@ -403,7 +404,11 @@ final class SessionsModel {
         importing = ImportProgress(name: name, read: 0, total: 0, started: Date())
         Task.detached(priority: .userInitiated) {
             let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            defer {
+                if scoped { url.stopAccessingSecurityScopedResource() }
+                // iOS's copy of an AirDropped file in Documents/Inbox: the session is unpacked from it by now (FBBD-467).
+                LeftoverCopies.discardReceived(url)
+            }
             let started = Date()
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? -1
             AppLog.i("Imports", "received \(name): type \(url.pathExtension.lowercased()), \(size) bytes, scoped \(scoped)")

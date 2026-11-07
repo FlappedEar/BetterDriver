@@ -89,7 +89,7 @@ struct ExportButton: View {
             }.value
             running = false
             switch result {
-            case .success(let urls): LogShare.share(urls)
+            case .success(let urls): LogShare.share(urls) { LeftoverCopies.discard(urls) }
             case .failure(let error):
                 AppLog.w(Exports.tag, "export \(id) failed: \(error.localizedDescription)")
                 failure = "Export failed: \(error.localizedDescription)"
@@ -120,7 +120,7 @@ struct SaveToFiles: UIViewControllerRepresentable {
     let url: URL
     let onDone: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onDone: onDone) }
+    func makeCoordinator() -> Coordinator { Coordinator(copies: [url], onDone: onDone) }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
@@ -131,14 +131,27 @@ struct SaveToFiles: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
 
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let copies: [URL]
         let onDone: () -> Void
 
-        init(onDone: @escaping () -> Void) {
+        init(copies: [URL], onDone: @escaping () -> Void) {
+            self.copies = copies
             self.onDone = onDone
         }
 
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { onDone() }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            discardCopy()
+            onDone()
+        }
 
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { onDone() }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            discardCopy()
+            onDone()
+        }
+
+        /// Files has its own copy by now (asCopy): the rendered one in the temporary folder goes (FBBD-467).
+        private func discardCopy() {
+            LeftoverCopies.discard(copies)
+        }
     }
 }
