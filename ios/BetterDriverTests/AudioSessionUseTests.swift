@@ -121,6 +121,20 @@ final class AudioSessionUseTests: XCTestCase {
         wait(for: [late.done], timeout: 1)
     }
 
+    /// The voice check (FBBD-466): 30 s after START, then every 2 min, never over a phrase being said
+    /// and never at a saved track, where the coach speaks itself.
+    func testTheVoiceCheckIsSaidAwayFromASavedTrackOnly() {
+        var check = VoiceCheck()
+        XCTAssertFalse(check.due(elapsed: 29, atSavedTrack: false, speaking: false))
+        XCTAssertFalse(check.due(elapsed: 30, atSavedTrack: false, speaking: true), "not over a phrase")
+        XCTAssertTrue(check.due(elapsed: 31, atSavedTrack: false, speaking: false))
+        XCTAssertEqual(check.said, 1)
+        XCTAssertFalse(check.due(elapsed: 100, atSavedTrack: false, speaking: false))
+        XCTAssertFalse(check.due(elapsed: 151, atSavedTrack: true, speaking: false), "not at a saved track")
+        XCTAssertTrue(check.due(elapsed: 152, atSavedTrack: false, speaking: false))
+        XCTAssertEqual(check.said, 2)
+    }
+
     /// Lets queued main-queue work (a clip's end) run.
     private func settle() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))

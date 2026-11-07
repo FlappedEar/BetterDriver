@@ -102,6 +102,9 @@ final class RecordingController: ObservableObject {
     /// The track screen's frames while recording (FBBD-376).
     private var frames: FrameMeter?
     private var timer: Timer?
+    /// The coach's voice check while the camera records sound, away from a saved track (FBBD-466).
+    private var voiceCheck = VoiceCheck()
+    private var startedAt = Date()
     private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
@@ -268,6 +271,8 @@ final class RecordingController: ObservableObject {
         meter.start()
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
+        voiceCheck = VoiceCheck()
+        startedAt = Date()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -448,6 +453,16 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    /// Says the voice check when it is due (FBBD-466): only with the coach on and the camera recording sound.
+    private func checkVoice(_ now: LiveScreen) {
+        guard let voice, camera != nil, AudioSessionUse.shared.recording else { return }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard voiceCheck.due(elapsed: elapsed, atSavedTrack: now.placeSaved, speaking: voice.speaking) else { return }
+        let text = SettingsCore.shared.sampleCue(language: SettingsModel.shared.coach.language)
+        let said = voice.say(text: text, speech: VoiceCheckSpeech(number: voiceCheck.said))
+        AppLog.i("VoiceCheck", "check \(voiceCheck.said) at \(Int(elapsed)) s: \(said ? "said" : "not said")")
+    }
+
     private func refresh() {
         guard let live = session else { return }
         let now = live.screen()
@@ -467,6 +482,7 @@ final class RecordingController: ObservableObject {
             return
         }
         gnssSound(now.gnss)
+        checkVoice(now)
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
