@@ -10,6 +10,8 @@ struct BetterDriverApp: App {
         UITestMode.resetIfAsked()
         // Before anything reads the data: a restore stopped after its commit is finished (FBBD-372).
         BackupBridge.finishOrClear()
+        // Copies left by an earlier run's shares and exports, video included, free their space (FBBD-467).
+        LeftoverCopies.sweep()
         // Before Settings reads setup.json: an install from before the checklist counts as set up.
         FirstRunGate.shared.decideAtLaunch()
         // The Health-like bars (UI-307 A, FBBD-421), before the first screen draws them.

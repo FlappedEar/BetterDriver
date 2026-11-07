@@ -87,6 +87,10 @@ final class RecordingController: ObservableObject {
     private var imu: PhoneImuLink?
     private var keepAlive: BackgroundKeepAlive?
     private var camera: PhoneCamera?
+    /// The track screen's warning while phone video has under VideoStorage.warnMinutes left (FBBD-467),
+    /// and when free space was last read for it: every 30 s while the camera records.
+    private var videoSpaceWarning: String?
+    private var videoSpaceCheckedAt: Date?
     /// The GNSS state at the last refresh, for the lost and back sounds.
     private var lastGnss: GnssState?
     /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
@@ -423,6 +427,8 @@ final class RecordingController: ObservableObject {
         // activates the audio session too. While the camera still stops, it gives it back itself (FBBD-466).
         AudioSessionUse.shared.giveBack()
         cameraStatus = nil
+        videoSpaceWarning = nil
+        videoSpaceCheckedAt = nil
         // The cameras answer in their own time; the stop is noted in the ended session's events.
         goPros?.stop()
         goPros = nil
@@ -483,15 +489,30 @@ final class RecordingController: ObservableObject {
         }
         gnssSound(now.gnss)
         checkVoice(now)
+        checkVideoSpace()
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
             now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, tyres: tyres?.status,
-            camera: cameraStatus,
+            camera: cameraStatus, videoSpace: videoSpaceWarning,
             tileIds: tileIds, secondTileIds: secondTileIds
         )
         screen = model
         activity.update(model)
+    }
+
+    /// Reads free space every 30 s while the phone camera records, so the track screen warns with
+    /// minutes of video left, not at the recorder's 200 MiB (FBBD-467). Only reads: the recording goes on.
+    private func checkVideoSpace() {
+        guard camera != nil else { return }
+        if let last = videoSpaceCheckedAt, Date().timeIntervalSince(last) < 30 { return }
+        videoSpaceCheckedAt = Date()
+        let free = VideoStorage.freeBytes()
+        let warning = VideoStorage.warning(freeBytes: free, mode: phoneVideoMode)
+        if warning != nil && videoSpaceWarning == nil {
+            AppLog.i("Recording", "storage: \(free) bytes free, \(warning ?? "") at \(phoneVideoMode.label)")
+        }
+        videoSpaceWarning = warning
     }
 }
 
@@ -593,7 +614,7 @@ struct TrackScreenModel: Equatable {
     /// [secondTileIds] its second screen.
     init(
         _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
-        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
+        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, videoSpace: String? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
         secondTileIds: [String] = []
     ) {
         let live = s.live
@@ -625,6 +646,9 @@ struct TrackScreenModel: Equatable {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)
         } else if let low = live.storageLowBytes {
             alert = Alert(title: "Storage low", detail: "\(low.int64Value / 1_000_000) MB free", critical: false)
+        } else if let videoSpace {
+            // Minutes of phone video left, long before the recorder's own warning (FBBD-467).
+            alert = Alert(title: "Storage low", detail: videoSpace, critical: false)
         } else {
             alert = nil
         }

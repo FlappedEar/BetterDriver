@@ -70,16 +70,19 @@ enum LogShare {
 
     /// The share sheet for [url], over whatever is on screen; on iPad as a popover from its middle.
     @MainActor
-    static func share(_ url: URL) { share([url]) }
+    static func share(_ url: URL, onClosed: (() -> Void)? = nil) { share([url], onClosed: onClosed) }
 
     /// The share sheet for several files at once, as a session's VBO + video (FBBD-443): saving them
     /// to Files puts them side by side in the folder picked.
+    /// [onClosed] runs when the sheet closes, sent or not: AirDrop calls it only once the transfer has
+    /// ended (5 Nov: "completed, to AirDrop, after 239 s"), so a copy made to share can go then (FBBD-467).
     @MainActor
-    static func share(_ urls: [URL]) {
+    static func share(_ urls: [URL], onClosed: (() -> Void)? = nil) {
         guard let first = urls.first else { return }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         guard var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController else {
             AppLog.w(tag, "no window to show the share sheet for \(first.lastPathComponent)")
+            onClosed?()
             return
         }
         while let shown = top.presentedViewController { top = shown }
@@ -97,6 +100,7 @@ enum LogShare {
         sheet.completionWithItemsHandler = { activity, completed, _, error in
             AppLog.i(tag, resultLine(name: name, activity: activity?.rawValue, completed: completed,
                                      error: error, seconds: Date().timeIntervalSince(shown)))
+            onClosed?()
         }
         top.present(sheet, animated: true)
         AppLog.i(tag, "share sheet shown for \(name)\(more)")
