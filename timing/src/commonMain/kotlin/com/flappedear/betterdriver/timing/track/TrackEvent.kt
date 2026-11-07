@@ -34,14 +34,15 @@ object TrackEvent {
      * [PROVISIONAL_KIND] event; null when it placed none or the text cannot be read.
      */
     fun provisionalLine(events: List<RecorderEvent>): TrackLine? {
-        val parts = events.lastOrNull { it.kind == PROVISIONAL_KIND }?.text?.split(' ') ?: return null
-        if (parts.size < ProvisionalParts || parts[0] != "line") return null
-        val n = (1..4).map { parts[it].toDoubleOrNull() ?: return null }
-        if (n.any { !it.isFinite() }) return null
-        return TrackLine(GeoPoint(n[0], n[1]), GeoPoint(n[2], n[3]))
+        val parts = events.lastOrNull { it.kind == PROVISIONAL_KIND }?.text?.split(' ').orEmpty()
+        val ends = parts.takeIf { it.size >= ProvisionalParts && it[0] == "line" }
+            ?.subList(1, ProvisionalParts)
+            ?.map { it.toDoubleOrNull() ?: Double.NaN }
+            ?.takeIf { n -> n.all { it.isFinite() } }
+        return ends?.let { (lat1, lon1, lat2, lon2) -> TrackLine(GeoPoint(lat1, lon1), GeoPoint(lat2, lon2)) }
     }
 
-    /** "line", four coordinates. */
+    /** "line", then the four coordinates. */
     private const val ProvisionalParts = 5
 
     /** Id of the saved track the session was timed with, or null when it had none. */
