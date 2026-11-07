@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.timing
 
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
@@ -173,5 +174,15 @@ class ProvisionalLineTest {
         val ends = "${line.left.lat} ${line.left.lon} ${line.right.lat} ${line.right.lon}"
         assertTrue(text.startsWith("line $ends at "), text)
         assertTrue(text.endsWith(made.displayName), text)
+    }
+
+    @Test
+    fun `the provisional line reads back from the session's events, and junk reads as none`() {
+        val made = drive(6).made.single()
+        val logged = RecorderEvent(0L, TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
+        assertEquals(made.startFinish, TrackEvent.provisionalLine(listOf(logged)))
+        assertNull(TrackEvent.provisionalLine(emptyList()))
+        assertNull(TrackEvent.provisionalLine(listOf(RecorderEvent(0L, TrackEvent.PROVISIONAL_KIND, "line 1 x 2 3"))))
+        assertNull(TrackEvent.provisionalLine(listOf(RecorderEvent(0L, TrackEvent.PROVISIONAL_KIND, "line 1 NaN 2 3"))))
     }
 }
