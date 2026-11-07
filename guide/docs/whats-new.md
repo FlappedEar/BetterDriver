@@ -13,6 +13,15 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.33.7
+
+- iPhone: phone video keeps its sound after the coach speaks. With the coach on and the phone camera recording away from a saved track, the coach says a short voice check 30 s after **START** and then every 2 minutes, logged so a road drive shows the sound going on.
+- iPhone: after **STOP** the coach says nothing more from that session.
+- iPhone: the **START** sheet says how long the chosen video mode fits in the free space; the track screen warns with minutes of video left under 10 minutes.
+- iPhone and iPad: a session shared by AirDrop, an export or a video with data no longer leaves a full copy behind; the iPad removes the received file after import.
+- iPhone: an error opening a phone video file is retried instead of ending the session's video, and the track screen says **Phone video stopped** while it is stopped; a video's finish goes on for a moment when the app leaves the screen.
+- iPhone: the first session at a new track feeds the coach for the track made from it.
+
 ## 1.33.6
 
 - iPhone: the drive log records each GPS receiver and sensor pick on **START**, so a pick that comes undone shows in the log.
