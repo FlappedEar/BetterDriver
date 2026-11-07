@@ -609,6 +609,9 @@ struct TrackScreenModel: Equatable {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)
         } else if let low = live.storageLowBytes {
             alert = Alert(title: "Storage low", detail: "\(low.int64Value / 1_000_000) MB free", critical: false)
+        } else if let warning = camera?.warning {
+            // The phone records no video because of a fault (FBBD-468, audit 7 Nov BD-T04).
+            alert = Alert(title: "Phone video stopped", detail: warning, critical: false)
         } else {
             alert = nil
         }
