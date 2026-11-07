@@ -39,7 +39,8 @@ object TrackEvent {
             ?.subList(1, ProvisionalParts)
             ?.map { it.toDoubleOrNull() ?: Double.NaN }
             ?.takeIf { n -> n.all { it.isFinite() } }
-        return ends?.let { (lat1, lon1, lat2, lon2) -> TrackLine(GeoPoint(lat1, lon1), GeoPoint(lat2, lon2)) }
+        val points = ends?.chunked(2) { GeoPoint(it[0], it[1]) } ?: return null
+        return TrackLine(points[0], points[1])
     }
 
     /** "line", then the four coordinates. */
