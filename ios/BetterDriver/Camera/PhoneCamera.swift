@@ -58,6 +58,10 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var lastAudioPts: CMTime = .invalid
     private var audioAppended = 0
     private var audioRefused = 0
+    /// When the last sound sample went into the file, on the host clock; on [queue].
+    private var lastAudioAt: CFTimeInterval?
+    /// Whether this camera's microphone counts in [AudioSessionUse]; on [queue].
+    private var holdsMicrophone = false
 
     /// [onStatus] runs on the main queue.
     init(log: PhoneVideoLog, mode: PhoneVideoMode, onStatus: @escaping (CameraStatus) -> Void) {
@@ -96,7 +100,15 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         rotationWatch = nil
         rotationCoordinator = nil
         let capture = self.capture
-        queue.async { capture.stopRunning() }
+        queue.async {
+            capture.stopRunning()
+            // The microphone has stopped: the session goes back to the other apps (FBBD-466).
+            if self.holdsMicrophone {
+                self.holdsMicrophone = false
+                AudioSessionUse.shared.microphoneStopped()
+                AudioSessionUse.shared.giveBackSoon()
+            }
+        }
     }
 
     private func begin(audio: Bool) {
@@ -180,6 +192,11 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             capture.addInput(micInput)
             audioOut.setSampleBufferDelegate(self, queue: queue)
             capture.addOutput(audioOut)
+            // The coach's voice must not give the session back while the microphone records (FBBD-466).
+            if !holdsMicrophone {
+                holdsMicrophone = true
+                AudioSessionUse.shared.microphoneStarted { [weak self] in self?.soundReport() ?? "stopped" }
+            }
         } else {
             hasAudio = false
         }
@@ -197,6 +214,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             try audio.setActive(true)
             return true
         } catch {
+            AppLog.w(tag, "no sound: audio session not set up: \(error.localizedDescription)")
             return false
         }
     }
@@ -226,6 +244,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             if audioIn.append(sample) {
                 audioAppended += 1
                 lastAudioPts = pts
+                lastAudioAt = CACurrentMediaTime()
             } else {
                 audioRefused += 1
             }
@@ -430,6 +449,17 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             guard self.running, self.configured else { return }
             self.status("Restarting", ok: false)
             self.capture.startRunning()
+        }
+    }
+
+    /// What the file's sound has taken so far (FBBD-466), for the line after each coach phrase: the
+    /// samples taken and refused in this file, how long ago the last one came, and the writer's state.
+    private func soundReport() -> String {
+        queue.sync {
+            let ago = lastAudioAt.map { "\(Int((CACurrentMediaTime() - $0) * 1000)) ms ago" } ?? "never"
+            let state = writer.map { Self.describe($0) } ?? "no file"
+            return "running=\(capture.isRunning) sound_samples=\(audioAppended) refused=\(audioRefused) " +
+                "last_sound=\(ago) \(state)"
         }
     }
 

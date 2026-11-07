@@ -29,14 +29,19 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     private let lock = NSLock()
     private var current: [ObjectIdentifier: CoachSpeech] = [:]
     private var playing = 0
+    /// Set by [shutdown]: a phrase asked for after the session ended is not said (audit BD-T09).
+    private var closed = false
     private var routeObserver: NSObjectProtocol?
+    /// Who else uses the audio session: it is not given back while the camera records sound (FBBD-466).
+    private let use: AudioSessionUse
 
     /// The output changed: the delay iOS reports for the new one, in ms, 0 when it reports none, and its type.
     var onDelay: ((Int, String) -> Void)?
 
     /// The voice, speed and pitch chosen in Settings › Spoken coach (FBBD-338), as Test voice says them.
     /// [clipsDone] hears whether the pre-rendered clips are ready (FBBD-48), when they are pre-rendered.
-    init(settings: CoachSettings, clipsDone: ((Bool) -> Void)? = nil) {
+    init(settings: CoachSettings, clipsDone: ((Bool) -> Void)? = nil, use: AudioSessionUse = .shared) {
+        self.use = use
         voice = CoachVoiceChoice.voice(settings)
         rate = CoachVoiceChoice.rate(settings)
         pitch = settings.speech.pitch
@@ -48,9 +53,11 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil
         ) { [weak self] note in self?.routeChanged(note) }
         // Spoken prompts over music: other audio ducks while a phrase plays, as navigation guidance.
-        try? AVAudioSession.sharedInstance().setCategory(
+        // Not while the camera records sound: its play-and-record category also plays the voice, and a
+        // playback-only one would stop the microphone (FBBD-466).
+        if !use.recording { try? AVAudioSession.sharedInstance().setCategory(
             .playback, mode: .voicePrompt, options: [.duckOthers, .interruptSpokenAudioAndMixWithOthers]
-        )
+        ) }
     }
 
     /// The output's delay as iOS reports it for the route now, in ms (FBBD-49); the cues are timed for it.
@@ -114,6 +121,14 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     }
 
     func say(text: String, speech: CoachSpeech) -> Bool {
+        lock.lock()
+        let ended = closed
+        lock.unlock()
+        // Work the coach queued before STOP must not speak after it, nor into the next session.
+        if ended {
+            AppLog.i("Voice", "phrase asked for after the session ended, not said")
+            return false
+        }
         if let sound = clips?.cache.phrase(text: text), play(sound, speech) { return true }
         guard voice != nil else { return false }
         let utterance = AVSpeechUtterance(string: text)
@@ -224,12 +239,15 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
             defer { self.engineLock.unlock() }
             guard !self.speaking else { return }
             self.engine.pause()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            self.use.phraseEnded()
         }
     }
 
     /// Stops speaking and gives the other apps' audio back; at the end of a recording.
     func shutdown() {
+        lock.lock()
+        closed = true
+        lock.unlock()
         if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
         routeObserver = nil
         onDelay = nil
@@ -239,15 +257,10 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         engineLock.lock()
         engine.stop()
         engineLock.unlock()
-        // Off the main queue: deactivating blocks while audio (the camera's microphone too) is still
-        // running, which held the screen when the recording ended. Tried again while the camera stops,
-        // so other apps' sound is not left ducked.
-        DispatchQueue.global(qos: .utility).async {
-            for _ in 0 ..< 10 {
-                if (try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)) != nil { return }
-                Thread.sleep(forTimeInterval: 0.3)
-            }
-        }
+        // Off the main queue: deactivating blocks while audio is still running, which held the screen
+        // when the recording ended. Tried again a few times, so other apps' sound is not left ducked;
+        // while the camera still records sound, the camera gives the session back when it stops.
+        use.giveBackSoon()
     }
 
     /// Where the sound goes: "headset" for Bluetooth, wired or the car's audio, else "speaker"; and the port type.
@@ -271,9 +284,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
 
     private func finished(_ utterance: AVSpeechUtterance, _ end: String) {
         take(utterance, remove: true)?.ended(end: end)
-        if !speaking {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
+        if !speaking { use.phraseEnded() }
     }
 
     // MARK: AVSpeechSynthesizerDelegate
