@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.recorder.log.IosLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackLine
 import kotlin.test.AfterTest
@@ -72,27 +73,35 @@ class NewTrackCoachTest {
         return session
     }
 
-    @Test
-    fun aTrackMadeAfterTheFirstSessionTimesAndCoachesTheSecond() {
-        // Session 1: no saved track, no coach; live timing places a provisional line (FBBD-335).
+    /** Session 1 with no saved track and no coach, then the track made from it as the driver does. */
+    private fun firstSessionThenTrack(): Pair<LiveSession, Track> {
         val first = drive(speaker = null)
         first.stop()
-        val firstEvents = SessionStore(sessions).read(first.id).events
-        assertEquals("unknown", firstEvents.single { it.kind == TrackEvent.KIND }.text)
-        assertNotNull(TrackEvent.provisionalLine(firstEvents), "session 1 logs its provisional line")
-
-        // Between sessions: New track here, then the start/finish placed on session 1's lap.
         val library = TrackLibrary(tracks, sessions)
         val made = library.createAt(gnss.centerLat, gnss.centerLon, "Moto Park")
-        assertEquals(1, library.editorSessions(made).size, "the editor offers session 1's laps")
         val line = TrackLine(GeoPoint(gate.lat1, gate.lon1), GeoPoint(gate.lat2, gate.lon2))
-        val track = library.save(made.copy(startFinish = line))
+        return first to library.save(made.copy(startFinish = line))
+    }
 
-        // Session 2: timed on the new track and coached, the reference built from session 1.
-        val log = LogLines().capture()
-        val speaker = Speaker()
-        val second = drive(speaker)
-        assertNotNull(second.screen().coach?.text, "the coach line shows in session 2")
+    @Test
+    fun theFirstSessionAtANewPlaceLogsItsProvisionalLine() {
+        val first = drive(speaker = null)
+        first.stop()
+        val events = SessionStore(sessions).read(first.id).events
+        assertEquals("unknown", events.single { it.kind == TrackEvent.KIND }.text)
+        assertNotNull(TrackEvent.provisionalLine(events), "session 1 logs its provisional line")
+    }
+
+    @Test
+    fun theEditorOffersTheFirstSessionsLaps() {
+        val (_, track) = firstSessionThenTrack()
+        assertEquals(1, TrackLibrary(tracks, sessions).editorSessions(track).size)
+    }
+
+    @Test
+    fun theSecondSessionIsTimedOnTheTrackMadeFromTheFirst() {
+        val (_, track) = firstSessionThenTrack()
+        val second = drive(Speaker())
         second.stop()
         val events = SessionStore(sessions).read(second.id).events
         assertEquals(
@@ -100,16 +109,38 @@ class NewTrackCoachTest {
             events.single { it.kind == TrackEvent.KIND }.text,
         )
         assertEquals(3, events.count { it.kind == EventKinds.LAP_LINE && "kind=Timed" in it.text })
+    }
+
+    @Test
+    fun theFirstSessionIsInTheReferenceOfTheTrackMadeFromIt() {
+        val (first, track) = firstSessionThenTrack()
+        val reference = assertNotNull(IosCoachLibrary(sessions, references).reference(track, "", null))
+        assertEquals(listOf(first.id), reference.sessions)
+    }
+
+    @Test
+    fun theSecondSessionsCoachStartsWithTheFirstSessionsReference() {
+        firstSessionThenTrack()
+        val log = LogLines().capture()
+        val second = drive(Speaker())
+        second.stop()
         val logged = log.all()
         assertTrue(
             logged.any { it.startsWith("CoachService: coaching at Moto Park: a reference of 1 sessions") },
             logged.joinToString("\n"),
         )
-        val cues = events.filter { it.kind == CoachEvents.CUE }
-        assertTrue(cues.isNotEmpty(), "events: ${events.map { it.kind }}")
-        assertEquals(cues.size, speaker.said.size)
-        val reference = assertNotNull(IosCoachLibrary(sessions, references).reference(track, second.id, null))
-        assertEquals(listOf(first.id), reference.sessions)
+    }
+
+    @Test
+    fun theSecondSessionsCoachSpeaks() {
+        firstSessionThenTrack()
+        val speaker = Speaker()
+        val second = drive(speaker)
+        assertNotNull(second.screen().coach?.text, "the coach line shows in session 2")
+        second.stop()
+        val cues = SessionStore(sessions).read(second.id).events.filter { it.kind == CoachEvents.CUE }
+        assertTrue(cues.isNotEmpty())
+        assertTrue(speaker.said.isNotEmpty())
     }
 
     @Test
