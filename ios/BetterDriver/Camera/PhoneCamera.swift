@@ -111,8 +111,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private func begin(audio: Bool) {
         guard !stopped else { return }
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            // No back camera at all (the simulator; every iPhone has one): amber only, no alert, as before.
             AppLog.w(Self.tag, "no back camera: no phone video")
-            status("Not supported", ok: false, warning: CameraStatus.off)
+            status("Not supported", ok: false)
             return
         }
         // Video is always landscape, as the track screen (Arek): the file's orientation (the frames
