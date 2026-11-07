@@ -87,6 +87,10 @@ final class RecordingController: ObservableObject {
     private var imu: PhoneImuLink?
     private var keepAlive: BackgroundKeepAlive?
     private var camera: PhoneCamera?
+    /// The track screen's warning while phone video has under VideoStorage.warnMinutes left (FBBD-467),
+    /// and when free space was last read for it: every 30 s while the camera records.
+    private var videoSpaceWarning: String?
+    private var videoSpaceCheckedAt: Date?
     /// The GNSS state at the last refresh, for the lost and back sounds.
     private var lastGnss: GnssState?
     /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
@@ -102,6 +106,9 @@ final class RecordingController: ObservableObject {
     /// The track screen's frames while recording (FBBD-376).
     private var frames: FrameMeter?
     private var timer: Timer?
+    /// The coach's voice check while the camera records sound, away from a saved track (FBBD-466).
+    private var voiceCheck = VoiceCheck()
+    private var startedAt = Date()
     private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
@@ -268,6 +275,8 @@ final class RecordingController: ObservableObject {
         meter.start()
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
+        voiceCheck = VoiceCheck()
+        startedAt = Date()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -415,9 +424,11 @@ final class RecordingController: ObservableObject {
         camera?.stop()
         camera = nil
         // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
-        // activates the audio session too.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // activates the audio session too. While the camera still stops, it gives it back itself (FBBD-466).
+        AudioSessionUse.shared.giveBack()
         cameraStatus = nil
+        videoSpaceWarning = nil
+        videoSpaceCheckedAt = nil
         // The cameras answer in their own time; the stop is noted in the ended session's events.
         goPros?.stop()
         goPros = nil
@@ -448,6 +459,16 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    /// Says the voice check when it is due (FBBD-466): only with the coach on and the camera recording sound.
+    private func checkVoice(_ now: LiveScreen) {
+        guard let voice, camera != nil, AudioSessionUse.shared.recording else { return }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard voiceCheck.due(elapsed: elapsed, atSavedTrack: now.placeSaved, speaking: voice.speaking) else { return }
+        let text = SettingsCore.shared.sampleCue(language: SettingsModel.shared.coach.language)
+        let said = voice.say(text: text, speech: VoiceCheckSpeech(number: voiceCheck.said))
+        AppLog.i("VoiceCheck", "check \(voiceCheck.said) at \(Int(elapsed)) s: \(said ? "said" : "not said")")
+    }
+
     private func refresh() {
         guard let live = session else { return }
         let now = live.screen()
@@ -467,15 +488,31 @@ final class RecordingController: ObservableObject {
             return
         }
         gnssSound(now.gnss)
+        checkVoice(now)
+        checkVideoSpace()
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
             now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, tyres: tyres?.status,
-            camera: cameraStatus,
+            camera: cameraStatus, videoSpace: videoSpaceWarning,
             tileIds: tileIds, secondTileIds: secondTileIds
         )
         screen = model
         activity.update(model)
+    }
+
+    /// Reads free space every 30 s while the phone camera records, so the track screen warns with
+    /// minutes of video left, not at the recorder's 200 MiB (FBBD-467). Only reads: the recording goes on.
+    private func checkVideoSpace() {
+        guard camera != nil else { return }
+        if let last = videoSpaceCheckedAt, Date().timeIntervalSince(last) < 30 { return }
+        videoSpaceCheckedAt = Date()
+        let free = VideoStorage.freeBytes()
+        let warning = VideoStorage.warning(freeBytes: free, mode: phoneVideoMode)
+        if warning != nil && videoSpaceWarning == nil {
+            AppLog.i("Recording", "storage: \(free) bytes free, \(warning ?? "") at \(phoneVideoMode.label)")
+        }
+        videoSpaceWarning = warning
     }
 }
 
@@ -577,7 +614,7 @@ struct TrackScreenModel: Equatable {
     /// [secondTileIds] its second screen.
     init(
         _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
-        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
+        tyres: TpmsStatus? = nil, camera: CameraStatus? = nil, videoSpace: String? = nil, tileIds: [String] = TrackScreenModel.defaultTiles,
         secondTileIds: [String] = []
     ) {
         let live = s.live
@@ -612,6 +649,9 @@ struct TrackScreenModel: Equatable {
         } else if let warning = camera?.warning {
             // The phone records no video because of a fault (FBBD-468, audit 7 Nov BD-T04).
             alert = Alert(title: "Phone video stopped", detail: warning, critical: false)
+        } else if let videoSpace {
+            // Minutes of phone video left, long before the recorder's own warning (FBBD-467).
+            alert = Alert(title: "Storage low", detail: videoSpace, critical: false)
         } else {
             alert = nil
         }

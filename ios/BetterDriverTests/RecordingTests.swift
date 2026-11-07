@@ -53,6 +53,15 @@ final class RecordingTests: XCTestCase {
         )
     }
 
+    /// Minutes of phone video left show as the storage alert, amber, long before the recorder's 200 MiB (FBBD-467).
+    func testVideoSpaceLeftShowsAsTheStorageAlert() throws {
+        let session = try start(receiverHasG: false)
+        let model = TrackScreenModel(session.screen(), receiverHasG: false, videoSpace: "About 4 min of video left")
+        XCTAssertEqual(model.alert, TrackScreenModel.Alert(title: "Storage low", detail: "About 4 min of video left", critical: false))
+        XCTAssertNil(TrackScreenModel(session.screen(), receiverHasG: false).alert)
+        _ = session.stop()
+    }
+
     func testLapsAtASavedTrackShowOnTheTrackScreen() throws {
         try saveRing()
         let session = try start(receiverHasG: false)
