@@ -112,7 +112,12 @@ struct PhoneFileRetry: Equatable {
 /// that loss to one file's length instead of the whole session. Review, the data video and the VBO
 /// export already join a session's files on the session clock (Android starts a new file when one is
 /// full too), so a file change is no gap in the session's video apart from a frame or two.
+///
+/// OFF until after Moto Park (2026-11-08): a recording change the day before the track, and a lap
+/// spanning two files in the data video and the frames lost at each change are not proven by a test
+/// yet (no camera in the simulator). [on] turns it on.
 enum PhoneFileLength {
+    static let on = false
     static let seconds = 300.0
 
     /// Whether a file that started at [startedAt] is full at [now]; [limit] for the tests.

@@ -68,7 +68,8 @@ final class PhoneVideoFinishingTests: XCTestCase {
     /// FBBD-468 (audit 7 Nov BD-T02): files end when full and the next starts at the following frame,
     /// as PhoneCamera does, with the full file finishing while the next one records. Killed in the
     /// fourth file, the app keeps the three before it whole: what is lost is at most one file's length.
-    /// A 2 s file stands for the app's 5 min.
+    /// A 2 s file stands for the app's 5 min. The app does this only with PhoneFileLength.on (off until
+    /// after Moto Park); the test keeps the writer side ready for it.
     func testFullFilesBoundWhatAKilledAppLoses() async throws {
         XCTAssertEqual(PhoneFileLength.seconds, 300)
         XCTAssertFalse(PhoneFileLength.full(startedAt: 10, now: 309.9))
