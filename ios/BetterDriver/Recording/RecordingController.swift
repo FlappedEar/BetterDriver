@@ -415,8 +415,8 @@ final class RecordingController: ObservableObject {
         camera?.stop()
         camera = nil
         // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
-        // activates the audio session too.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // activates the audio session too. While the camera still stops, it gives it back itself (FBBD-466).
+        AudioSessionUse.shared.giveBack()
         cameraStatus = nil
         // The cameras answer in their own time; the stop is noted in the ended session's events.
         goPros?.stop()
