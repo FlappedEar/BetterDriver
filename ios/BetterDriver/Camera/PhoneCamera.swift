@@ -7,6 +7,14 @@ import UIKit
 struct CameraStatus: Equatable {
     let text: String
     let ok: Bool
+    /// Set while the phone records no video because of a fault, said on the track screen's alert
+    /// line (FBBD-468, audit 7 Nov BD-T04): an amber camera icon alone was easy to miss while driving.
+    var warning: String? = nil
+
+    /// The alert line's text while the camera retries after a fault.
+    static let retrying = "Retrying, data still recording"
+    /// The alert line's text when the camera cannot record in this session.
+    static let off = "Off this session, data still recording"
 }
 
 /// Phone video with a session on the iPhone, as the Android phone camera (FBBD-21): the back wide
@@ -75,7 +83,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { video in
             guard video else {
-                self.status("No access", ok: false)
+                AppLog.w(Self.tag, "no camera access: no phone video")
+                self.status("No access", ok: false, warning: CameraStatus.off)
                 return
             }
             // Sound is optional: without the microphone the video records silent.
@@ -114,6 +123,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private func begin(audio: Bool) {
         guard !stopped else { return }
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            // No back camera at all (the simulator; every iPhone has one): amber only, no alert, as before.
+            AppLog.w(Self.tag, "no back camera: no phone video")
             status("Not supported", ok: false)
             return
         }
@@ -144,15 +155,41 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             self.running = true
             self.rotation = angle
             self.hasAudio = audio
-            do {
-                try self.configure(device)
-            } catch {
-                self.running = false
-                self.status("Camera error", ok: false)
+            self.startCapture(device, attempt: 1)
+        }
+    }
+
+    /// Times the camera is set up before the session goes on without video (FBBD-468, BD-T04).
+    static let configureAttempts = 3
+
+    /// Sets the camera up and starts it; a failure that may pass (the camera busy, a lock refused) is
+    /// tried again after 2 s, up to [configureAttempts] times. A mode the phone has not is not retried.
+    private func startCapture(_ device: AVCaptureDevice, attempt: Int) {
+        guard running else { return }
+        do {
+            try configure(device)
+        } catch {
+            let unsupported = (error as? CameraError) == .notSupported
+            AppLog.w(Self.tag, "camera not set up (attempt \(attempt) of \(Self.configureAttempts)): \(error)")
+            unconfigure()
+            if !unsupported, attempt < Self.configureAttempts {
+                status("Restarting", ok: false, warning: CameraStatus.retrying)
+                queue.asyncAfter(deadline: .now() + 2) { self.startCapture(device, attempt: attempt + 1) }
                 return
             }
-            self.capture.startRunning()
+            running = false
+            status("Camera error", ok: false, warning: CameraStatus.off)
+            return
         }
+        capture.startRunning()
+    }
+
+    /// Takes off what a failed [configure] added, so it can be tried again.
+    private func unconfigure() {
+        capture.beginConfiguration()
+        capture.inputs.forEach { capture.removeInput($0) }
+        capture.outputs.forEach { capture.removeOutput($0) }
+        capture.commitConfiguration()
     }
 
     /// [angle] when it is a landscape side (0° or 180°), else nil.
@@ -228,6 +265,12 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             if let writer, writer.status == .failed || writer.status == .cancelled {
                 failedFile(input: "writer", frame: sample)
             }
+            // A full file is finished and the next starts with this frame (FBBD-468, BD-T02): a killed
+            // app loses at most the file it was writing. Off until after Moto Park (PhoneFileLength.on).
+            if PhoneFileLength.on, let writer, writer.status == .writing,
+               PhoneFileLength.full(startedAt: fileStartedAt, now: Self.seconds(pts)) {
+                finishFile(reason: "file_full")
+            }
             if writer == nil, running, retry.mayOpen(at: Self.seconds(pts)) { open(at: pts, frame: sample) }
             guard let writer, writer.status == .writing, let videoIn else { return }
             // A frame the writer is not ready for is counted and left out; only a frame in the file
@@ -260,16 +303,16 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     /// Starts the next file at the frame captured at [pts]; [frame] gives its size.
     private func open(at pts: CMTime, frame: CMSampleBuffer) {
         let dir = URL(fileURLWithPath: log.videoDir, isDirectory: true)
-        fileIndex += 1
-        let name = log.fileName(index: fileIndex)
+        // A name no file has yet: AVAssetWriter refuses a file that is there, and one is never overwritten.
+        var name: String
+        repeat {
+            fileIndex += 1
+            name = log.fileName(index: fileIndex)
+        } while FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path)
+        let url = dir.appendingPathComponent(name)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let w = try AVAssetWriter(outputURL: dir.appendingPathComponent(name), fileType: .mp4)
-            // FBBD-441: fragments are off. The -11800/-16341 failures of 3 Nov (12 files lost in 34 min)
-            // came only after they were turned on (#476, 1 Nov); the drives of 30 Oct without them were
-            // clean. Not proven: the next drive logs are the A/B. A killed app loses that file's index
-            // again (FBBD-350), as before 1 Nov; the data recording never depends on the camera.
-            if Self.fragmented { w.movieFragmentInterval = Self.fragmentInterval }
+            let w = try Self.makeWriter(url: url)
             // Settings the writer refuses would also throw in the input: no video then, never a crash.
             let settings = videoSettings(for: frame)
             guard w.canApply(outputSettings: settings, forMediaType: .video) else { throw CameraError.notSupported }
@@ -308,11 +351,30 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             // Green at the chosen mode, amber once stepped down (UI-07).
             status(recording.label, ok: recording == mode)
         } catch {
-            // No video for the rest of this session; the data recording carries on.
+            // Tried again after [retry]'s wait, as a file that failed while recording (FBBD-468, BD-T04);
+            // until 1.33.6 this ended the session's video. The data recording carries on.
             writer = nil
-            running = false
-            status("Camera error", ok: false)
+            videoIn = nil
+            audioIn = nil
+            // What this attempt left (a file without frames) goes: the name was free before it.
+            try? FileManager.default.removeItem(at: url)
+            let now = Self.seconds(pts)
+            retry.failed(startedAt: now, now: now)
+            AppLog.w(Self.tag, "\(name) not opened: \(error); failed files \(retry.total), next file in \(Int(retry.wait)) s")
+            status("Camera error", ok: false, warning: CameraStatus.retrying)
         }
+    }
+
+    /// The writer of a session file at [url], as the app records it; the tests make theirs here, so what
+    /// they prove holds for the shipped files (FBBD-468, audit 7 Nov BD-T03).
+    ///
+    /// FBBD-441: fragments are off. The -11800/-16341 failures of 3 Nov (12 files lost in 34 min) came
+    /// only after they were turned on (#476, 1 Nov); the drives of 30 Oct without them were clean. A file
+    /// cut off by a killed app has no index and does not play; [PhoneFileLength] bounds that loss.
+    static func makeWriter(url: URL) throws -> AVAssetWriter {
+        let w = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        if fragmented { w.movieFragmentInterval = fragmentInterval }
+        return w
     }
 
     /// How often the file is written as a playable fragment: a file cut off by a killed app or a crash
@@ -388,6 +450,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             // the session's video is not offered, and its answer is checked and logged.
             let sessionId = log.sessionId
             PhoneVideoFinishing.shared.begin(sessionId: sessionId)
+            // STOP or the app going to the background ends the file: iOS must not suspend the app
+            // before the MP4 has its index (FBBD-468, audit 7 Nov BD-T08).
+            let release = BackgroundTime.shared.hold("Finish \(file)")
             writer.finishWriting {
                 if writer.status == .completed {
                     AppLog.i(Self.tag, "\(file) finished")
@@ -395,6 +460,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                     AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
                 }
                 PhoneVideoFinishing.shared.end(sessionId: sessionId)
+                release()
             }
         } else {
             AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
@@ -427,7 +493,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         finishFile(reason: "error")
         retry.failed(startedAt: fileStartedAt, now: now)
         AppLog.i(Self.tag, "failed files \(retry.total), next file in \(Int(retry.wait)) s")
-        status("Camera error", ok: false)
+        status("Camera error", ok: false, warning: CameraStatus.retrying)
     }
 
     private static func seconds(_ t: CMTime) -> Double {
@@ -469,8 +535,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         "status=\(writer.status.rawValue) error=\(writer.error.map { String(describing: $0) } ?? "none")"
     }
 
-    private func status(_ text: String, ok: Bool) {
-        let report = CameraStatus(text: text, ok: ok)
+    private func status(_ text: String, ok: Bool, warning: String? = nil) {
+        let report = CameraStatus(text: text, ok: ok, warning: warning)
         DispatchQueue.main.async { self.onStatus(report) }
     }
 

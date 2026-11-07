@@ -177,6 +177,26 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(session.stop())
     }
 
+    /// FBBD-468 (audit 7 Nov BD-T04): a camera fault is said on the alert line, not only by an amber
+    /// icon; it goes when a file records again, and a mode step-down (amber too) is no alert.
+    func testAPhoneVideoFaultShowsAsAnAlert() throws {
+        let session = try start(receiverHasG: false)
+        for n in Int64(0)...Int64(25) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        let retrying = CameraStatus(text: "Camera error", ok: false, warning: CameraStatus.retrying)
+        let fault = TrackScreenModel(session.screen(), receiverHasG: false, camera: retrying)
+        XCTAssertEqual(fault.alert, TrackScreenModel.Alert(title: "Phone video stopped", detail: CameraStatus.retrying, critical: false))
+        XCTAssertEqual(fault.status.first { $0.label == "Camera" }?.ok, false)
+        let off = CameraStatus(text: "No access", ok: false, warning: CameraStatus.off)
+        XCTAssertEqual(TrackScreenModel(session.screen(), receiverHasG: false, camera: off).alert?.detail, CameraStatus.off)
+        let steppedDown = CameraStatus(text: "720p · 30", ok: false)
+        XCTAssertNil(TrackScreenModel(session.screen(), receiverHasG: false, camera: steppedDown).alert)
+        let recording = CameraStatus(text: "1080p · 60", ok: true)
+        XCTAssertNil(TrackScreenModel(session.screen(), receiverHasG: false, camera: recording).alert)
+        XCTAssertTrue(session.stop())
+    }
+
     func testBeforeTheFirstFixTheScreenWaits() throws {
         let session = try start(receiverHasG: true)
         let model = TrackScreenModel(session.screen(), receiverHasG: true)
