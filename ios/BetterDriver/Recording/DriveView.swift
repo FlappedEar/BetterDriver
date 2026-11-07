@@ -258,6 +258,8 @@ struct ReceiverSheet: View {
     @State private var picked: Receiver?
     /// The RaceBoxes the app holds connected (HeldConnections).
     @State private var heldIds: Set<UUID> = []
+    /// Free space when the sheet opened, for how long the chosen video mode fits (FBBD-467).
+    @State private var freeBytes: Int64?
 
     private var devices: [FoundRaceBoxDevice] {
         found.values.sorted { a, b in
@@ -320,6 +322,7 @@ struct ReceiverSheet: View {
         .onAppear {
             let supported = PhoneVideoMode.supported()
             modes = supported.contains(videoMode) ? supported : supported + [videoMode]
+            freeBytes = VideoStorage.freeBytes()
             let s = RaceBoxScanner { device in
                 found[device.id] = device
                 // The RaceBox used last is picked as it comes into range, as the list's top row.
@@ -452,6 +455,13 @@ struct ReceiverSheet: View {
             }
             .padding(.vertical, 6)
             .accessibilityIdentifier("phoneVideoMode")
+            // How long the chosen mode fits in the free space, amber under two sessions (FBBD-467).
+            if let freeBytes {
+                let line = VideoStorage.startLine(freeBytes: freeBytes, mode: videoMode)
+                DimText(line.text, color: line.short ? Palette.warning : Palette.onSurfaceVariant)
+                    .padding(.bottom, 6)
+                    .accessibilityIdentifier("phoneVideoSpace")
+            }
         }
         // Each Open GoPro camera starts and stops with the session while on (FBBD-343).
         ForEach(OpenGoPros.companion.listed(setup: settings.setup), id: \.id) { goPro in
