@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,7 +141,7 @@ private fun WidgetSwitches(
                     divider = i > 0,
                     supporting = if (has || loading) null else "No data in this session",
                 ) {
-                    Switch(checked = choice.isShown(w), onCheckedChange = { onChange(choice.with(w, it)) })
+                    Switch(checked = choice.isShown(w), onCheckedChange = { onChange(choice.with(w, it, available)) })
                 }
             }
         }
@@ -209,6 +210,9 @@ private fun OverlayPicture(
 @Composable
 private fun Plate(key: String, label: String, b: ShareBox, pw: Float, ph: Float, onDrop: (Float, Float) -> Unit) {
     var drag by remember(key, b) { mutableStateOf(Offset.Zero) }
+    // The gesture outlives recompositions: read the latest choice's callback and picture size at the drop.
+    val drop by rememberUpdatedState(onDrop)
+    val size by rememberUpdatedState(pw to ph)
     val density = LocalDensity.current
     val dragging = drag != Offset.Zero
     Box(
@@ -222,7 +226,7 @@ private fun Plate(key: String, label: String, b: ShareBox, pw: Float, ph: Float,
                     onDragEnd = {
                         val d = drag
                         drag = Offset.Zero
-                        onDrop(b.left + d.x / pw, b.top + d.y / ph)
+                        drop(b.left + d.x / size.first, b.top + d.y / size.second)
                     },
                     onDragCancel = { drag = Offset.Zero },
                 ) { change, amount ->

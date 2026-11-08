@@ -40,6 +40,39 @@ class HudChoiceTest {
     }
 
     @Test
+    fun `a widget switched on again never lands on one moved into its space`() {
+        val lapOff = HudChoice.All.with(HudWidget.Lap, shown = false)
+        val hrThere = lapOff.move(HudWidget.HeartRate, 0.166f, 0.829f, all - HudWidget.Lap)
+        assertTrue(HudWidget.HeartRate in hrThere.places)
+        val back = hrThere.with(HudWidget.Lap, shown = true)
+        assertTrue(back.isShown(HudWidget.Lap))
+        assertTrue(HudWidget.Lap in back.places)
+        assertNoOverlap(back, all)
+    }
+
+    @Test
+    fun `a temperature row switched on again never grows its stack into another widget`() {
+        val oilOnly = HudChoice.All.with(HudWidget.Gearbox, shown = false).with(HudWidget.Coolant, shown = false)
+        val shown = all - HudWidget.Gearbox - HudWidget.Coolant
+        val moved = oilOnly.move(HudWidget.GReadout, 0.428f, 0.886f, shown)
+        assertTrue(HudWidget.GReadout in moved.places)
+        val back = moved.with(HudWidget.Gearbox, shown = true)
+        assertTrue(back.isShown(HudWidget.Gearbox))
+        assertNoOverlap(back, all - HudWidget.Coolant)
+    }
+
+    private fun assertNoOverlap(choice: HudChoice, shown: Set<HudWidget>) {
+        val s = TechHudShares(shown, choice)
+        val boxes = s.widgets.values.toList() + s.values
+        boxes.forEachIndexed { i, a ->
+            boxes.forEachIndexed { j, b ->
+                val over = a.left + touch < b.right && b.left + touch < a.right && a.top + touch < b.bottom && b.top + touch < a.bottom
+                if (i < j) assertFalse(over, "$a over $b")
+            }
+        }
+    }
+
+    @Test
     fun storedFormRoundTrips() {
         val c = HudChoice(setOf(HudWidget.TrackMap, HudWidget.Oil))
             .move(HudWidget.HeartRate, 0.0f, 0.4f, all)
@@ -86,6 +119,7 @@ class HudChoiceTest {
     }
 
     private val all = HudWidget.entries.toSet()
+    private val touch = 1e-4f
 
     @Test
     fun `a moved widget snaps to the grid, stays inside and never covers another`() {

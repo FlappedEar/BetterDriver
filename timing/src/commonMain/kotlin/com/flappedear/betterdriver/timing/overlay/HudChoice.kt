@@ -51,9 +51,25 @@ class HudChoice(
     /** Whether the editor's switch for [widget] is on. */
     fun isShown(widget: HudWidget): Boolean = widget !in hidden
 
-    /** This choice with [widget]'s switch set to [shown]. */
-    fun with(widget: HudWidget, shown: Boolean): HudChoice =
-        copy(hidden = if (shown) hidden - widget else hidden + widget)
+    /**
+     * This choice with [widget]'s switch set to [shown]. Switched on among the [available] widgets (those
+     * the video has data for), it must not land on another plate: a widget moved into its space while it
+     * was off, or a temperature stack grown by one row. Then it goes to the first free place on the grid
+     * as a plate of its own; with none free, it stays off.
+     */
+    fun with(widget: HudWidget, shown: Boolean, available: Set<HudWidget> = HudWidget.entries.toSet()): HudChoice {
+        val on = copy(hidden = hidden - widget)
+        val visible = available - on.hidden
+        val before = TechHudShares(available - hidden, this)
+        return when {
+            !shown -> copy(hidden = hidden + widget)
+            widget !in available || !on.clashes(visible, before) -> on
+            else -> freeSpots(widget.width, widget.height)
+                .filter { it.x + widget.width <= 1f && it.y + widget.height <= 1f }
+                .map { on.copy(places = on.places + (widget to it)) }
+                .firstOrNull { !it.clashes(visible, before) } ?: this
+        }
+    }
 
     /** How many of [available] widgets the choice draws: the editor's "10 of 13". */
     fun shownCount(available: Collection<HudWidget> = HudWidget.entries): Int = available.count { isShown(it) }
@@ -98,7 +114,7 @@ class HudChoice(
         val spot = if (full) {
             null
         } else {
-            freeSpots().firstOrNull { s ->
+            freeSpots(HudValue.Width, HudValue.Height).firstOrNull { s ->
                 fits(Box(s.x, s.y, s.x + HudValue.Width, s.y + HudValue.Height), values, shown)
             }
         }
@@ -139,6 +155,18 @@ class HudChoice(
         places: Map<HudWidget, HudSpot> = this.places,
         values: List<HudValue> = this.values,
     ) = HudChoice(hidden, places, values)
+
+    /** Whether a plate that is new or moved against [before] covers another of the [shown] widgets or plates. */
+    private fun clashes(shown: Set<HudWidget>, before: TechHudShares): Boolean {
+        val now = TechHudShares(shown, this)
+        val boxes = now.widgets.map { (w, b) -> Triple(w.name, b, before.widgets[w] != b) } +
+            now.values.mapIndexed { i, b -> Triple("v$i", b, before.values.getOrNull(i) != b) }
+        return boxes.any { (k, b, changed) -> changed && boxes.any { (o, ob, _) -> o != k && covers(ob, b) } }
+    }
+
+    /** Overlap by more than float rounding: the template's stacked rows touch edge to edge. */
+    private fun covers(a: Box, b: Box): Boolean =
+        a.left + Touch < b.right && b.left + Touch < a.right && a.top + Touch < b.bottom && b.top + Touch < a.bottom
 
     private fun fits(box: Box, plates: List<HudValue>, shown: Set<HudWidget>): Boolean {
         val shares = TechHudShares(shown, copy(values = plates))
@@ -181,11 +209,11 @@ class HudChoice(
         /** Plate [i]'s place along the free top row, between the map and heart rate. */
         internal fun spotOf(i: Int): HudSpot = HudSpot(FirstValueX + i * ValueStepX, TopY)
 
-        /** The places a new plate tries: the top row, then the grid row by row. */
-        private fun freeSpots(): Sequence<HudSpot> = sequence {
+        /** The places a new plate [width] by [height] tries: the top row, then the grid row by row. */
+        private fun freeSpots(width: Float, height: Float): Sequence<HudSpot> = sequence {
             for (i in 0 until HudValue.Max) yield(spotOf(i))
-            for (gy in 0..((1 - HudValue.Height) * GridY).toInt()) {
-                for (gx in 0..((1 - HudValue.Width) * GridX).toInt()) {
+            for (gy in 0..((1 - height) * GridY).toInt()) {
+                for (gx in 0..((1 - width) * GridX).toInt()) {
                     yield(HudSpot(gx.toFloat() / GridX, gy.toFloat() / GridY))
                 }
             }
@@ -202,6 +230,7 @@ class HudChoice(
         private const val FirstValueX = 0.19f
         private const val ValueStepX = 0.11f
         private const val TopY = 0.015f
+        private const val Touch = 1e-4f
     }
 }
 

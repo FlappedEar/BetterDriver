@@ -78,7 +78,7 @@ class OverlayEditorState(
     val canReset: Boolean get() = choice.moved
 
     fun toggle(widget: HudWidget, on: Boolean) {
-        choice = choice.with(widget, on)
+        choice = choice.with(widget, on, has)
     }
 
     /** Plate [key] dropped with its top left corner at [x], [y] (shares); stays put if it does not fit. */
