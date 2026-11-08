@@ -31,8 +31,8 @@ enum DataVideoMaker {
         _ session: DataVideoSession, part: Int32, durations: [String: KotlinLong], handleSeconds: Int32 = 0
     ) async throws -> (AVComposition, AVVideoComposition) {
         // The overlay editor's choice as it is now (FBBD-472): Watch and Save video draw it.
-        let overlay = await MainActor.run { SettingsModel.shared.setup.videoOverlay }
-        session.useOverlay(stored: overlay)
+        let stored = await MainActor.run { SettingsModel.shared.setup.videoOverlay }
+        session.useOverlay(stored: stored)
         let cuts = session.cuts(part: part, durations: durations, handleSeconds: handleSeconds)
         let composition = AVMutableComposition()
         guard !cuts.isEmpty,
