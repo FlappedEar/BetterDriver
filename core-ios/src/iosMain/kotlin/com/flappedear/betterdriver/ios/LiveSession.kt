@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.recorder.live.LiveFixAge
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.live.receiverFixAge
 import com.flappedear.betterdriver.recorder.log.FrameStretch
+import com.flappedear.betterdriver.recorder.log.GnssBannerLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
@@ -98,6 +99,9 @@ class LiveSession private constructor(
 
     /** The track screen's frames (FBBD-376), from the main thread only. */
     private val frames = FrameStretch()
+
+    /** The GNSS-lost banner's changes (FBBD-64), from the main thread only. */
+    private val banner = GnssBannerLog()
 
     val id: String get() = recording.id
 
@@ -206,6 +210,14 @@ class LiveSession private constructor(
 
     /** Logs the frames since the last stretch, as [frame] does, when the screen stops counting; main thread. */
     fun flushFrames(): String? = frames.flush()?.text?.also { recording.event(EventKinds.UI_FRAMES, it) }
+
+    /**
+     * The track screen's GNSS-lost banner (FBBD-64) at this look at the screen: each change is the
+     * session's [EventKinds.GNSS_BANNER] event, as Android's UiChecks logs it, and its text is returned
+     * for the app log; null when nothing changed. Main thread.
+     */
+    fun gnssBanner(screen: LiveScreen): String? =
+        banner.follow(screen.live)?.also { recording.event(EventKinds.GNSS_BANNER, it) }
 
     /** An event stamped by its source at [tMicros] on the session clock, such as a camera's (PhoneVideoLog). */
     internal fun eventAt(tMicros: Long, kind: String, text: String) {

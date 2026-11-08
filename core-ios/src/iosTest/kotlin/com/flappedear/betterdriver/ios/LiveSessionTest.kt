@@ -212,6 +212,23 @@ class LiveSessionTest {
         assertEquals(text, events.first().text)
     }
 
+    /** FBBD-64: the banner's show and clear are session events, as on Android, so ui.banner_show can judge it. */
+    @Test
+    fun theGnssBannerIsLoggedAsOnAndroid() {
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        val screen = session.screen()
+        fun at(fixAgeMicros: Long?) = screen.copy(live = screen.live.copy(lastFixAgeMicros = fixAgeMicros, receiverRateHz = 25))
+        assertNull(session.gnssBanner(at(null)))
+        assertNull(session.gnssBanner(at(40_000)))
+        assertEquals("state=shown fix_age_us=2000000", session.gnssBanner(at(2_000_000)))
+        assertNull(session.gnssBanner(at(25_000_000)))
+        assertEquals("state=cleared fix_age_us=0", session.gnssBanner(at(0)))
+        session.stop()
+
+        val events = SessionStore(sessions).read(session.id).events.filter { it.kind == EventKinds.GNSS_BANNER }
+        assertEquals(listOf("state=shown fix_age_us=2000000", "state=cleared fix_age_us=0"), events.map { it.text })
+    }
+
     @Test
     fun lowStorageShowsOnTheTrackScreen() {
         // Any disk is below this warning level, and above the default stop level.
