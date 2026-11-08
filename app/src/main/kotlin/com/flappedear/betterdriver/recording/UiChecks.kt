@@ -6,10 +6,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.metrics.performance.JankStats
 import com.flappedear.betterdriver.recorder.EventKinds
-import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.FrameStretch
+import com.flappedear.betterdriver.recorder.log.GnssBannerLog
 import java.util.WeakHashMap
 
 /**
@@ -23,7 +23,7 @@ object UiChecks {
 
     @Volatile
     private var live: Live? = null
-    private var bannerShown = false
+    private val banner = GnssBannerLog()
     private val frames = FrameStretch()
 
     /** One JankStats per activity window. Main thread only. */
@@ -35,15 +35,10 @@ object UiChecks {
         val now = if (running != null && startNanos != null) Live(running.sessionId, startNanos) else null
         if (now?.session != live?.session) {
             frames.flush()?.let { event(EventKinds.UI_FRAMES, it.text, it.endNanos) }
-            bannerShown = false
+            banner.reset()
         }
         live = now
-        val shown = running?.gnss == GnssState.Lost
-        if (running != null && shown != bannerShown) {
-            bannerShown = shown
-            val state = if (shown) "shown" else "cleared"
-            event(EventKinds.GNSS_BANNER, "state=$state fix_age_us=${running.lastFixAgeMicros ?: -1}")
-        }
+        running?.let(banner::follow)?.let { event(EventKinds.GNSS_BANNER, it) }
     }
 
     /**
