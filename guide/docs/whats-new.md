@@ -18,6 +18,8 @@ The full notes of every release are on
 - Video: choose what the overlay shows. Switch widgets on or off, move them, and add up to five value plates from any recorded channel (Video tab or **Settings › Video**).
 - Video: a weather plate in the Tech HUD (sky, temperature, track surface, wind, humidity).
 - iPhone: the GNSS-lost banner is logged as on Android.
+- Android: the lap review keeps playing when the sessions list refreshes.
+- Android: a split phone video file has sound from its first frame.
 
 ## 1.33.7
 
