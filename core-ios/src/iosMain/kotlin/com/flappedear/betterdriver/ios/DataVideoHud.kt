@@ -36,7 +36,13 @@ class HudGeometry internal constructor(layout: TechHudLayout) {
     val scale: Float = layout.scale
     val places: List<HudPlace> = layout.boxes.map { (w, b) -> HudPlace(w, b, layout.stack[w] ?: StackPosition.Single) }
     val strips: List<HudSpan> = layout.strips.map { HudSpan(it.first, it.last) }
+
+    /** The overlay editor's value plates (FBBD-472, UI-319 A); [HudMoment.valueTexts] in the same order. */
+    val values: List<HudValuePlace> = layout.values.map { (v, b) -> HudValuePlace(v.label, v.unit, b) }
 }
+
+/** A value plate of the driver's own in [box]: [label] over the reading, [unit] under it. */
+class HudValuePlace(val label: String, val unit: String, val box: Box)
 
 /** Widget [widget] in [box]; a temperature row's place in its stack is [stack]. */
 class HudPlace(val widget: HudWidget, val box: Box, val stack: StackPosition)
@@ -63,6 +69,7 @@ class HudRadarDot(val g: GForce, val fade: Float)
  * comes from over the theoretical lap's running time and its gain on the fastest lap, as Android's
  * TechHudPainter.
  */
+@Suppress("LongParameterList") // What one moment of the HUD shows.
 class HudMoment internal constructor(
     private val frame: OverlayFrame,
     val trailRuns: List<HudTrailRun>,
@@ -70,6 +77,8 @@ class HudMoment internal constructor(
     private val bestLapMicros: Long?,
     private val pointToPoint: Boolean,
     private val optimal: OptimalOverlayText? = null,
+    /** Each value plate's reading ("3.82", or a dash), in [HudGeometry.values]' order (FBBD-472). */
+    val valueTexts: List<String> = emptyList(),
 ) {
     /** The map's trail as lines, whatever the pace. */
     val trail: List<List<Xy>> get() = trailRuns.map { it.points }
@@ -123,7 +132,7 @@ class HudMoment internal constructor(
         HudMoment(
             frame,
             trailRuns.map { HudTrailRun(it.points, paced = false, ahead = false) },
-            radar, sessionBestMicros, pointToPoint, text,
+            radar, sessionBestMicros, pointToPoint, text, valueTexts,
         )
 
     /** "LAP 7" over the map; null outside a lap. */
