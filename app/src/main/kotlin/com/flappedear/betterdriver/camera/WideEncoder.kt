@@ -287,17 +287,14 @@ internal class WideEncoder(
     }
 
     /**
-     * A cut is pending: the file is due, and the keyframe that starts the next has not been seen yet,
-     * whether or not the next file has arrived from the main thread.
-     */
-    private fun cutPending() = cuts.due
-
-    /**
-     * The sound encoder runs ahead of a loaded video encoder: sound past the latest frame waits while a
-     * cut is pending, so sound after the cut's keyframe goes to the next file, not the end of this one.
+     * The sound encoder runs ahead of a loaded video encoder: sound past the latest frame waits until
+     * the video has caught up with it, so sound after a cut's keyframe goes to the next file, not the
+     * end of this one. It waits whether or not a cut is due yet (FBBD-474): sound routed ahead of the
+     * video just before the file filled up landed in the ended file, and the next file's sound began
+     * up to 0.3 s after its first frame on a loaded emulator.
      */
     private fun holdOrRouteAudio(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
-        val ahead = cutPending() && info.presentationTimeUs > videoUs
+        val ahead = info.presentationTimeUs > videoUs
         if (ahead || heldSound.isNotEmpty()) {
             heldSound.addLast(Waiting(Track.Audio, buffer.copy(info), info.copy()))
             // Video that stopped coming must not hold sound for ever.
@@ -308,11 +305,11 @@ internal class WideEncoder(
         }
     }
 
-    /** Routes held sound the video has caught up with; [all] of it once there is no cut to wait for. */
+    /** Routes held sound the video has caught up with; [all] of it at the end. */
     private fun releaseSound(all: Boolean) {
         while (heldSound.isNotEmpty()) {
             val first = heldSound.first()
-            val free = all || !cutPending() || first.info.presentationTimeUs <= videoUs
+            val free = all || first.info.presentationTimeUs <= videoUs
             if (!free) return
             heldSound.removeFirst()
             routeAudio(first.data, first.info)

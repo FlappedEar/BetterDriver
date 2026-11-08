@@ -19,6 +19,9 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasExtra
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasType
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.flappedear.betterdriver.feature.review.LapReviewProbe
+import com.flappedear.betterdriver.recorder.store.SessionFiles
+import com.flappedear.betterdriver.review.ReviewLaps
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.equalTo
 import org.junit.After
@@ -71,6 +74,15 @@ class FlowSmokeTest {
             app.pumpUntilText("Play").performClick()
             app.pumpUntilText("Pause")
             app.pumpFor(PlayMs)
+            // The sessions read again while it plays (Sessions refreshing, FBBD-474): the same two laps
+            // come back as new objects, and the review plays on from where it was.
+            val before = LapReviewProbe.cursorMicros
+            rereadSessions()
+            app.pumpFor(PlayMs)
+            check(app.showsText("Pause")) { "the review stopped when the sessions were read again" }
+            check(LapReviewProbe.cursorMicros > before) {
+                "the cursor went back from $before to ${LapReviewProbe.cursorMicros} µs on the reload"
+            }
             app.pumpUntilText("Pause").performClick()
             app.pumpUntilText("Play")
             // Back goes to the picker with nothing picked.
@@ -92,6 +104,22 @@ class FlowSmokeTest {
         app.back()
         app.waitForText("Compare laps").performClick()
         expectPickerWithNothingPicked()
+    }
+
+    /**
+     * Has the lap review read every session again, as after a session's files changed, and waits with
+     * the manual clock until it has published the new reading.
+     */
+    private fun rereadSessions() {
+        val laps = ReviewLaps.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val shown = laps.state
+        val later = System.currentTimeMillis() + RereadStampMs
+        File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "sessions").listFiles().orEmpty()
+            .map { File(it, SessionFiles.META) }
+            .filter { it.isFile }
+            .forEach { check(it.setLastModified(later)) { "could not touch $it" } }
+        laps.load()
+        app.pumpUntil(LoadTimeoutMs, "the sessions read again") { laps.state !== shown }
     }
 
     /** The lap picker is showing, with both slots empty and Compare off. */
@@ -217,6 +245,9 @@ class FlowSmokeTest {
 
     private companion object {
         const val PlayMs = 2_000L
+
+        /** How far ahead the sessions' metadata is stamped, so the reload sees it changed. */
+        const val RereadStampMs = 5_000L
         const val SnippetChars = 200
     }
 }
