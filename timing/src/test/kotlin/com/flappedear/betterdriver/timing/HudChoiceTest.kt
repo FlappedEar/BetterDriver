@@ -66,7 +66,8 @@ class HudChoiceTest {
         val boxes = s.widgets.values.toList() + s.values
         boxes.forEachIndexed { i, a ->
             boxes.forEachIndexed { j, b ->
-                val over = a.left + touch < b.right && b.left + touch < a.right && a.top + touch < b.bottom && b.top + touch < a.bottom
+                val over = a.left + touch < b.right && b.left + touch < a.right &&
+                    a.top + touch < b.bottom && b.top + touch < a.bottom
                 if (i < j) assertFalse(over, "$a over $b")
             }
         }
