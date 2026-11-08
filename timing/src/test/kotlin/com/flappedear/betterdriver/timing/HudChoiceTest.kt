@@ -154,7 +154,10 @@ class HudChoiceTest {
                 ),
             )
         }
-        val channels = listOf(ChannelDef(310, "obd_oil_pressure", "bar", "obd", 2), ChannelDef(311, "boost", "bar", "obd", 2))
+        val channels = listOf(
+            ChannelDef(310, "obd_oil_pressure", "bar", "obd", 2),
+            ChannelDef(311, "boost", "bar", "obd", 2),
+        )
         val data = OverlayData(sets, replayLaps("s", sets, circuit.track()), channels = channels)
         assertEquals(listOf("obd_oil_pressure"), data.recordedChannels.map { it.name })
         val c = HudChoice.All.withValue("obd_oil_pressure", "OIL P", "bar", all).withValue("boost", "BOOST", "bar", all)

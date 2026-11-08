@@ -148,6 +148,7 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
  *
  * Not thread-safe: the exporter draws frames one at a time.
  */
+@Suppress("TooManyFunctions") // One reader per thing the overlay draws.
 class OverlayData(
     sets: List<SampleSet>,
     laps: SessionLaps?,

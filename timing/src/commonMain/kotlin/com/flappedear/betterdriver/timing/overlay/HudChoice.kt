@@ -38,6 +38,7 @@ data class HudValue(val channel: String, val label: String, val unit: String = "
  * FBBD-471) starts switched on. A widget is drawn when the session has data for it ([hudWidgets]) and
  * it is not [hidden].
  */
+@Suppress("TooManyFunctions") // One small change per thing the editor does.
 class HudChoice(
     hidden: Set<HudWidget> = emptySet(),
     places: Map<HudWidget, HudSpot> = emptyMap(),
@@ -61,7 +62,8 @@ class HudChoice(
     fun drawnOver(data: OverlayData): HudChoice = copy(values = hudValues(data, this))
 
     /** Whether a widget or plate has left its template place: Reset has something to do. */
-    val moved: Boolean get() = places.isNotEmpty() || values.withIndex().any { (i, v) -> spotOf(i) != HudSpot(v.x, v.y) }
+    val moved: Boolean
+        get() = places.isNotEmpty() || values.withIndex().any { (i, v) -> spotOf(i) != HudSpot(v.x, v.y) }
 
     /**
      * This choice with [widget]'s top left corner moved to [x], [y] (shares, snapped to the grid and kept
@@ -83,7 +85,8 @@ class HudChoice(
         val spot = snap(x, y, HudValue.Width, HudValue.Height)
         val moved = v.copy(x = spot.x, y = spot.y)
         val rest = values.filterIndexed { i, _ -> i != index }
-        return if (fits(moved.share, rest, shown)) copy(values = values.toMutableList().also { it[index] = moved }) else this
+        val next = values.toMutableList().also { it[index] = moved }
+        return if (fits(moved.share, rest, shown)) copy(values = next) else this
     }
 
     /**
@@ -91,11 +94,16 @@ class HudChoice(
      * when it has one already, has [HudValue.Max] or no place is free of the [shown] widgets.
      */
     fun withValue(channel: String, label: String, unit: String, shown: Set<HudWidget>): HudChoice {
-        if (values.size >= HudValue.Max || values.any { it.channel == channel }) return this
-        val spot = freeSpots().firstOrNull { s ->
-            fits(Box(s.x, s.y, s.x + HudValue.Width, s.y + HudValue.Height), values, shown)
-        } ?: return this
-        return copy(values = values + HudValue(channel, label.ifBlank { channel }, unit, spot.x, spot.y))
+        val full = values.size >= HudValue.Max || values.any { it.channel == channel }
+        val spot = if (full) {
+            null
+        } else {
+            freeSpots().firstOrNull { s ->
+                fits(Box(s.x, s.y, s.x + HudValue.Width, s.y + HudValue.Height), values, shown)
+            }
+        }
+        val plate = spot?.let { HudValue(channel, label.ifBlank { channel }, unit, it.x, it.y) }
+        return plate?.let { copy(values = values + it) } ?: this
     }
 
     /** This choice without [channel]'s plate. */
@@ -159,8 +167,9 @@ class HudChoice(
          * version does not know (removed later, or written by a newer app) is skipped.
          */
         fun decode(stored: String?): HudChoice {
-            if (stored.isNullOrBlank()) return All
-            val s = runCatching { Format.decodeFromString(Stored.serializer(), stored) }.getOrNull() ?: return All
+            val s = stored?.takeIf { it.isNotBlank() }
+                ?.let { runCatching { Format.decodeFromString(Stored.serializer(), it) }.getOrNull() }
+                ?: return All
             val byName = HudWidget.entries.associateBy { it.name }
             return HudChoice(
                 hidden = s.hidden.mapNotNull { byName[it] }.toSet(),
@@ -200,7 +209,8 @@ class HudChoice(
 fun hudWidgets(data: OverlayData, choice: HudChoice): Set<HudWidget> = hudWidgets(data) - choice.hidden
 
 /** The value plates of [choice] that [data] has a channel for: the rest would only show a dash. */
-fun hudValues(data: OverlayData, choice: HudChoice): List<HudValue> = choice.values.filter { data.hasChannel(it.channel) }
+fun hudValues(data: OverlayData, choice: HudChoice): List<HudValue> =
+    choice.values.filter { data.hasChannel(it.channel) }
 
 /** A value plate's number: "3.82", "13.9", "142"; a dash without a reading. */
 fun hudValueText(value: Double?): String = when {
@@ -212,3 +222,36 @@ fun hudValueText(value: Double?): String = when {
 
 private const val Hundred = 100.0
 private const val Ten = 10.0
+
+/** The overlay editor's name of [widget] (FBBD-472), the same on Android and iOS. */
+fun hudWidgetName(widget: HudWidget): String = when (widget) {
+    HudWidget.Tachometer -> "Speed, RPM, gear"
+    HudWidget.Lap -> "Lap time, delta, best"
+    HudWidget.Pedals -> "Throttle, brake"
+    HudWidget.Oil -> "Oil temp"
+    HudWidget.Gearbox -> "ATF temp"
+    HudWidget.Coolant -> "Coolant temp"
+    HudWidget.Tyres -> "Tyres"
+    HudWidget.HeartRate -> "Heart rate"
+    HudWidget.GRadar -> "G radar"
+    HudWidget.GReadout -> "G readout"
+    HudWidget.Steering -> "Steering"
+    HudWidget.TrackMap -> "Track map"
+}
+
+/** The editor row's count, "10 of 13 widgets", plus the value plates: "10 of 13 widgets, 2 values". */
+fun hudChoiceSummary(choice: HudChoice): String {
+    val n = choice.values.size
+    val widgets = "${choice.shownCount()} of ${HudWidget.entries.size} widgets"
+    return when (n) {
+        0 -> widgets
+        1 -> "$widgets, 1 value"
+        else -> "$widgets, $n values"
+    }
+}
+
+/** A value plate's suggested label: the channel's name without its source, upper case. */
+fun hudValueLabel(channel: String): String =
+    channel.substringBefore('-').removePrefix("obd_").replace('_', ' ').trim().uppercase().take(MaxLabel)
+
+private const val MaxLabel = 10

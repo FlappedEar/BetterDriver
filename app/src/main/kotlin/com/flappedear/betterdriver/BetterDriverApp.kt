@@ -183,6 +183,7 @@ private fun AppNavHost(
         trackDayDestination(nav, padding)
         cueReview(nav, padding, layout)
         watchVideo(nav, padding)
+        overlayEditor(nav, padding)
         composable(Routes.Settings) {
             Box(Modifier.padding(padding)) { Settings(nav, prefs, repo, tracks, topic = null, onBack = null) }
         }
@@ -486,6 +487,7 @@ private fun Settings(
         tablet = isTabletDevice(),
         trackCount = tracks.list.size,
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
+        onOpenOverlay = { nav.navigate(Routes.overlayEditor()) },
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },
         trackScreen = TrackScreenPrefs(prefs.trackBrightness, prefs.gnssSound),

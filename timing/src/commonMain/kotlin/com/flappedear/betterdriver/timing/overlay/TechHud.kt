@@ -109,7 +109,8 @@ class TechHudLayout(val width: Int, val height: Int, shown: Set<HudWidget>, choi
      * export draws only these, so a 4K frame uploads two strips, not the whole picture.
      */
     val strips: List<IntRange> = run {
-        val spans = (boxes.values + values.map { it.second }).map { it.top.toInt()..min(height, ceil(it.bottom).toInt()) }
+        val spans = (boxes.values + values.map { it.second })
+            .map { it.top.toInt()..min(height, ceil(it.bottom).toInt()) }
             .sortedBy { it.first }
         val merged = ArrayList<IntRange>()
         for (s in spans) {

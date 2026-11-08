@@ -15,8 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,6 +31,8 @@ import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.timing.overlay.HudChoice
+import com.flappedear.betterdriver.videoexport.OverlayRow
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
@@ -63,6 +65,7 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
+    onOpenOverlay: () -> Unit = {},
     updateRow: @Composable () -> Unit = {},
     debugRows: @Composable () -> Unit = {},
     backupRows: @Composable () -> Unit = {},
@@ -105,7 +108,7 @@ fun SettingsScreen(
                     trackLayout()
                     TrackScreenCard(trackScreen, onTrackScreen)
                 }
-                SettingsTopic.Video -> VideoPage(setup, onChooseVideo)
+                SettingsTopic.Video -> VideoPage(setup, onChooseVideo, onOpenOverlay)
                 SettingsTopic.App ->
                     AppPage(version, onRunSetup, updateRow, backupRows, coach, onOpenCoach, onOpenAbout, tablet)
                 // Settings › Diagnostics: the app's one log, to share after a drive or clear (FBBD-183).
@@ -133,9 +136,16 @@ private fun rememberFreeGb(): Double {
     return remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
 }
 
-/** Settings › Video: one row per camera the app sets (UI-39), and storage. */
+/**
+ * Settings › Video: one row per camera the app sets (UI-39), storage, and the overlay editor of
+ * Video with data and Watch (FBBD-472, UI-314 C).
+ */
 @Composable
-private fun VideoPage(setup: Setup, onChooseVideo: (Equipment, VideoMode) -> Unit) {
+private fun VideoPage(
+    setup: Setup,
+    onChooseVideo: (Equipment, VideoMode) -> Unit,
+    onOpenOverlay: () -> Unit,
+) {
     val freeGb = rememberFreeGb()
     var choosingVideo by rememberSaveable { mutableStateOf<String?>(null) }
     ShellCard {
@@ -144,6 +154,10 @@ private fun VideoPage(setup: Setup, onChooseVideo: (Equipment, VideoMode) -> Uni
             ListRow(cam.name, videoLabel(cam), divider = i > 0, onClick = { choosingVideo = cam.id })
         }
         ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb), divider = cams.isNotEmpty())
+    }
+    ShellCard {
+        val overlay = remember(setup.videoOverlay) { HudChoice.decode(setup.videoOverlay) }
+        OverlayRow(overlay, onOpenOverlay, divider = false)
     }
     setup.equipment(choosingVideo)?.let { cam ->
         VideoModeDialog(cam, rememberVideoModes(cam), { onChooseVideo(cam, it) }, onClose = { choosingVideo = null })

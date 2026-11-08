@@ -17,7 +17,9 @@ import com.flappedear.betterdriver.timing.live.lapMapCaption
 import com.flappedear.betterdriver.timing.live.lapMark
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
+import com.flappedear.betterdriver.timing.overlay.HudChoice
 import com.flappedear.betterdriver.timing.overlay.HudRowSpec
+import com.flappedear.betterdriver.timing.overlay.HudValue
 import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayData
@@ -28,6 +30,7 @@ import com.flappedear.betterdriver.timing.overlay.PaceRun
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.gearText
+import com.flappedear.betterdriver.timing.overlay.hudValueText
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
@@ -53,8 +56,11 @@ import kotlin.math.sin
  * The lap tile shows Overlays' optional live delta (KAN-255) to the session's best lap. On a
  * point-to-point track (FBBD-155) the laps are runs, labelled "RUN".
  */
-internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
-    private val shown = hudWidgets(data)
+internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData, choice: HudChoice = HudChoice.All) {
+    private val shown = hudWidgets(data, choice)
+
+    /** The overlay editor's choice (FBBD-472) without plates the session has no channel for. */
+    private val drawn = choice.drawnOver(data)
     private val outline = thin(data.outline)
 
     private val semibold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -77,7 +83,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     private var last: TechHudLayout? = null
 
     fun layout(width: Int, height: Int): TechHudLayout = last?.takeIf { it.width == width && it.height == height }
-        ?: TechHudLayout(width, height, shown).also { last = it }
+        ?: TechHudLayout(width, height, shown, drawn).also { last = it }
 
     /**
      * Draws frame [f], the data at [sessionMicros], over the whole picture of [l]. With [optimal] (a
@@ -109,6 +115,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
                 HudWidget.TrackMap -> map(canvas, b, s, f, trailRuns(sessionMicros, paced = optimal == null))
             }
         }
+        values(canvas, l, sessionMicros)
     }
 
     // TechPanel.qml: a dark plate with the top right and bottom left corners cut, an amber tab on top.
@@ -429,6 +436,32 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         val v = f.car.heartRate?.roundToInt()?.toString() ?: Dash
         setText(bold, h * 0.36f, Text)
         textTop(c, v, b.centerX - bold.measureText(v) / 2, top + rowH + h * 0.04f, bold)
+    }
+
+    private fun values(c: Canvas, l: TechHudLayout, sessionMicros: Long) {
+        for ((v, b) in l.values) valuePlate(c, b, l.scale, v, data.valueAt(v.channel, sessionMicros))
+    }
+
+    // A value plate of the driver's own (FBBD-472, UI-319 A): heart rate's plate with the label on top,
+    // the reading in the middle and the unit under it.
+    private fun valuePlate(c: Canvas, b: Box, s: Float, v: HudValue, value: Double?) {
+        panel(c, b, s)
+        val h = b.height
+        val labelH = setText(semibold, h * 0.1f, Dim, h * 0.012f)
+        val label = v.label.uppercase()
+        val valueH = lineHeight(bold.also { it.textSize = h * 0.34f })
+        val unitH = if (v.unit.isBlank()) 0f else lineHeight(semibold.also { it.textSize = h * 0.1f })
+        val top = b.centerY - (labelH + h * 0.04f + valueH + unitH) / 2
+        setText(semibold, h * 0.1f, Dim, h * 0.012f)
+        textTop(c, label, b.centerX - semibold.measureText(label) / 2, top, semibold)
+        val text = hudValueText(value)
+        setText(bold, h * 0.34f, Text)
+        textTop(c, text, b.centerX - bold.measureText(text) / 2, top + labelH + h * 0.04f, bold)
+        if (v.unit.isNotBlank()) {
+            setText(semibold, h * 0.1f, Dim)
+            val unitTop = top + labelH + h * 0.04f + valueH
+            textTop(c, v.unit, b.centerX - semibold.measureText(v.unit) / 2, unitTop, semibold)
+        }
     }
 
     private fun heart(c: Canvas, x: Float, y: Float, size: Float) {
