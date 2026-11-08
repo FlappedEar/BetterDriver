@@ -7,6 +7,8 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flappedear.betterdriver.videoexport.OverlayPictureTag
+import com.flappedear.betterdriver.videoexport.OverlayRowTag
 import com.flappedear.betterdriver.videoexport.SaveVideoTag
 import com.flappedear.betterdriver.videoexport.WatchVideoTag
 import org.junit.Rule
@@ -40,6 +42,20 @@ class VideoTabSmokeTest {
         app.waitFor(hasTestTag(WatchVideoTag)).performScrollTo().assertIsEnabled().performClick()
         app.waitFor(Band, LoadTimeoutMs)
         app.waitForText("0:00 / ", substring = true)
+        app.back()
+        app.waitForText("Whole session", timeoutMs = LoadTimeoutMs)
+    }
+
+    /** The Overlay row opens the overlay editor (FBBD-472) with the session's widgets; back returns. */
+    @Test
+    fun theVideoTabOpensTheOverlayEditor() {
+        app.openSessions()
+        app.openSession(SmokeFixtures.VideoCar)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        app.openTab("Video")
+        app.waitFor(hasTestTag(OverlayRowTag), LoadTimeoutMs).performScrollTo().performClick()
+        app.waitFor(hasTestTag(OverlayPictureTag)).assertIsDisplayed()
+        app.waitForText("Add a value", timeoutMs = LoadTimeoutMs)
         app.back()
         app.waitForText("Whole session", timeoutMs = LoadTimeoutMs)
     }

@@ -528,7 +528,16 @@ data class Setup(
     val equipment: List<Equipment> = emptyList(),
     val cars: List<CarProfile> = emptyList(),
     val session: SessionChoice = SessionChoice(),
+    /**
+     * The session video's overlay as the overlay editor left it (FBBD-472): the timing module's
+     * HudChoice in its stored form; empty for every widget in its Tech HUD place. One choice for every
+     * video and car (UI-316 A).
+     */
+    val videoOverlay: String = "",
 ) {
+    /** This setup with the video overlay editor's choice [stored] (FBBD-472). */
+    fun withVideoOverlay(stored: String): Setup = copy(videoOverlay = stored)
+
     fun equipment(id: String?): Equipment? = equipment.firstOrNull { it.id == id }
 
     fun car(id: String?): CarProfile? = cars.firstOrNull { it.id == id }

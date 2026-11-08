@@ -26,7 +26,9 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.HandleRow
 import com.flappedear.betterdriver.shell.PartList
+import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.VideoExportLine
+import com.flappedear.betterdriver.timing.overlay.HudChoice
 
 /**
  * A session's Video tab (FBBD-392), as the iOS app's: Video with data in sight rather than in the
@@ -36,7 +38,12 @@ import com.flappedear.betterdriver.shell.VideoExportLine
  */
 @Suppress("LongMethod") // One tab: the parts, the handle, the progress and the two buttons.
 @Composable
-fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) -> Unit) {
+fun SessionVideoTab(
+    sessionId: String,
+    title: String,
+    onOverlay: () -> Unit = {},
+    onWatch: (VideoPart, Int) -> Unit,
+) {
     val context = LocalContext.current
     val exports = remember(context) { VideoExports.get(context) }
     var options by remember(sessionId) { mutableStateOf<VideoLoad>(VideoLoad.Loading) }
@@ -71,6 +78,9 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
         // A part to act on: read, and one picked.
         val part = picked.takeIf { ready != null }
         if (part != null && isSingleLap(part)) HandleRow(handle) { handle = it }
+        // The overlay editor (FBBD-472, UI-314 C): what Save video and Watch draw.
+        val overlay = SetupRepo.get(context).setup.videoOverlay
+        OverlayRow(remember(overlay) { HudChoice.decode(overlay) }, onOverlay)
         VideoExportLine(exports.states[sessionId], rendering) { exports.cancel(sessionId) }
         VideoTabButtons(
             canSave = part != null && !busy,

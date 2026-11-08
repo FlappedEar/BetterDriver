@@ -47,6 +47,7 @@ final class TechHudPainter: @unchecked Sendable {
             let image = UIGraphicsImageRenderer(size: CGSize(width: CGFloat(hud.width), height: height), format: format).image { ui in
                 ui.cgContext.translateBy(x: 0, y: -top)
                 self.draw(ui.cgContext, hud, places, moment)
+                self.values(ui.cgContext, hud, top: top, height: height, moment)
             }
             guard let cg = image.cgImage else { continue }
             let placed = CIImage(cgImage: cg).transformed(by: CGAffineTransform(translationX: 0, y: CGFloat(hud.height) - top - height))
@@ -83,6 +84,33 @@ final class TechHudPainter: @unchecked Sendable {
             case "Weather": weather(cg, b, s, m)
             default: break
             }
+        }
+    }
+
+    /// The overlay editor's value plates (FBBD-472, UI-319 A) in the strip from [top], as Android's painter.
+    private func values(_ cg: CGContext, _ hud: HudGeometry, top: CGFloat, height: CGFloat, _ m: HudMoment) {
+        let s = CGFloat(hud.scale)
+        for (i, v) in hud.values.enumerated() where CGFloat(v.box.top) < top + height && CGFloat(v.box.bottom) > top {
+            let text = i < m.valueTexts.count ? m.valueTexts[i] : "—"
+            valuePlate(cg, Rect(v.box), s, v, text)
+        }
+    }
+
+    // Heart rate's plate with the label on top, the reading in the middle and the unit under it.
+    private func valuePlate(_ cg: CGContext, _ b: Rect, _ s: CGFloat, _ v: HudValuePlace, _ text: String) {
+        panel(cg, b, s)
+        let h = b.height
+        let label = semibold(h * 0.1)
+        let kern = h * 0.012
+        let value = bold(h * 0.34)
+        let unitH = v.unit.isEmpty ? 0 : lineHeight(label)
+        let top = b.centerY - (lineHeight(label) + h * 0.04 + lineHeight(value) + unitH) / 2
+        let caption = v.label.uppercased()
+        textTop(caption, label, Hud.dim, x: b.centerX - width(caption, label, kern) / 2, top: top, kern: kern)
+        let valueTop = top + lineHeight(label) + h * 0.04
+        textTop(text, value, Hud.text, x: b.centerX - width(text, value) / 2, top: valueTop)
+        if !v.unit.isEmpty {
+            textTop(v.unit, label, Hud.dim, x: b.centerX - width(v.unit, label) / 2, top: valueTop + lineHeight(value))
         }
     }
 

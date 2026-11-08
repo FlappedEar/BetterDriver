@@ -121,6 +121,16 @@ object Routes {
     fun watchVideo(id: String, part: Int = 0, handle: Int = 0) =
         "sessions/$id/video" + if (part == 0) "" else "?part=$part&handle=$handle"
 
+    /**
+     * The video overlay editor (FBBD-472): from a session's Video tab with that session, from
+     * Settings › Video without one (UI-314 C).
+     */
+    const val OverlayEditorPattern = "overlay-editor?session={session}"
+    const val OverlaySessionArg = "session"
+
+    fun overlayEditor(sessionId: String? = null) =
+        "overlay-editor" + (sessionId?.let { "?session=${Uri.encode(it)}" } ?: "")
+
     /** The cue review of one session (FBBD-99). */
     const val CueReviewPattern = "sessions/{id}/cues"
 

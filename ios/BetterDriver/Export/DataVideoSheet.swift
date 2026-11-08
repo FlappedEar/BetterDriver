@@ -51,6 +51,8 @@ struct DataVideoPanel: View {
     /// The saved file's name, said in the sheet in place of Files' Save sheet in the UI tests.
     @State private var savedName: String?
     @State private var job: Task<Void, Never>?
+    /// The overlay editor (FBBD-472) over this session's widgets and channels, while open.
+    @State private var editor: OverlayEditorModel?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -66,6 +68,12 @@ struct DataVideoPanel: View {
             } else {
                 list
                 if let picked, picked > 0 { handleRow }
+                // What Save video and Watch draw (FBBD-472, UI-314 C).
+                if let session {
+                    OverlayRow {
+                        editor = OverlayEditorModel(state: session.editor(stored: SettingsModel.shared.setup.videoOverlay))
+                    }
+                }
             }
             Spacer(minLength: 0)
             if let progress {
@@ -101,6 +109,9 @@ struct DataVideoPanel: View {
         .onDisappear { job?.cancel() }
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
+        }
+        .sheet(isPresented: Binding(get: { editor != nil }, set: { if !$0 { editor = nil } })) {
+            if let editor { OverlayEditorView(model: editor) { self.editor = nil } }
         }
     }
 

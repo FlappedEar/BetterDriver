@@ -27,11 +27,14 @@ import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.lapFileWord
 import com.flappedear.betterdriver.timing.live.lapName
+import com.flappedear.betterdriver.timing.overlay.HudChoice
 import com.flappedear.betterdriver.timing.overlay.OverlayData
+import com.flappedear.betterdriver.timing.overlay.OverlayEditorState
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
+import com.flappedear.betterdriver.timing.overlay.VideoCut
+import com.flappedear.betterdriver.timing.overlay.hudValueText
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
 import com.flappedear.betterdriver.timing.overlay.paceRuns
-import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.thin
 import com.flappedear.betterdriver.timing.overlay.videoCuts
 import com.flappedear.betterdriver.timing.replay.SessionLaps
@@ -144,7 +147,8 @@ class DataVideoCut(
 )
 
 /** A session's video and data, read once; see [DataVideo]. */
-@Suppress("LongParameterList") // Made by DataVideo.open only: what it read of the session.
+// Made by DataVideo.open only: what it read of the session; parts, cuts, the HUD and its overlay choice.
+@Suppress("LongParameterList", "TooManyFunctions")
 class DataVideoSession internal constructor(
     val sessionId: String,
     private val data: OverlayData,
@@ -255,13 +259,29 @@ class DataVideoSession internal constructor(
     val startLineFrom: Xy? = data.startLine?.first
     val startLineTo: Xy? = data.startLine?.second
 
-    private val widgets = hudWidgets(data)
+    /** The overlay editor's choice (FBBD-472), without plates of channels the session has not. */
+    private var overlay: HudChoice = HudChoice.All
+
     /** The session's best lap: a composite lap compares with it (FBBD-449). */
     private val bestLapMicros = data.bestLapMicros
 
+    /**
+     * Draws the overlay editor's choice [stored] (FBBD-472, Setup.videoOverlay) from now on: the app
+     * sets it before Watch and Save video, so both draw what the editor shows.
+     */
+    fun useOverlay(stored: String) {
+        val choice = HudChoice.decode(stored)
+        lock.withLock { overlay = choice.drawnOver(data) }
+    }
+
+    /** The overlay editor over [stored] with this session's widgets and channels (FBBD-472). */
+    fun editor(stored: String): OverlayEditorState = OverlayEditorState(stored, hudWidgets(data), data.recordedChannels)
+
     /** Where the Tech HUD's widgets go on a picture [videoWidth] by [videoHeight] pixels. */
-    fun hud(videoWidth: Int, videoHeight: Int): HudGeometry =
-        HudGeometry(TechHudLayout(videoWidth, videoHeight, widgets))
+    fun hud(videoWidth: Int, videoHeight: Int): HudGeometry {
+        val choice = lock.withLock { overlay }
+        return HudGeometry(TechHudLayout(videoWidth, videoHeight, hudWidgets(data, choice), choice))
+    }
 
     /**
      * What the Tech HUD shows of [part] at session time [sessionMicros]: a lap shows that lap only, 0:00
@@ -280,7 +300,9 @@ class DataVideoSession internal constructor(
             val frame = source.at(sessionMicros)
             // The trail coloured by the delta to it (FBBD-451).
             val trail = paceRuns(source.paceTrail(sessionMicros)).map(::HudTrailRun)
-            return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint)
+            // The value plates' readings (FBBD-472), in the order hud() places them.
+            val values = overlay.values.map { hudValueText(source.valueAt(it.channel, sessionMicros)) }
+            return HudMoment(frame, trail, radar, frame.bestLapMicros, pointToPoint, valueTexts = values)
         } finally {
             lock.unlock()
         }

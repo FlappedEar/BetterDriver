@@ -371,7 +371,11 @@ internal fun SessionAnalysisRoute(
                 // The Video tab, only for a session with video (FBBD-392), as on iOS.
                 video = if (offers) {
                     {
-                        SessionVideoTab(id, listed?.let(::sessionTitle).orEmpty()) { part, handle ->
+                        SessionVideoTab(
+                            id,
+                            listed?.let(::sessionTitle).orEmpty(),
+                            onOverlay = { nav.navigate(Routes.overlayEditor(id)) },
+                        ) { part, handle ->
                             nav.navigate(Routes.watchVideo(id, part, handle))
                         }
                     }

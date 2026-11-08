@@ -123,10 +123,13 @@ struct TrackScreenPage: View {
     }
 }
 
-/// Settings › Video: one row per camera the app sets, with its mode, and the storage left (UI-39).
+/// Settings › Video: one row per camera the app sets, with its mode, the storage left (UI-39) and the
+/// overlay editor (FBBD-472).
 struct VideoPage: View {
     @EnvironmentObject private var settings: SettingsModel
     @State private var choosing: SheetId?
+    /// The overlay editor of Video with data and Watch (FBBD-472, UI-314 C), while open.
+    @State private var editor: OverlayEditorModel?
 
     var body: some View {
         let cams = settings.setup.equipment.filter { $0.videoMode != nil }
@@ -137,9 +140,15 @@ struct VideoPage: View {
                 }
                 ListRow("Storage", value: Storage.freeLabel, divider: !cams.isEmpty)
             }
+            ShellCard {
+                OverlayRow(divider: false) { editor = OverlayEditorModel.settings() }
+            }
         }
         .sheet(item: $choosing) { chosen in
             if let cam = settings.setup.equipment(id: chosen.id) { VideoModeSheet(item: cam) }
+        }
+        .sheet(isPresented: Binding(get: { editor != nil }, set: { if !$0 { editor = nil } })) {
+            if let editor { OverlayEditorView(model: editor) { self.editor = nil } }
         }
     }
 }

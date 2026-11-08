@@ -61,9 +61,11 @@ import com.flappedear.betterdriver.format.formatRunningTime
 import com.flappedear.betterdriver.format.formatVideoClock
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
+import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.overlay.CutPosition
+import com.flappedear.betterdriver.timing.overlay.HudChoice
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.VideoCut
@@ -209,7 +211,9 @@ private fun rememberWatch(source: WatchSource): Pair<WatchPlayer, TechHudPainter
         onDispose { view.keepScreenOn = false }
     }
     val fonts = remember(context) { HudFonts.load(context) }
-    val painter = remember(source) { TechHudPainter(fonts, source.data) }
+    // The overlay editor's choice (FBBD-472): Watch draws what Save video draws.
+    val overlay = SetupRepo.get(context).setup.videoOverlay
+    val painter = remember(source, overlay) { TechHudPainter(fonts, source.data, HudChoice.decode(overlay)) }
     return w to painter
 }
 

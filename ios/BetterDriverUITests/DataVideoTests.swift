@@ -76,6 +76,43 @@ final class DataVideoTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
     }
 
+    /// The overlay editor (FBBD-472) opens from Video with data: a switch takes a widget off the picture.
+    func testTheOverlayEditorTakesAWidgetOff() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
+        let menu = app.buttons["exportMenu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 30), "no export menu")
+        sleep(3)
+        menu.tap()
+        let item = app.buttons["Video with data"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 10), "no Video with data in the export menu")
+        item.tap()
+        let row = app.descendants(matching: .any)["overlayRow"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 120), "no Overlay row")
+        row.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["overlayPicture"].firstMatch.waitForExistence(timeout: 30), "no editor")
+        // The first widget the demo session draws, whichever it is.
+        let plates = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'overlayPlate-w-'"))
+        XCTAssertTrue(plates.firstMatch.waitForExistence(timeout: 10), "no widget on the picture")
+        keep("Overlay editor")
+        let id = plates.firstMatch.identifier
+        let name = String(id.dropFirst("overlayPlate-w-".count))
+        let plate = app.descendants(matching: .any)[id].firstMatch
+        let toggle = app.switches["overlaySwitch\(name)"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "no switch for \(name)")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: plate)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "\(name) stayed on the picture")
+        // Back on for the other tests' videos.
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        app.buttons["Done"].firstMatch.tap()
+    }
+
     func testWatchVideoFromTheSessionList() {
         app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
         app.launch()

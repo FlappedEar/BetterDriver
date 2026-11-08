@@ -55,9 +55,15 @@ final class AudioSessionUseTests: XCTestCase {
             throw NSError(domain: "busy", code: 1)
         }
         failing.giveBackSoon(tries: 3, wait: 0.01)
+        // The retries run at utility priority: on a busy test Mac they can take well over a second,
+        // so wait for the third try rather than a fixed time.
         let tried = expectation(description: "tried three times")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1) { tried.fulfill() }
-        wait(for: [tried], timeout: 3)
+        DispatchQueue.global().async {
+            let end = Date().addingTimeInterval(14)
+            while made.count < 3, Date() < end { Thread.sleep(forTimeInterval: 0.05) }
+            tried.fulfill()
+        }
+        wait(for: [tried], timeout: 15)
         XCTAssertEqual(made.count, 3, "a failed deactivation is tried again")
 
         let kept = Deactivations()

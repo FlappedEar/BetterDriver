@@ -151,6 +151,7 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
  *
  * Not thread-safe: the exporter draws frames one at a time.
  */
+@Suppress("TooManyFunctions") // One reader per thing the overlay draws.
 class OverlayData(
     sets: List<SampleSet>,
     laps: SessionLaps?,
@@ -193,6 +194,34 @@ class OverlayData(
     /** The car's values this session has samples of (FBBD-347): the overlay leaves out the rest. */
     val carValues: Set<CarValue> get() = car.keys
 
+    /** The session's samples in time order, for the value plates' channels (FBBD-472). */
+    private val sortedSets: List<SampleSet>
+    private val channelsByName: Map<String, ChannelDef> =
+        channels.filter { it.id != GnssChannels.LAT.id && it.id != GnssChannels.LON.id }.associateBy { it.name }
+    private val plates = HashMap<String, TimeSeries?>()
+
+    /**
+     * The channels this session recorded a value of (FBBD-472, UI-319 A), by name: what the overlay
+     * editor offers as value plates. Position is left out: the map shows it.
+     */
+    val recordedChannels: List<ChannelDef> by lazy {
+        val seen = HashSet<Int>()
+        for (s in sortedSets) for (v in s.values) if (v.value.isFinite()) seen += v.channelId
+        channelsByName.values.filter { it.id in seen }.sortedBy { it.name.lowercase() }
+    }
+
+    /** Whether the session recorded channel [name]: a value plate for it shows a reading. */
+    fun hasChannel(name: String): Boolean = plateSeries(name) != null
+
+    /** Channel [name]'s value at [sessionMicros], held between readings up to 15 s; null without. */
+    fun valueAt(name: String, sessionMicros: Long): Double? = plateSeries(name)?.at(sessionMicros)
+
+    private fun plateSeries(name: String): TimeSeries? = plates.getOrPut(name) {
+        val id = channelsByName[name]?.id ?: return@getOrPut null
+        TimeSeries.of(sortedSets.mapNotNull { s -> s.valueOf(id)?.let { s.tMicros to it } }, PlateGapMicros)
+            .takeIf { it.size > 0 }
+    }
+
     /** The session has weather to show (FBBD-471). */
     val hasWeather: Boolean get() = weather?.isEmpty == false
 
@@ -213,6 +242,7 @@ class OverlayData(
 
     init {
         val sorted = sets.sortedBy { it.tMicros }
+        sortedSets = sorted
         // One fix per time, each with the receiver's speed when the set holds one.
         val fixes = ArrayList<Fix>(sorted.size)
         val fixSpeeds = ArrayList<Double?>(sorted.size)
@@ -499,3 +529,6 @@ private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<Car
     }
     return ids.mapNotNull { (value, id) -> samples[id]?.let { value to TimeSeries.of(it, value.maxGapMicros) } }.toMap()
 }
+
+/** A value plate holds a reading this long: the slowest polled values come every 5 s (0.2 Hz). */
+private const val PlateGapMicros = 15_000_000L

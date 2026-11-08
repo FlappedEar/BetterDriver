@@ -41,42 +41,43 @@ enum class HudWidget(val x: Float, val y: Float, val width: Float, val height: F
 enum class StackPosition { Single, Top, Middle, Bottom }
 
 /**
- * The Tech HUD (FBBD-347) on a picture [width] by [height] pixels (rotation applied): each shown
- * widget's [Box], and [scale], Overlays' scene scale against a 1920 by 1080 picture, which sizes the
- * plates' padding, corner cuts and amber tabs.
- *
- * The widgets in [shown] keep their places; a temperature row the session has no value for is left
- * out and the rows below it move up, so the stack stays one plate.
+ * Where the Tech HUD's widgets and value plates go with [choice] (FBBD-472), as shares of the picture:
+ * a moved widget at its [HudChoice.places] spot with its template size, the others at their template
+ * places. A temperature row the session has no value for is left out and the unmoved rows below it
+ * move up, so the stack stays one plate; a moved row is a plate of its own.
  */
-class TechHudLayout(val width: Int, val height: Int, shown: Set<HudWidget>) {
-    val scale: Float = min(width / ReferenceWidth, height / ReferenceHeight)
+class TechHudShares(shown: Set<HudWidget>, choice: HudChoice = HudChoice.All) {
+    /** The shown widgets, in drawing order, with their boxes in shares. */
+    val widgets: Map<HudWidget, Box>
 
-    /** The shown widgets, in drawing order, with their boxes. */
-    val boxes: Map<HudWidget, Box>
-
-    /** Each shown row's place in its stack. */
+    /** Each widget's place in its stack of rows; a widget not listed is a plate of its own. */
     val stack: Map<HudWidget, StackPosition>
 
+    /** [HudChoice.values]' boxes in shares, in the same order. */
+    val values: List<Box> = choice.values.map { it.share }
+
     init {
-        val rows = HudWidget.Rows.filter { it in shown }
+        val rows = HudWidget.Rows.filter { it in shown && it !in choice.places }
         val out = LinkedHashMap<HudWidget, Box>()
         for (w in HudWidget.entries) {
             if (w !in shown) continue
-            // A row takes the place of the n-th row of the template, n its place among the shown rows.
-            // Weather moves into heart rate's place when there is no heart rate (FBBD-471).
-            val place = when {
-                w in HudWidget.Rows -> HudWidget.Rows[rows.indexOf(w)]
-                w == HudWidget.Weather && HudWidget.HeartRate !in shown -> HudWidget.HeartRate
-                else -> w
+            val spot = choice.places[w]
+            out[w] = if (spot != null) {
+                Box(spot.x, spot.y, spot.x + w.width, spot.y + w.height)
+            } else {
+                // A row takes the place of the n-th row of the template, n its place among the stacked rows.
+                // Weather moves into heart rate's place when there is no heart rate (FBBD-471) and the
+                // editor has put nothing there.
+                val place = when {
+                    w in HudWidget.Rows -> HudWidget.Rows[rows.indexOf(w)]
+                    w == HudWidget.Weather && HudWidget.HeartRate !in shown && heartRateFree(shown, choice) ->
+                        HudWidget.HeartRate
+                    else -> w
+                }
+                Box(place.x, place.y, place.x + place.width, place.y + place.height)
             }
-            out[w] = Box(
-                place.x * width,
-                place.y * height,
-                (place.x + place.width) * width,
-                (place.y + place.height) * height,
-            )
         }
-        boxes = out
+        widgets = out
         stack = rows.mapIndexed { i, w ->
             w to when {
                 rows.size == 1 -> StackPosition.Single
@@ -87,12 +88,46 @@ class TechHudLayout(val width: Int, val height: Int, shown: Set<HudWidget>) {
         }.toMap()
     }
 
+    private fun heartRateFree(shown: Set<HudWidget>, choice: HudChoice): Boolean {
+        val hr = HudWidget.HeartRate
+        val box = Box(hr.x, hr.y, hr.x + hr.width, hr.y + hr.height)
+        val moved = choice.places.filterKeys { it in shown }
+            .map { (w, s) -> Box(s.x, s.y, s.x + w.width, s.y + w.height) }
+        return (moved + values).none { it.overlaps(box) }
+    }
+}
+
+/**
+ * The Tech HUD (FBBD-347) on a picture [width] by [height] pixels (rotation applied): each shown
+ * widget's [Box], and [scale], Overlays' scene scale against a 1920 by 1080 picture, which sizes the
+ * plates' padding, corner cuts and amber tabs.
+ *
+ * The widgets in [shown] keep their places, or the places the overlay editor moved them to ([choice],
+ * FBBD-472); the editor's value plates are [values]. See [TechHudShares].
+ */
+class TechHudLayout(val width: Int, val height: Int, shown: Set<HudWidget>, choice: HudChoice = HudChoice.All) {
+    val scale: Float = min(width / ReferenceWidth, height / ReferenceHeight)
+
+    private val shares = TechHudShares(shown, choice)
+
+    /** The shown widgets, in drawing order, with their boxes. */
+    val boxes: Map<HudWidget, Box> = shares.widgets.mapValues { (_, b) -> scaled(b) }
+
+    /** Each shown row's place in its stack. */
+    val stack: Map<HudWidget, StackPosition> = shares.stack
+
+    /** The value plates (FBBD-472, UI-319 A) with their boxes, in the choice's order. */
+    val values: List<Pair<HudValue, Box>> = choice.values.zip(shares.values.map(::scaled))
+
+    private fun scaled(b: Box) = Box(b.left * width, b.top * height, b.right * width, b.bottom * height)
+
     /**
      * The top and bottom of the picture's strips that hold a widget, in pixels, top to bottom: the
      * export draws only these, so a 4K frame uploads two strips, not the whole picture.
      */
     val strips: List<IntRange> = run {
-        val spans = boxes.values.map { it.top.toInt()..min(height, ceil(it.bottom).toInt()) }
+        val spans = (boxes.values + values.map { it.second })
+            .map { it.top.toInt()..min(height, ceil(it.bottom).toInt()) }
             .sortedBy { it.first }
         val merged = ArrayList<IntRange>()
         for (s in spans) {

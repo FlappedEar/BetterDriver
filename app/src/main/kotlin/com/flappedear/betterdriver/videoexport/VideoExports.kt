@@ -43,6 +43,8 @@ import com.flappedear.betterdriver.review.indexedClips
 import com.flappedear.betterdriver.review.sessionVideo
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.sharing.TransferState
+import com.flappedear.betterdriver.shell.SetupRepo
+import com.flappedear.betterdriver.timing.overlay.HudChoice
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayWeather
 import com.flappedear.betterdriver.timing.overlay.VideoCut
@@ -73,6 +75,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * then, and [stopForRecording] stops an export when a recording starts.
  */
 @OptIn(UnstableApi::class)
+@Suppress("TooManyFunctions") // Prepare, watch, the editor's data, export and its control.
 class VideoExports private constructor(private val context: Context) {
     // Made on the io thread when first used: making it reads the disk (FBBD-41).
     private val store by lazy { SessionStore(sessionsDir(context)) }
@@ -151,6 +154,24 @@ class VideoExports private constructor(private val context: Context) {
             null
         }
         main.post { onReady(source) }
+    }
+
+    /**
+     * Session [id]'s data as the overlay draws it, for the overlay editor (FBBD-472): which widgets it
+     * has data for and the channels it recorded; null when it cannot be read.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    fun overlayData(id: String, onReady: (OverlayData?) -> Unit) = io.execute {
+        val data = try {
+            prepare(id)?.let { p -> OverlayData(p.sets, p.laps, measuredG(p.data), channels = p.data.channels.values) }
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "reading $id for the overlay editor failed", e)
+            null
+        } catch (_: OutOfMemoryError) {
+            DebugLog.w(Tag, "reading $id for the overlay editor failed: out of memory")
+            null
+        }
+        main.post { onReady(data) }
     }
 
     /**
@@ -323,7 +344,9 @@ class VideoExports private constructor(private val context: Context) {
                 channels = prepared.data.channels.values,
                 weather = prepared.weather,
             )
-            val painter = TechHudPainter(HudFonts.load(context), data)
+            // The overlay editor's choice (FBBD-472), as it is when the export starts.
+            val overlay = HudChoice.decode(SetupRepo.get(context).setup.videoOverlay)
+            val painter = TechHudPainter(HudFonts.load(context), data, overlay)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
             val optimal = prepared.optimalPlan(part)
             val items = cuts.mapIndexed { i, cut ->
