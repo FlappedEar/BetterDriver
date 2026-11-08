@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -83,9 +84,13 @@ internal fun CompareView(
             pb.release()
         }
     }
-    val st = remember(c) { ReviewTransport(c, startFraction) }
+    // Kept by the two laps, not by [c]: a reload of the sessions (Sessions refreshing, a session read
+    // again) hands the same laps over as new objects, and must not stop the review or move its
+    // cursor back to the start (FBBD-474).
+    val st = remember(c.a.key, c.b.key) { ReviewTransport(c, startFraction) }
+    SideEffect { st.comparison = c }
     PauseWhenHidden { st.playing = false }
-    LaunchedEffect(st) { followFrames(c, st, pa, pb) }
+    LaunchedEffect(st) { followFrames(st, pa, pb) }
     // Tagged so the emulator tests can scrub it (FBBD-24).
     val chart = Modifier.fillMaxWidth().height(ChartHeight).testTag(ReviewChartTag)
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
@@ -125,12 +130,15 @@ internal fun CompareView(
  * no finger, both players on their frames) it waits for the cursor, play or scrub to change, so
  * Compose can go idle and a paused review costs no frames ([frameLoopNeeded]).
  */
-private suspend fun followFrames(c: Comparison, st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer) {
+private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer) {
     var last = 0L
     while (true) {
         var t = 0L
         var seeking = false
+        var shown = st.comparison
         withFrameNanos { now ->
+            val c = st.comparison
+            shown = c
             st.tick(if (last == 0L) 0L else now - last)
             last = now
             t = st.cursor
@@ -145,16 +153,34 @@ private suspend fun followFrames(c: Comparison, st: ReviewTransport, pa: LapVide
             // The first frame after the wait counts no time, as the very first frame does.
             last = 0L
             val still = t
-            snapshotFlow { st.playing || st.scrubbing || st.cursor != still }.first { it }
+            // A new reading of the laps (FBBD-474) also wakes it: the players go to its frames.
+            snapshotFlow { st.playing || st.scrubbing || st.cursor != still || st.comparison !== shown }.first { it }
         }
     }
 }
 
-/** The review cursor (time since the start line), play state and speed. Compose state, changed on the main thread. */
-private class ReviewTransport(private val c: Comparison, startFraction: Double?) {
-    private val length = c.a.trace.lengthMeters
+/**
+ * The review cursor (time since the start line), play state and speed, for one pair of laps. Compose
+ * state, changed on the main thread. [comparison] is the latest reading of those two laps.
+ */
+private class ReviewTransport(first: Comparison, startFraction: Double?) {
+    private val latest = mutableStateOf(first)
 
-    var cursor by mutableLongStateOf(startFraction?.let { c.microsAtDistance(it.coerceIn(0.0, 1.0) * length) } ?: 0L)
+    /** Compose state: a new reading wakes a still review's frame loop, so the players follow it. */
+    var comparison: Comparison
+        get() = latest.value
+        set(value) {
+            if (value === latest.value) return
+            latest.value = value
+            if (cursor > value.lengthMicros) cursor = value.lengthMicros
+        }
+
+    private val c get() = comparison
+    private val length get() = c.a.trace.lengthMeters
+
+    var cursor by mutableLongStateOf(
+        startFraction?.let { first.microsAtDistance(it.coerceIn(0.0, 1.0) * first.a.trace.lengthMeters) } ?: 0L,
+    )
     var playing by mutableStateOf(false)
     var scrubbing by mutableStateOf(false)
     var speed by mutableDoubleStateOf(Speeds.first())
