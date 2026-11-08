@@ -212,6 +212,34 @@ class LiveSessionTest {
         assertEquals(text, events.first().text)
     }
 
+    /** FBBD-64: the banner's show and clear are session events, as on Android, so ui.banner_show can judge it. */
+    @Test
+    fun theGnssBannerIsLoggedAsOnAndroid() {
+        val lines = mutableListOf<List<String?>>()
+        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        try {
+            val screen = session.screen()
+            fun at(fixAgeMicros: Long?) = screen.copy(live = screen.live.copy(lastFixAgeMicros = fixAgeMicros, receiverRateHz = 25))
+            assertNull(session.gnssBanner(at(null)))
+            assertNull(session.gnssBanner(at(40_000)))
+            assertEquals("state=shown fix_age_us=2000000", session.gnssBanner(at(2_000_000)))
+            assertNull(session.gnssBanner(at(25_000_000)))
+            assertEquals("state=cleared fix_age_us=0", session.gnssBanner(at(0)))
+            session.stop()
+        } finally {
+            IosLog.lines = null
+        }
+
+        // The drive's log reads them back as events, as the check from the log alone needs.
+        val logged = lines.filter { it[1] == CheckLog.EVENT && it[3] == session.id }
+            .mapNotNull { CheckLog.parseEvent(it[2]!!) }.filter { it.kind == EventKinds.GNSS_BANNER }
+        assertEquals(listOf("state=shown fix_age_us=2000000", "state=cleared fix_age_us=0"), logged.map { it.text })
+
+        val events = SessionStore(sessions).read(session.id).events.filter { it.kind == EventKinds.GNSS_BANNER }
+        assertEquals(listOf("state=shown fix_age_us=2000000", "state=cleared fix_age_us=0"), events.map { it.text })
+    }
+
     @Test
     fun lowStorageShowsOnTheTrackScreen() {
         // Any disk is below this warning level, and above the default stop level.

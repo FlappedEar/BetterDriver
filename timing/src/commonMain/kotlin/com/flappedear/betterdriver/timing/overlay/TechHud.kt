@@ -11,7 +11,8 @@ import kotlin.math.min
  *
  * Along the bottom over the bonnet: the RPM gauge with the speed, the lap, throttle and brake, three
  * temperature rows, tyres and the steering wheel; heart rate top right, the track map top left, the
- * G radar and the G readout bottom right.
+ * G radar and the G readout bottom right. [Weather] (FBBD-471, UI-321 B) is BetterDriver's own, left
+ * of heart rate; without heart rate it takes heart rate's place.
  */
 @Suppress("MagicNumber") // Overlays' template, copied as it is.
 enum class HudWidget(val x: Float, val y: Float, val width: Float, val height: Float) {
@@ -27,6 +28,7 @@ enum class HudWidget(val x: Float, val y: Float, val width: Float, val height: F
     GReadout(0.854f, 0.876f, 0.14f, 0.114f),
     Steering(0.72f, 0.829f, 0.13f, 0.16f),
     TrackMap(0.012f, 0.015f, 0.17f, 0.3f),
+    Weather(0.78f, 0.015f, 0.1f, 0.16f),
     ;
 
     companion object {
@@ -64,7 +66,14 @@ class TechHudShares(shown: Set<HudWidget>, choice: HudChoice = HudChoice.All) {
                 Box(spot.x, spot.y, spot.x + w.width, spot.y + w.height)
             } else {
                 // A row takes the place of the n-th row of the template, n its place among the stacked rows.
-                val place = if (w in HudWidget.Rows) HudWidget.Rows[rows.indexOf(w)] else w
+                // Weather moves into heart rate's place when there is no heart rate (FBBD-471) and the
+                // editor has put nothing there.
+                val place = when {
+                    w in HudWidget.Rows -> HudWidget.Rows[rows.indexOf(w)]
+                    w == HudWidget.Weather && HudWidget.HeartRate !in shown && heartRateFree(shown, choice) ->
+                        HudWidget.HeartRate
+                    else -> w
+                }
                 Box(place.x, place.y, place.x + place.width, place.y + place.height)
             }
         }
@@ -77,6 +86,14 @@ class TechHudShares(shown: Set<HudWidget>, choice: HudChoice = HudChoice.All) {
                 else -> StackPosition.Middle
             }
         }.toMap()
+    }
+
+    private fun heartRateFree(shown: Set<HudWidget>, choice: HudChoice): Boolean {
+        val hr = HudWidget.HeartRate
+        val box = Box(hr.x, hr.y, hr.x + hr.width, hr.y + hr.height)
+        val moved = choice.places.filterKeys { it in shown }
+            .map { (w, s) -> Box(s.x, s.y, s.x + w.width, s.y + w.height) }
+        return (moved + values).none { it.overlaps(box) }
     }
 }
 
@@ -148,6 +165,7 @@ fun hudWidgets(data: OverlayData): Set<HudWidget> {
             HudWidget.HeartRate -> CarValue.HeartRate in v
             HudWidget.Steering -> CarValue.SteeringAngle in v
             HudWidget.TrackMap -> data.outline.size > 1
+            HudWidget.Weather -> data.hasWeather
         }
     }.toSet()
 }

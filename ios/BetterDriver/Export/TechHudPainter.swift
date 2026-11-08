@@ -81,6 +81,7 @@ final class TechHudPainter: @unchecked Sendable {
             case "GReadout": gReadout(cg, b, s, m)
             case "Steering": steering(cg, b, s, m)
             case "TrackMap": map(cg, b, s, m)
+            case "Weather": weather(cg, b, s, m)
             default: break
             }
         }
@@ -384,6 +385,98 @@ final class TechHudPainter: @unchecked Sendable {
         heart(cg, x, top + (rowH - icon) / 2, icon)
         textTop("BPM", label, Hud.dim, x: x + icon + gap, top: top + (rowH - lineHeight(label)) / 2, kern: kern)
         textTop(m.heartRateText, value, Hud.text, x: b.centerX - width(m.heartRateText, value) / 2, top: top + rowH + h * 0.04)
+    }
+
+    // FBBD-471 (UI-320 B), as Android's TechHudPainter: the sky and the air temperature, the track
+    // surface, the wind and humidity.
+    private func weather(_ cg: CGContext, _ b: Rect, _ s: CGFloat, _ m: HudMoment) {
+        panel(cg, b, s)
+        guard m.hasWeather else { return }
+        let h = b.height
+        let icon = h * 0.26, gap = h * 0.04
+        let temp = bold(h * 0.3), unit = semibold(h * 0.12), small = semibold(h * 0.095)
+        let kern = h * 0.012
+        let tempH = lineHeight(temp)
+        let tempW = width(m.airText, temp)
+        let rowH = max(icon, tempH)
+        let labelH = m.surfaceText != nil ? lineHeight(small) : 0
+        let more = m.windText != nil || m.humidityText != nil
+        let moreH = more ? lineHeight(small) : 0
+        let total = rowH + (m.surfaceText != nil ? gap + labelH : 0) + (more ? gap + moreH : 0)
+        var top = b.centerY - total / 2
+
+        // The sky and "9°C".
+        let sky = m.skyIcon
+        let rowW = (sky.isEmpty ? 0 : icon + gap) + tempW + width("C", unit)
+        var x = b.centerX - rowW / 2
+        if !sky.isEmpty {
+            iconParts(cg, sky, x, top + (rowH - icon) / 2, icon)
+            x += icon + gap
+        }
+        textTop(m.airText, temp, Hud.text, x: x, top: top + (rowH - tempH) / 2)
+        textTop("C", unit, Hud.dim, x: x + tempW, top: top + (rowH - tempH) / 2 + tempH * 0.18)
+        top += rowH
+
+        if let surface = m.surfaceText {
+            top += gap
+            let color = UIColor(rgb: UInt32(bitPattern: m.surfaceColor) & 0xFFFFFF)
+            textTop(surface, small, color, x: b.centerX - width(surface, small, kern) / 2, top: top, kern: kern)
+            top += labelH
+        }
+
+        // The wind's arrow and speed, the humidity.
+        if more {
+            top += gap
+            let arrow: CGFloat = m.windArrow != nil ? moreH * 0.8 : 0
+            let space = h * 0.08
+            let windW = m.windText.map { width($0, small) } ?? 0
+            let humW = m.humidityText.map { width($0, small) } ?? 0
+            let both = m.windText != nil && m.humidityText != nil
+            let lineW = (arrow > 0 ? arrow + gap : 0) + windW + (both ? space : 0) + humW
+            var lx = b.centerX - lineW / 2
+            if let a = m.windArrow {
+                iconParts(cg, [a], lx, top + (moreH - arrow) / 2, arrow)
+                lx += arrow + gap
+            }
+            if let wind = m.windText {
+                textTop(wind, small, Hud.text, x: lx, top: top)
+                lx += windW + space
+            }
+            if let humidity = m.humidityText {
+                textTop(humidity, small, Hud.dim, x: lx, top: top)
+            }
+        }
+    }
+
+    /// Icon [parts] drawn in a 24 by 24 box, scaled to [size] at [x], [y] (FBBD-471).
+    private func iconParts(_ cg: CGContext, _ parts: [HudIconPart], _ x: CGFloat, _ y: CGFloat, _ size: CGFloat) {
+        let k = size / 24
+        for part in parts {
+            let c = part.coords.map { CGFloat($0.floatValue) }
+            let color = UIColor(rgb: UInt32(bitPattern: part.color) & 0xFFFFFF).cgColor
+            switch part.kind {
+            case 0 where c.count == 3:
+                cg.setFillColor(color)
+                cg.fillEllipse(in: CGRect(x: x + (c[0] - c[2]) * k, y: y + (c[1] - c[2]) * k, width: 2 * c[2] * k, height: 2 * c[2] * k))
+            case 1 where c.count == 4:
+                cg.setStrokeColor(color)
+                cg.setLineWidth(max(1, CGFloat(part.width) * k))
+                cg.setLineCap(.round)
+                cg.strokeLineSegments(between: [CGPoint(x: x + c[0] * k, y: y + c[1] * k), CGPoint(x: x + c[2] * k, y: y + c[3] * k)])
+                cg.setLineCap(.butt)
+            case 2 where c.count >= 6:
+                cg.setFillColor(color)
+                cg.move(to: CGPoint(x: x + c[0] * k, y: y + c[1] * k))
+                var i = 2
+                while i + 1 < c.count {
+                    cg.addLine(to: CGPoint(x: x + c[i] * k, y: y + c[i + 1] * k))
+                    i += 2
+                }
+                cg.closePath()
+                cg.fillPath()
+            default: break
+            }
+        }
     }
 
     private func heart(_ cg: CGContext, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat) {

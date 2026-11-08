@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.analysis.recorded.measuredG
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.analysis.weather.overlayWeather
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -73,13 +74,24 @@ class DataVideo(private val sessionsRoot: String, private val tracksRoot: String
         }.getOrNull()
         val measured = measuredG(data)
         val channels = data.channels.values
+        // The weather plate (FBBD-471): what the session's weather file holds, nothing fetched here.
+        val weather = overlayWeather(store.dir(id), data.info.startUtcMillis)
         // One lap's video shows that lap only (FBBD-346): its overlay data is made when the lap is picked.
-        val hotlap = { lap: Int -> OverlayData(sets, laps, measured, hotlap = lap, channels = channels) }
+        val hotlap = { lap: Int ->
+            OverlayData(sets, laps, measured, hotlap = lap, channels = channels, weather = weather)
+        }
         // The composite laps need the lap analysis, made when first asked for.
         val analysis = { analyse(data, laps) }
         val origin = sets.firstOrNull()?.tMicros ?: 0L
         return DataVideoSession(
-            id, OverlayData(sets, laps, measured, channels = channels), hotlap, laps, clips, dir, analysis, origin,
+            id,
+            OverlayData(sets, laps, measured, channels = channels, weather = weather),
+            hotlap,
+            laps,
+            clips,
+            dir,
+            analysis,
+            origin,
         )
     }
 

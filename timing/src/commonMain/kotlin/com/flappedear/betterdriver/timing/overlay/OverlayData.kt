@@ -122,6 +122,8 @@ data class OverlayFrame(
      * moment, as the track screen showed it then; null before the first.
      */
     val bestLapMicros: Long? = null,
+    /** The weather at this moment (FBBD-471); null when the session has none. */
+    val weather: HudWeather? = null,
 )
 
 /**
@@ -144,7 +146,8 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
  * seconds before and after it, as Overlays exports one): before its start it is [LapPhase.Ready],
  * after its end [LapPhase.Finished].
  *
- * The car's values (FBBD-347) come from the session's [channels] by name ([CarValue]).
+ * The car's values (FBBD-347) come from the session's [channels] by name ([CarValue]); the weather
+ * (FBBD-471) from [weather], the session's weather by session time.
  *
  * Not thread-safe: the exporter draws frames one at a time.
  */
@@ -155,6 +158,7 @@ class OverlayData(
     measured: MeasuredG? = null,
     hotlap: Int? = null,
     channels: Collection<ChannelDef> = emptyList(),
+    private val weather: OverlayWeather? = null,
 ) {
     private val x: TimeSeries
     private val y: TimeSeries
@@ -217,6 +221,9 @@ class OverlayData(
         TimeSeries.of(sortedSets.mapNotNull { s -> s.valueOf(id)?.let { s.tMicros to it } }, PlateGapMicros)
             .takeIf { it.size > 0 }
     }
+
+    /** The session has weather to show (FBBD-471). */
+    val hasWeather: Boolean get() = weather?.isEmpty == false
 
     /**
      * The session's best lap time; null without one. A composite lap's video compares with it; the
@@ -373,6 +380,7 @@ class OverlayData(
             car = if (car.isEmpty()) CarFrame() else carAt(sessionMicros),
             // A single-lap export shows, before its line, the best its lap will be compared with.
             bestLapMicros = bestBy(hotlap?.lap?.startMicros?.coerceAtLeast(sessionMicros) ?: sessionMicros)?.timeMicros,
+            weather = weather?.at(sessionMicros),
         )
     }
 

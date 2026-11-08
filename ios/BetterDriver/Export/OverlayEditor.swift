@@ -3,6 +3,7 @@ import SwiftUI
 
 /// The video overlay editor's state (FBBD-472) over the shared OverlayEditorState: every change is
 /// saved to the setup at once (Setup.videoOverlay, one choice for every video, UI-316 A).
+@MainActor
 final class OverlayEditorModel: ObservableObject {
     @Published private(set) var revision = 0
     let state: OverlayEditorState

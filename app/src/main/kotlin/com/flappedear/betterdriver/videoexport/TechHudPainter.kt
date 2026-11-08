@@ -75,6 +75,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData, ch
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val path = Path()
     private val oval = RectF()
+    private val weatherPlate = WeatherPlate(semibold, bold)
 
     /** The scene scale of the frame being drawn ([TechHudLayout.scale]). */
     private var scale = 1f
@@ -90,6 +91,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData, ch
      * composite lap's video, FBBD-163) the lap tile shows the lap the part comes from over the
      * theoretical lap's running time, and its delta what it has gained on the fastest lap so far.
      */
+    @Suppress("CyclomaticComplexMethod") // One branch per widget of the template.
     fun draw(
         canvas: Canvas,
         l: TechHudLayout,
@@ -113,6 +115,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData, ch
                 HudWidget.GReadout -> gReadout(canvas, b, s, f)
                 HudWidget.Steering -> steering(canvas, b, s, f)
                 HudWidget.TrackMap -> map(canvas, b, s, f, trailRuns(sessionMicros, paced = optimal == null))
+                HudWidget.Weather -> weather(canvas, b, s, f)
             }
         }
         values(canvas, l, sessionMicros)
@@ -462,6 +465,12 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData, ch
             val unitTop = top + labelH + h * 0.04f + valueH
             textTop(c, v.unit, b.centerX - semibold.measureText(v.unit) / 2, unitTop, semibold)
         }
+    }
+
+    // FBBD-471 (UI-320 B): the sky and the air temperature, the track surface, the wind and humidity.
+    private fun weather(c: Canvas, b: Box, s: Float, f: OverlayFrame) {
+        panel(c, b, s)
+        f.weather?.let { weatherPlate.draw(c, b, it) }
     }
 
     private fun heart(c: Canvas, x: Float, y: Float, size: Float) {

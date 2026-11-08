@@ -266,6 +266,7 @@ fun hudWidgetName(widget: HudWidget): String = when (widget) {
     HudWidget.GReadout -> "G readout"
     HudWidget.Steering -> "Steering"
     HudWidget.TrackMap -> "Track map"
+    HudWidget.Weather -> "Weather"
 }
 
 /** The editor row's count, "10 of 13 widgets", plus the value plates: "10 of 13 widgets, 2 values". */

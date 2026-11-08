@@ -488,6 +488,8 @@ final class RecordingController: ObservableObject {
             return
         }
         gnssSound(now.gnss)
+        // The banner's changes go into the session and the drive's log for the drive's check (FBBD-64), as on Android.
+        _ = live.gnssBanner(screen: now)
         checkVoice(now)
         checkVideoSpace()
         let obdOn = obd?.status().state == ObdLinkState.connected

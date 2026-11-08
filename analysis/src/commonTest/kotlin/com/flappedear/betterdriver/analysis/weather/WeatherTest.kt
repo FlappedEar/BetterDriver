@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.analysis.weather
 
+import com.flappedear.betterdriver.timing.overlay.Sky
+import com.flappedear.betterdriver.timing.overlay.TrackSurface
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -180,4 +182,42 @@ internal fun answer(air: List<Double?>, rain: List<Double?>): String {
            "weather_code":${list(rain.map { r -> r?.let { if (it > 0) 61 else 2 } })}
          }}
     """.trimIndent()
+}
+
+/** FBBD-471: the session's weather for the video's weather plate. */
+class WeatherOverlayTest {
+    private fun reading(at: Long, air: Double, mm: Double, code: Int) =
+        WeatherReading(
+            at,
+            airC = air,
+            precipitationMm = mm,
+            windKmh = 10.0,
+            windFromDeg = 0.0,
+            humidityPct = 80.0,
+            code = code,
+        )
+
+    @Test
+    fun eachQuarterHourBySessionTimeWithItsSurface() {
+        val start = Ten + 5 * MillisPerMinute
+        val readings = (-8..4).map { q ->
+            // Rain in the quarter hour of 10:30 only.
+            reading(Ten + q * QuarterMillis, 10.0 + q, if (q == 2) 0.6 else 0.0, if (q == 2) 61 else 2)
+        }
+        val w = SessionWeather(
+            latitude = Lat, longitude = Lon, fetchedUtcMillis = Ten,
+            fromUtcMillis = Ten - 2 * MillisPerHour, toUtcMillis = Ten + MillisPerHour, readings = readings,
+        )
+        val o = w.overlay(start)
+        val atStart = assertNotNull(o.at(0))
+        assertEquals(10.0, atStart.airC, "10:05 is in the 10:00 quarter hour")
+        assertEquals(Sky.PartlyCloudy, atStart.sky)
+        assertEquals(TrackSurface.Dry, atStart.surface)
+        assertEquals(80.0, atStart.humidityPct)
+        val rain = assertNotNull(o.at((2 * QuarterMillis - 5 * MillisPerMinute) * 1000))
+        assertEquals(Sky.Rain, rain.sky)
+        assertEquals(TrackSurface.Wet, rain.surface)
+        val after = assertNotNull(o.at((3 * QuarterMillis - 5 * MillisPerMinute) * 1000))
+        assertEquals(TrackSurface.Wet, after.surface, "the rain still wets the track")
+    }
 }
