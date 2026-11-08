@@ -32,9 +32,12 @@ keeps the final time and the gap to your best lap after it.
     speed under it (a session without RPM shows the speed alone), the lap (lap number,
     running time, best lap and the delta to it), throttle and brake, OIL, ATF and COOLANT with their
     ranges, tyres and the steering wheel. Top left the track map with the lap's trail and the car, top
-    right the heart rate, bottom right the G radar with its last second and the G numbers. A widget
-    whose value the session did not record (no OBD adapter, no heart-rate strap, no tyre sensors, no
-    steering angle) is left out. **Watch video** shows the same.
+    right the heart rate with the weather left of it, bottom right the G radar with its last second
+    and the G numbers. The weather plate shows the sky, the air temperature, the track surface (DRY,
+    DAMP or WET from the rain of the two hours before), the wind and the humidity, as the session's
+    weather had them at that moment. A widget whose value the session did not record (no OBD adapter,
+    no heart-rate strap, no tyre sensors, no steering angle, no weather) is left out; without heart
+    rate the weather takes its place. **Watch video** shows the same.
 
 When the session has video, the lap analysis also plays the realistic optimal lap as one video,
 stitched from the laps it is made of (the raw theoretical best is there too). The plan's perfect

@@ -81,8 +81,12 @@ class TechHudTest {
         assertTrue(top.last in 320..345, "top strip ends under the map: $top")
         assertTrue(bottom.first in 650..652, "bottom strip starts at the radar: $bottom")
         assertTrue(bottom.last in 1070..1080, "$bottom")
-        // Without the map and the heart rate there is one strip, the bottom.
-        val bottomOnly = TechHudLayout(1920, 1080, HudWidget.entries.toSet() - HudWidget.TrackMap - HudWidget.HeartRate)
+        // Without the map, the heart rate and the weather there is one strip, the bottom.
+        val bottomOnly = TechHudLayout(
+            1920,
+            1080,
+            HudWidget.entries.toSet() - HudWidget.TrackMap - HudWidget.HeartRate - HudWidget.Weather,
+        )
         assertEquals(listOf(bottom), bottomOnly.strips)
     }
 

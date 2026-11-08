@@ -11,7 +11,8 @@ import kotlin.math.min
  *
  * Along the bottom over the bonnet: the RPM gauge with the speed, the lap, throttle and brake, three
  * temperature rows, tyres and the steering wheel; heart rate top right, the track map top left, the
- * G radar and the G readout bottom right.
+ * G radar and the G readout bottom right. [Weather] (FBBD-471, UI-321 B) is BetterDriver's own, left
+ * of heart rate; without heart rate it takes heart rate's place.
  */
 @Suppress("MagicNumber") // Overlays' template, copied as it is.
 enum class HudWidget(val x: Float, val y: Float, val width: Float, val height: Float) {
@@ -27,6 +28,7 @@ enum class HudWidget(val x: Float, val y: Float, val width: Float, val height: F
     GReadout(0.854f, 0.876f, 0.14f, 0.114f),
     Steering(0.72f, 0.829f, 0.13f, 0.16f),
     TrackMap(0.012f, 0.015f, 0.17f, 0.3f),
+    Weather(0.78f, 0.015f, 0.1f, 0.16f),
     ;
 
     companion object {
@@ -61,7 +63,12 @@ class TechHudLayout(val width: Int, val height: Int, shown: Set<HudWidget>) {
         for (w in HudWidget.entries) {
             if (w !in shown) continue
             // A row takes the place of the n-th row of the template, n its place among the shown rows.
-            val place = if (w in HudWidget.Rows) HudWidget.Rows[rows.indexOf(w)] else w
+            // Weather moves into heart rate's place when there is no heart rate (FBBD-471).
+            val place = when {
+                w in HudWidget.Rows -> HudWidget.Rows[rows.indexOf(w)]
+                w == HudWidget.Weather && HudWidget.HeartRate !in shown -> HudWidget.HeartRate
+                else -> w
+            }
             out[w] = Box(
                 place.x * width,
                 place.y * height,
@@ -123,6 +130,7 @@ fun hudWidgets(data: OverlayData): Set<HudWidget> {
             HudWidget.HeartRate -> CarValue.HeartRate in v
             HudWidget.Steering -> CarValue.SteeringAngle in v
             HudWidget.TrackMap -> data.outline.size > 1
+            HudWidget.Weather -> data.hasWeather
         }
     }.toSet()
 }
