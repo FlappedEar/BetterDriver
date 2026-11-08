@@ -96,14 +96,18 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 120), "no Overlay row")
         row.tap()
         XCTAssertTrue(app.descendants(matching: .any)["overlayPicture"].firstMatch.waitForExistence(timeout: 30), "no editor")
-        let plate = app.descendants(matching: .any)["overlayPlate-w-Tachometer"].firstMatch
-        XCTAssertTrue(plate.waitForExistence(timeout: 10), "no gauge on the picture")
+        // The first widget the demo session draws, whichever it is.
+        let plates = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'overlayPlate-w-'"))
+        XCTAssertTrue(plates.firstMatch.waitForExistence(timeout: 10), "no widget on the picture")
         keep("Overlay editor")
-        let toggle = app.switches["overlaySwitchTachometer"].firstMatch
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "no switch for the gauge")
+        let id = plates.firstMatch.identifier
+        let name = String(id.dropFirst("overlayPlate-w-".count))
+        let plate = app.descendants(matching: .any)[id].firstMatch
+        let toggle = app.switches["overlaySwitch\(name)"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "no switch for \(name)")
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: plate)
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "the gauge stayed on the picture")
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "\(name) stayed on the picture")
         // Back on for the other tests' videos.
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         app.buttons["Done"].firstMatch.tap()

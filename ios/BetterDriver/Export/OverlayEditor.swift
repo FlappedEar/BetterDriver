@@ -79,6 +79,7 @@ struct OverlayEditorView: View {
                 Button("Cancel", role: .cancel) { renaming = nil }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overlayEditor")
     }
 
@@ -186,6 +187,8 @@ private struct OverlayPicture: View {
         }
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        // A container: its plates keep their own identifiers.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overlayPicture")
     }
 }
