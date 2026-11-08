@@ -135,8 +135,10 @@ private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: La
     while (true) {
         var t = 0L
         var seeking = false
+        var shown = st.comparison
         withFrameNanos { now ->
             val c = st.comparison
+            shown = c
             st.tick(if (last == 0L) 0L else now - last)
             last = now
             t = st.cursor
@@ -151,7 +153,8 @@ private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: La
             // The first frame after the wait counts no time, as the very first frame does.
             last = 0L
             val still = t
-            snapshotFlow { st.playing || st.scrubbing || st.cursor != still }.first { it }
+            // A new reading of the laps (FBBD-474) also wakes it: the players go to its frames.
+            snapshotFlow { st.playing || st.scrubbing || st.cursor != still || st.comparison !== shown }.first { it }
         }
     }
 }
@@ -161,10 +164,14 @@ private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: La
  * state, changed on the main thread. [comparison] is the latest reading of those two laps.
  */
 private class ReviewTransport(first: Comparison, startFraction: Double?) {
-    var comparison: Comparison = first
+    private val latest = mutableStateOf(first)
+
+    /** Compose state: a new reading wakes a still review's frame loop, so the players follow it. */
+    var comparison: Comparison
+        get() = latest.value
         set(value) {
-            if (value === field) return
-            field = value
+            if (value === latest.value) return
+            latest.value = value
             if (cursor > value.lengthMicros) cursor = value.lengthMicros
         }
 
