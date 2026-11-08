@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.OptimalVideo
 import com.flappedear.betterdriver.analysis.recorded.measuredG
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.weather.overlayWeather
 import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -43,6 +44,7 @@ import com.flappedear.betterdriver.review.sessionVideo
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.timing.overlay.OverlayData
+import com.flappedear.betterdriver.timing.overlay.OverlayWeather
 import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.totalMicros
 import com.flappedear.betterdriver.timing.overlay.videoCuts
@@ -134,6 +136,7 @@ class VideoExports private constructor(private val context: Context) {
                         measuredG(p.data),
                         hotlap = part.takeIf(::isSingleLap),
                         channels = p.data.channels.values,
+                        weather = p.weather,
                     )
                     // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
                     WatchSource(cuts, p.video, data, optimal = p.optimalPlan(part))
@@ -194,7 +197,9 @@ class VideoExports private constructor(private val context: Context) {
         val video = sessionVideo(dir, VideoTimeline.from(data.events, indexedClips(dir))) ?: return null
         val sets = data.sampleSets.sortedBy { it.tMicros }
         val laps = trackFor(data, TrackStore(tracksDir(context)).all())?.let { replayLaps(id, sets, it) }
-        return Prepared(data, sets, laps, video)
+        // The weather plate (FBBD-471): what the session's weather file holds, nothing fetched here.
+        val weather = overlayWeather(dir.path, data.info.startUtcMillis)
+        return Prepared(data, sets, laps, video, weather)
     }
 
     private class Prepared(
@@ -202,6 +207,7 @@ class VideoExports private constructor(private val context: Context) {
         val sets: List<SampleSet>,
         val laps: SessionLaps?,
         val video: SessionVideo,
+        val weather: OverlayWeather?,
     ) {
         private val durations = HashMap<String, Long?>()
 
@@ -315,6 +321,7 @@ class VideoExports private constructor(private val context: Context) {
                 measuredG(prepared.data),
                 hotlap = hotlap,
                 channels = prepared.data.channels.values,
+                weather = prepared.weather,
             )
             val painter = TechHudPainter(HudFonts.load(context), data)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).

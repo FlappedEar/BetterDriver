@@ -9,17 +9,22 @@ import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.HudDash
 import com.flappedear.betterdriver.timing.overlay.HudRowSpec
+import com.flappedear.betterdriver.timing.overlay.HudWeather
 import com.flappedear.betterdriver.timing.overlay.HudWidget
+import com.flappedear.betterdriver.timing.overlay.IconShape
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.Pace
 import com.flappedear.betterdriver.timing.overlay.PaceRun
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
+import com.flappedear.betterdriver.timing.overlay.WeatherColors
 import com.flappedear.betterdriver.timing.overlay.gearText
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
+import com.flappedear.betterdriver.timing.overlay.skyIcon
 import com.flappedear.betterdriver.timing.overlay.steeringText
+import com.flappedear.betterdriver.timing.overlay.windArrow
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -50,6 +55,38 @@ class HudSpan(val top: Int, val bottom: Int)
  */
 class HudTrailRun internal constructor(val points: List<Xy>, val paced: Boolean, val ahead: Boolean) {
     internal constructor(run: PaceRun) : this(run.points, run.pace != null, run.pace == Pace.Ahead)
+}
+
+/**
+ * One part of a weather icon (FBBD-471) in a 24 by 24 box, y down, flat for Swift: [kind] 0 a filled
+ * circle ([coords] x, y, r), 1 a round-capped line of [width] (x1, y1, x2, y2), 2 a filled polygon
+ * (x, y pairs); [color] ARGB.
+ */
+class HudIconPart internal constructor(shape: IconShape) {
+    val kind: Int
+    val coords: List<Float>
+    val width: Float
+    val color: Int = shape.color
+
+    init {
+        when (shape) {
+            is IconShape.Circle -> {
+                kind = 0
+                coords = listOf(shape.cx, shape.cy, shape.r)
+                width = 0f
+            }
+            is IconShape.Line -> {
+                kind = 1
+                coords = listOf(shape.x1, shape.y1, shape.x2, shape.y2)
+                width = shape.width
+            }
+            is IconShape.Polygon -> {
+                kind = 2
+                coords = shape.points.flatMap { listOf(it.first, it.second) }
+                width = 0f
+            }
+        }
+    }
 }
 
 /** A dot of the radar's last second: the G then, [fade] from near 0 (oldest) to near 1. */
@@ -135,6 +172,27 @@ class HudMoment internal constructor(
     val brakeText: String = percent(car.brakePct)
 
     val heartRateText: String = car.heartRate?.roundToInt()?.toString() ?: HudDash
+
+    /** The weather plate (FBBD-471, UI-320 B): null when this moment has no weather. */
+    private val weather: HudWeather? = frame.weather
+    val hasWeather: Boolean = weather != null
+    val airText: String = weather?.airText ?: HudDash
+
+    /** "TRACK DRY", "TRACK DAMP", "TRACK WET"; null without a surface. */
+    val surfaceText: String? = weather?.surface?.text
+
+    /** The surface word's colour, ARGB. */
+    val surfaceColor: Int = weather?.surface?.let(WeatherColors::of) ?: WeatherColors.Dry
+    val windText: String? = weather?.windText
+    val humidityText: String? = weather?.humidityText
+
+    /** The sky's icon in a 24 by 24 box; empty without a sky. */
+    val skyIcon: List<HudIconPart> = weather?.sky?.let(::skyIcon)?.map(::HudIconPart).orEmpty()
+
+    /** The wind's arrow in a 24 by 24 box; null without a direction or in calm air. */
+    val windArrow: HudIconPart? = weather?.windArrowDeg?.takeIf { weather.windText != null }?.let {
+        HudIconPart(windArrow(it))
+    }
 
     val g: GForce? = frame.g
     val gText: String = frame.g?.let { fixed(hypot(it.lateral, it.longitudinal), 2) } ?: HudDash

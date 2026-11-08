@@ -10,8 +10,13 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.overlay.HudWeather
 import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.OverlayData
+import com.flappedear.betterdriver.timing.overlay.OverlayWeather
+import com.flappedear.betterdriver.timing.overlay.Sky
+import com.flappedear.betterdriver.timing.overlay.TrackSurface
+import com.flappedear.betterdriver.timing.overlay.WeatherColors
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
 import com.flappedear.betterdriver.timing.overlay.steeringText
@@ -65,7 +70,7 @@ class TechHudPainterTest {
         // Each plate's amber tab at its top left; the picture's middle is left alone.
         val plates = listOf(
             HudWidget.Lap, HudWidget.Pedals, HudWidget.Oil, HudWidget.Tyres, HudWidget.Steering,
-            HudWidget.HeartRate, HudWidget.GReadout, HudWidget.TrackMap,
+            HudWidget.HeartRate, HudWidget.GReadout, HudWidget.TrackMap, HudWidget.Weather,
         )
         for (w in plates) {
             val b = l.boxes.getValue(w)
@@ -78,6 +83,11 @@ class TechHudPainterTest {
         assertTrue("radar dot", amber(bmp, l.boxes.getValue(HudWidget.GRadar)) > 100)
         val map = l.boxes.getValue(HudWidget.TrackMap)
         assertTrue("map trail and car", count(bmp, map, Amber, TrailGreen, TrailOrange) > 300)
+        // The weather plate left of heart rate: the sun and "TRACK DAMP" in amber, the cloud light grey.
+        val weather = l.boxes.getValue(HudWidget.Weather)
+        assertTrue(weather.right < l.boxes.getValue(HudWidget.HeartRate).left)
+        assertTrue("sun and damp", count(bmp, weather, Amber) > 150)
+        assertTrue("cloud", count(bmp, weather, WeatherColors.Cloud) > 100)
         save(bmp, "full")
     }
 
@@ -161,7 +171,19 @@ class TechHudPainterTest {
             ChannelDef(308, "tyre_temp_fl", "°C", "tpms", 0),
             ChannelDef(309, "tyre_pressure_fl", "bar", "tpms", 2),
         )
-        return OverlayData(sets, replayLaps("s", sets, track()), channels = if (withCar) channels else emptyList())
+        // Weather (FBBD-471): a damp quarter hour, then a wet one.
+        val weather = OverlayWeather(
+            listOf(
+                0L to HudWeather(9.4, Sky.PartlyCloudy, TrackSurface.Damp, 12.0, 270.0, 78.0),
+                900_000_000L to HudWeather(6.0, Sky.Rain, TrackSurface.Wet, 20.0, 180.0, 95.0),
+            ),
+        )
+        return OverlayData(
+            sets,
+            replayLaps("s", sets, track()),
+            channels = if (withCar) channels else emptyList(),
+            weather = weather.takeIf { withCar },
+        )
     }
 
     private fun amber(bmp: Bitmap, b: com.flappedear.betterdriver.timing.overlay.Box): Int = count(bmp, b, Amber)
