@@ -132,21 +132,95 @@ struct StatusDot: View {
 }
 
 /// A settings page: a scrolling column of groups, 12 points apart, on black, titled as on Android.
-struct ShellPage<Content: View>: View {
+struct ShellPage<Content: View, Trailing: View>: View {
     let title: String
-    /// A tab's own page has the large title; a page opened from it the small one.
+    /// A tab's own page has the large title (TabTitle); a page opened from it the small one.
     var large = false
-    @ViewBuilder let content: Content
+    /// Buttons beside a large title (Car's Edit), as Android's ShellTopBar actions.
+    let trailing: Trailing
+    let content: Content
+
+    init(
+        title: String,
+        large: Bool = false,
+        @ViewBuilder trailing: () -> Trailing,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.large = large
+        self.trailing = trailing()
+        self.content = content()
+    }
 
     var body: some View {
-        ScrollView {
+        let page = ScrollView {
             VStack(alignment: .leading, spacing: 12) { content }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 4)
         }
         .background(Palette.background)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(large ? .large : .inline)
+        if large {
+            page.tabTitle(title) { trailing }
+        } else {
+            page
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
+        }
+    }
+}
+
+extension ShellPage where Trailing == EmptyView {
+    init(title: String, large: Bool = false, @ViewBuilder content: () -> Content) {
+        self.init(title: title, large: large, trailing: { EmptyView() }, content: content)
+    }
+}
+
+/// A tab's own title (UI-307 A, FBBD-475), as Android's ShellTopBar on a top-level screen: large and
+/// bold in a row of its own above the screen, which stays put while the screen scrolls, with the
+/// tab's buttons on its right. Not the system's large title: built with the iOS 26 SDK, TestFlight
+/// 1582 on iOS 27 left the top of every tab empty and drew "Sessions" over the first session card.
+/// The navigation bar is hidden on the tab itself; pages opened from it show theirs, with Back.
+struct TabTitle<Trailing: View>: ViewModifier {
+    let title: String
+    let trailing: Trailing
+
+    func body(content: Content) -> some View {
+        content
+            // Still the page's title: Back on the pages opened from it says where it goes.
+            .navigationTitle(title)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundStyle(Palette.onBackground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("screenTitle")
+                    Spacer(minLength: 0)
+                    trailing.tint(Palette.accent)
+                }
+                .padding(.leading, 20)
+                .padding(.trailing, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .frame(minHeight: 56)
+                .background(Palette.background)
+            }
+    }
+}
+
+extension View {
+    /// A tab's own large title row (TabTitle).
+    func tabTitle(_ title: String) -> some View {
+        modifier(TabTitle(title: title, trailing: EmptyView()))
+    }
+
+    /// A tab's own large title row with buttons on its right (TabTitle).
+    func tabTitle<Trailing: View>(_ title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        modifier(TabTitle(title: title, trailing: trailing()))
     }
 }
 

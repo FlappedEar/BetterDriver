@@ -27,7 +27,10 @@ UNIT = "BetterDriverTests"
 PARTS = [
     ["ReviewScreensTests", "ScreenLayoutTests", "MapLapsTests", "LapPickerTests", "MakeTrackTests",
      "ProgressionTests", "TrackCornersTests"],
-    ["DataVideoTests", "ShareEntryPointsTests", "SatelliteMapTests", "BackupUiTests", "EveryPassTests"],
+    # ScreenTitlesTests (FBBD-475) here, not in the last part with the unit tests: in that part
+    # ShareTests' memory check failed 3 of 3 runs on PR #584 and passed on main without it.
+    ["DataVideoTests", "ShareEntryPointsTests", "SatelliteMapTests", "BackupUiTests", "EveryPassTests",
+     "ScreenTitlesTests"],
 ]
 LAST = len(PARTS) + 1
 
