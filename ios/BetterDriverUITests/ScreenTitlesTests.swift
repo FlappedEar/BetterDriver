@@ -3,7 +3,7 @@ import UIKit
 
 /// Every screen shows its title where a title belongs (FBBD-475): TestFlight 1582 on iOS 27 drew
 /// no title at the top of any tab, and the Sessions tab's "Sessions" over its first session card.
-/// On each tab, and on a page opened from Settings, the title must be on screen, above everything
+/// On each tab, and on Settings › App, the title must be on screen, above everything
 /// the screen shows under it, and over none of it. Runs on GitHub's iOS 18 simulators (ios.yml) and
 /// in the TestFlight gate on the iOS 26 SDK the app ships with (ios-release.yml). Each problem is
 /// reported at once, with a screenshot of the screen it is on and the frames in the log.
@@ -32,15 +32,16 @@ final class ScreenTitlesTests: XCTestCase {
             sleep(1)
             check(screen: name, title: name)
         }
-        // A page one level down keeps its title too.
+        // A page one level down keeps its title too (App: on the iPhone and the iPad, which hides
+        // what sets up a recording).
         openTab("Settings")
-        let video = app.buttons["settings.video"].firstMatch
-        if video.waitForExistence(timeout: 10) {
-            video.tap()
+        let page = app.buttons["settings.app"].firstMatch
+        if page.waitForExistence(timeout: 10) {
+            page.tap()
             sleep(1)
-            check(screen: "Settings › Video", title: "Video")
+            check(screen: "Settings › App", title: "App")
         } else {
-            problems.append("Settings: no Video row")
+            problems.append("Settings: no App row")
         }
         if !problems.isEmpty {
             XCTFail("\(problems.count) title problems on the \(phone ? "iPhone" : "iPad"):\n" + problems.joined(separator: "\n"))
