@@ -13,6 +13,10 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.34.1
+
+- iPhone and iPad: every tab shows its title at the top again; on iOS 27 the top was empty and **Sessions** was drawn over the first session card. On the **Car** tab, **Edit** sits beside the car's name.
+
 ## 1.34.0
 
 - Video: choose what the overlay shows. Switch widgets on or off, move them, and add up to five value plates from any recorded channel (Video tab or **Settings › Video**).
