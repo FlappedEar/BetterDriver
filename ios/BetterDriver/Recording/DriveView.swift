@@ -53,8 +53,7 @@ struct DriveView: View {
             .fullScreenCover(isPresented: $trackShown) {
                 TrackScreenView(model: recorder.screen) { recorder.stop() }
             }
-            .navigationTitle("Drive")
-            .navigationBarTitleDisplayMode(.large)
+            .tabTitle("Drive")
         }
         // The session starts once the sheet has gone, so the track screen is never presented while the
         // sheet is still going away, which can drop it (FBBD-456).

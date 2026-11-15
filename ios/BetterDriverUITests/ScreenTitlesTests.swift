@@ -3,10 +3,11 @@ import UIKit
 
 /// Every screen shows its title where a title belongs (FBBD-475): TestFlight 1582 on iOS 27 drew
 /// no title at the top of any tab, and the Sessions tab's "Sessions" over its first session card.
-/// On each tab, and on Settings › App, the title must be on screen, above everything
-/// the screen shows under it, and over none of it. Runs on GitHub's iOS 18 simulators (ios.yml) and
-/// in the TestFlight gate on the iOS 26 SDK the app ships with (ios-release.yml). Each problem is
-/// reported at once, with a screenshot of the screen it is on and the frames in the log.
+/// On each tab, and on Settings › App, the title must be on screen, near the top, above everything
+/// the screen shows under it, and over none of it. Runs in ios.yml and in the TestFlight gate
+/// (ios-release.yml). GitHub's newest simulators are iOS 26.2, where the system's large title still
+/// sat right: the tabs now draw their own title row (TabTitle), so the check holds on any iOS. Each
+/// problem is reported at once, with a screenshot of the screen it is on and the frames in the log.
 final class ScreenTitlesTests: XCTestCase {
     private let app = XCUIApplication.quiet()
     private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }

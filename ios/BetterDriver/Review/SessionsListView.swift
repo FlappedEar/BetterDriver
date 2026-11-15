@@ -67,7 +67,7 @@ struct SessionsListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Palette.background)
-        .navigationTitle("Sessions")
+        .tabTitle("Sessions")
         .sheet(item: $trackDay) { TrackDayView(link: $0) }
         .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
         .fullScreenCover(isPresented: $comparingLaps) { LapPickerScreen() }

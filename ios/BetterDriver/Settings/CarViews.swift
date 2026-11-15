@@ -81,7 +81,10 @@ struct CarPage: View {
         let setup = settings.setup
         if let car = setup.car(id: id) {
             let chosen = setup.session.carId == car.id && !Device.isTablet
-            ShellPage(title: car.name, large: !showsBack) {
+            // On the Car tab Edit sits beside its own large title; opened from Cars, in the bar.
+            ShellPage(title: car.name, large: !showsBack, trailing: {
+                if !showsBack { Button("Edit") { editing = true } }
+            }) {
                 let line = [car.notes, chosen ? "next session" : ""].filter { !$0.isEmpty }
                 if !line.isEmpty { DimText(line.joined(separator: " · ")) }
                 if Device.isTablet {
@@ -91,8 +94,10 @@ struct CarPage: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Edit") { editing = true }.tint(Palette.accent)
+                if showsBack {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Edit") { editing = true }.tint(Palette.accent)
+                    }
                 }
             }
             .sheet(isPresented: $editing) { CarEditSheet(carId: car.id) }

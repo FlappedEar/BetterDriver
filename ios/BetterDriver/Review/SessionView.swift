@@ -68,6 +68,8 @@ struct SessionView: View {
         .background(Palette.background)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        // Opened from Sessions, whose own title row hides the bar (FBBD-475).
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) { dataVideo = true } }
             ToolbarItem(placement: .topBarTrailing) {

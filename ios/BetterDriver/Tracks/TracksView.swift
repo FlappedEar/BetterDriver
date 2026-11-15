@@ -62,6 +62,7 @@ struct TracksScreen: View {
             }
             .background(Palette.background)
             .navigationTitle("Tracks")
+            .toolbar(.visible, for: .navigationBar)
             .toolbarBackground(Palette.background, for: .navigationBar)
             // Import a track file from the other device (FBBD-80, FBBD-372), as Android's Tracks.
             .toolbar {
