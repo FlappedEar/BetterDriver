@@ -1,6 +1,10 @@
 package com.flappedear.betterdriver.replay
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -33,6 +37,7 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recording.DemoReplay
 import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
+import com.flappedear.betterdriver.recording.WeatherHook
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
@@ -98,6 +103,8 @@ class ReplayDriveTest {
         CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties").path)
             .write(CoachSettings(Verbosity.Full, language = language, learningLaps = LearningLaps))
         earlierOuting()
+        // The laps are from 27 Sep, replayed today: today's weather at the track is not theirs (WeatherHook).
+        File(d.app.filesDir, WeatherHook.FileName).writeText("")
         AppLog.clear(d.app)
     }
 
@@ -154,6 +161,7 @@ class ReplayDriveTest {
         )
         val id = live.sessionId
         d.saveProps(marker, KeySession to id, KeySpeed to speed.toString())
+        val pace = gnssThreadCpu()
         val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
         // What makes the track screen's slow frames slow (FBBD-266), beside the drive check's frame time.
         val parts = FrameParts()
@@ -166,6 +174,7 @@ class ReplayDriveTest {
             }
         }
         Log.i(Tag, "FrameParts ${parts.text()}")
+        gnssCpuPerSecond(pace, gnssThreadCpu())?.let { d.saveProps(marker, KeyGnssCpu to it.toString()) }
         d.instrumentation.runOnMainSync { parts.stop() }
         assertEquals("one recording all along", id, d.recorder().live?.sessionId)
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
@@ -235,16 +244,53 @@ class ReplayDriveTest {
      * slow runner gets room in proportion and a process doing several times more work still fails.
      */
     private fun runnerSpeed(): RunnerSpeed {
-        val before = d.loadProps(marker).getProperty(KeySpeed)?.toDoubleOrNull()
+        val props = d.loadProps(marker)
+        val before = props.getProperty(KeySpeed)?.toDoubleOrNull()
         val after = speedMillis()
         val fastest = listOfNotNull(before, after).min()
-        return RunnerSpeed(before, after, (fastest / SpeedReferenceMillis).coerceIn(1.0, MaxSpeedScale))
+        val gnss = props.getProperty(KeyGnssCpu)?.toDoubleOrNull()
+        val scale = maxOf(fastest / SpeedReferenceMillis, (gnss ?: 0.0) / GnssReferenceMsPerSecond)
+        return RunnerSpeed(before, after, gnss, scale.coerceIn(1.0, MaxSpeedScale))
     }
 
-    private data class RunnerSpeed(val beforeMillis: Double?, val afterMillis: Double, val scale: Double) {
+    private data class RunnerSpeed(
+        val beforeMillis: Double?,
+        val afterMillis: Double,
+        val gnssMsPerSecond: Double?,
+        val scale: Double,
+    ) {
         fun text() = "runner speed (FBBD-461): workload %s / %.0f ms CPU before / after the drive, normal %.0f ms; "
             .format(beforeMillis?.let { "%.0f".format(it) } ?: "-", afterMillis, SpeedReferenceMillis) +
+            "fake-gnss thread %s ms CPU a second, normal %.0f; "
+                .format(gnssMsPerSecond?.let { "%.1f".format(it) } ?: "-", GnssReferenceMsPerSecond) +
             "budget x %.2f".format(scale)
+    }
+
+    /**
+     * The recorder's fake-gnss thread's CPU time so far in ms, with the clock (FBBD-457); null when it cannot
+     * be read. Its work is the same on every run (the built-in laps at their rate), so its CPU a second
+     * shows how much the emulator's processes pay for the same work during the drive itself: on Intel Xeon
+     * runners it used 14 to 20 ms a second against 5 to 11 on AMD EPYC ones, and every app process about as
+     * much more, while the workload timed before and after the drive saw no difference.
+     */
+    private fun gnssThreadCpu(): Pair<Double, Long>? = runCatching {
+        val recorder = "${d.app.packageName}:recorder"
+        val pid = d.app.getSystemService(ActivityManager::class.java).runningAppProcesses
+            ?.firstOrNull { it.processName == recorder }?.pid ?: return null
+        val thread = File("/proc/$pid/task").listFiles()
+            ?.firstOrNull { runCatching { File(it, "comm").readText().trim() }.getOrNull() == GnssThread }
+            ?: return null
+        // The fields after the name: state is field 3, utime 14 and stime 15 (proc(5)), in clock ticks.
+        val fields = File(thread, "stat").readText().substringAfterLast(") ").trim().split(' ')
+        val ticks = fields[UtimeIndex].toLong() + fields[StimeIndex].toLong()
+        ticks * MillisPerSecond / Os.sysconf(OsConstants._SC_CLK_TCK) to SystemClock.elapsedRealtime()
+    }.onFailure { Log.w(Tag, "fake-gnss thread CPU not read: $it") }.getOrNull()
+
+    /** The fake-gnss thread's mean CPU in ms a second between [start] and [end]; null without both. */
+    private fun gnssCpuPerSecond(start: Pair<Double, Long>?, end: Pair<Double, Long>?): Double? {
+        if (start == null || end == null || end.second <= start.second || end.first < start.first) return null
+        return ((end.first - start.first) * MillisPerSecond / (end.second - start.second))
+            .also { Log.i(Tag, "fake-gnss thread %.1f ms CPU a second over the drive".format(it)) }
     }
 
     /**
@@ -316,6 +362,10 @@ class ReplayDriveTest {
         const val CarName = "Replay car"
         const val KeySession = "session"
         const val KeySpeed = "cpu_speed_ms"
+        const val KeyGnssCpu = "gnss_cpu_ms_per_s"
+        const val GnssThread = "fake-gnss"
+        const val UtimeIndex = 11
+        const val StimeIndex = 12
         const val ReportName = "replay-drive.md"
         const val TrackAsset = "silesia-ring.track.json"
         const val ReplayAsset = "silesia-ring.replay"
@@ -361,6 +411,13 @@ class ReplayDriveTest {
          * the budget. Slow runners used 1.8 to 2.0 times the normal CPU time in every process.
          */
         const val SpeedReferenceMillis = 1_100.0
+
+        /**
+         * The fake-gnss thread's CPU a second on a normal runner (FBBD-457), the highest of the AMD EPYC
+         * runners seen (5 to 11 ms between 180 and 300 s of 15 drives, Nov 2026), so no normal runner widens
+         * the budget. On Intel Xeon runners it was 14 to 20, with the recorder at 4.2 to 5.9 % against its 5.
+         */
+        const val GnssReferenceMsPerSecond = 11.0
 
         /** The most a slow runner widens the budget: a process doing 2.5 times more work fails anywhere. */
         const val MaxSpeedScale = 2.5
