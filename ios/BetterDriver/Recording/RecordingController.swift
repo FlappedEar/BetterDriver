@@ -434,6 +434,9 @@ final class RecordingController: ObservableObject {
         raceBox = nil
         phone = nil
         simulated = nil
+        // Here, not only in stop(): a recording the recorder ends itself (storage full, write error)
+        // comes through end() alone, and its demo clock ticked on (review v1.34.1 F19, FBBD-484).
+        demoTrack?.stop()
         demoTrack = nil
         tcpGps = nil
         bleGps = nil
