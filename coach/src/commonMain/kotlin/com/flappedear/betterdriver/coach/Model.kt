@@ -344,6 +344,11 @@ data class Cue(
     val also: Advice? = null,
     /** For a plan cue (UI-174 A), the corner numbers said, most time to find first. */
     val turns: List<Int> = emptyList(),
+    /**
+     * How long the coach expected the phrase to take at the set speech rate (FBBD-406), when it was
+     * said; the log's sound start and end measure the real length against it.
+     */
+    val sayMicros: Long? = null,
 ) {
     /** What a corner cue asks for: its advice, and the second one when it has one. */
     val asked: List<Advice> get() = listOfNotNull(advice, also)

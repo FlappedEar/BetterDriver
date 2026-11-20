@@ -13,6 +13,8 @@ import com.flappedear.betterdriver.timing.steering.SteeringPass
  * (FBBD-28, FBBD-99) reads exactly what was said and what happened next. Text is `key=value` pairs
  * separated by spaces; the spoken text comes last, after `text=`, and may hold spaces.
  */
+private const val MicrosPerMilli = 1_000L
+
 @Suppress("TooManyFunctions") // One writer and one reader per kind of event.
 object CoachEvents {
     /** A cue was spoken; its event time is when the coach asked for it. */
@@ -135,6 +137,7 @@ object CoachEvents {
         cue.praise?.let { append(" praise=").append(it.name) }
         cue.praised?.let { append(" praised=").append(passText(it)) }
         if (cue.language != CoachLanguage.English) append(" lang=").append(cue.language.tag)
+        cue.sayMicros?.let { append(" say_ms=").append(it / MicrosPerMilli) }
         append(" text=").append(cue.text)
     }
 
@@ -216,6 +219,7 @@ object CoachEvents {
             praise = fields["praise"]?.let(Praise::valueOf),
             praised = corner?.let { c -> fields["praised"]?.let { parsePass(c, it) } },
             language = CoachLanguage.entries.firstOrNull { it.tag == fields["lang"] } ?: CoachLanguage.English,
+            sayMicros = fields["say_ms"]?.toLongOrNull()?.let { it * MicrosPerMilli },
         )
     }.getOrNull()
 

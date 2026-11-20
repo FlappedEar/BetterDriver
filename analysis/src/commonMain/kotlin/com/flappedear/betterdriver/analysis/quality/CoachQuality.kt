@@ -31,6 +31,10 @@ internal class LoggedCue(
     val corner: String?,
     val zoneMeters: Double?,
     val kind: String? = null,
+    /** How long the coach expected the phrase to take (FBBD-406); null in cues logged before it. */
+    val sayMicros: Long? = null,
+    /** The language it was said in: "en" unless logged otherwise. */
+    val lang: String = "en",
 )
 
 /**
@@ -102,7 +106,10 @@ private fun loggedCue(e: RecorderEvent): LoggedCue? {
     val f = fields(e.text.substringBefore(" text="))
     val seq = f["seq"]?.toIntOrNull() ?: return null
     // The corner number said (FBBD-172); cues logged before it have only the coach's own.
-    return LoggedCue(e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"])
+    return LoggedCue(
+        e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"],
+        f["say_ms"]?.toLongOrNull()?.let { it * MicrosPerMilli }, f["lang"] ?: "en",
+    )
 }
 
 internal fun voiced(e: RecorderEvent): Voiced? {
