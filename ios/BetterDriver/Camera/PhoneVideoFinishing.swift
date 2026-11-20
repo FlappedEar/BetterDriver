@@ -111,26 +111,6 @@ final class PhoneVideoFinishing {
     }
 }
 
-/// How long one phone video file records before the next one starts (FBBD-468, audit 7 Nov BD-T02).
-/// The files are not fragmented (FBBD-441), so an MP4 gets its index only when it is finished: a
-/// killed app or a crash leaves the file it was writing unplayable. A new file every [seconds] bounds
-/// that loss to one file's length instead of the whole session. Review, the data video and the VBO
-/// export already join a session's files on the session clock (Android starts a new file when one is
-/// full too), so a file change is no gap in the session's video apart from a frame or two.
-///
-/// OFF until after Moto Park (2026-11-08): a recording change the day before the track, and a lap
-/// spanning two files in the data video and the frames lost at each change are not proven by a test
-/// yet (no camera in the simulator). [on] turns it on.
-enum PhoneFileLength {
-    static let on = false
-    static let seconds = 300.0
-
-    /// Whether a file that started at [startedAt] is full at [now]; [limit] for the tests.
-    static func full(startedAt: Double, now: Double, limit: Double = seconds) -> Bool {
-        now - startedAt >= limit
-    }
-}
-
 /// Background time while a phone video file is finished (FBBD-468, audit 7 Nov BD-T08): its MP4 gets
 /// its index only when finishWriting answers, and STOP or going to the background (which ends the file)
 /// may be followed at once by the app being suspended. [begin] and [end] are UIApplication's, or a
