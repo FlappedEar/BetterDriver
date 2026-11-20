@@ -5,8 +5,12 @@
 # update over it fails with INSTALL_FAILED_UPDATE_INCOMPATIBLE and every emulator job goes red.
 set -uo pipefail
 for pkg in com.flappedear.betterdriver.test com.flappedear.betterdriver; do
-  if adb shell pm list packages | tr -d '\r' | grep -qx "package:$pkg"; then
-    adb uninstall "$pkg" >/dev/null 2>&1 && echo "Removed $pkg left on the emulator."
+  path=$(adb shell pm path "$pkg" 2>/dev/null | tr -d '\r')
+  [ -n "$path" ] || continue
+  out=$(adb uninstall "$pkg" 2>&1 | tr -d '\r')
+  if [ "$out" != "Success" ]; then
+    out="$out; $(adb shell pm uninstall --user 0 "$pkg" 2>&1 | tr -d '\r')"
   fi
+  echo "Removed $pkg left on the emulator ($path): $out"
 done
 exit 0
