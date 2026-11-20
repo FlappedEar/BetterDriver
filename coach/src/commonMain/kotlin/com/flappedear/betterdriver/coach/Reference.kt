@@ -92,6 +92,7 @@ fun CoachReference.aim(corner: Int): CornerPass? =
  * plan saved before it, which is then found by its time alone. [driven]: for a braking point beyond
  * his best, the corner's target driven twice without the step (F4), which [drivenOnly] aims at.
  */
+@Suppress("LongParameterList") // The plan's lap (session, time, start), its step, gear and the driven alternative.
 class PlannedTarget(
     val cornerId: String,
     val sessionId: String,
