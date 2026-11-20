@@ -61,7 +61,7 @@ val OpenSourceLibraries = listOf(
     ),
     OpenSourceLibrary("CameraX", "camerax", "1.4.2", "https://developer.android.com/jetpack/androidx/releases/camera"),
     OpenSourceLibrary("Media3", "media3", "1.8.0", "https://github.com/androidx/media"),
-    OpenSourceLibrary("Guava", "guava", "33.4.8-android", "https://github.com/google/guava"),
+    OpenSourceLibrary("Guava", "guava", "33.7.2-android", "https://github.com/google/guava"),
 )
 
 /** Map tiles, credited exactly as the map shows them (TileLoader draws [TileSource.attribution]). */
