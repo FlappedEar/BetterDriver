@@ -38,7 +38,7 @@ private const val MaxInterpolationGapMicros = 1_000_000L
  * The time column only goes forward (FBBD-436): a fix whose time is not after the row before it is
  * left out, such as the cached fix iOS Core Location hands over at the start (stamped seconds before
  * the fixes already written) or the same fix delivered twice. A recorded fix stamped more than
- * [StaleMillis] older than the fixes around it at the start is left out too: iOS can hand that
+ * [StaleMillis] older than the fixes after it at the start is left out too: iOS can hand that
  * cached fix over first. Measured against the other fixes, not the phone's clock, so a phone clock
  * set wrong leaves out nothing. Circuit Tools and Overlays read the rows as a time series;
  * [Written.fixes] counts only the fixes written, so a left-out fix is not reported as a lost sample,
@@ -278,12 +278,12 @@ private class Readings(private val t: LongArray, private val v: DoubleArray) {
 
 /**
  * The cached fixes a recording starts with, as indices into [sets] (FBBD-436). A fix's offset is
- * its stamped time less the session's clock when it was recorded (start plus elapsed). Over the
- * first [StartWindowMicros] of fixes a receiver's clock and the phone's differ by about the same
- * offset, so their median offset is that difference; a fix there more than [StaleMillis] below it
- * was stamped well before it reached the recorder. A phone clock set wrong moves every offset alike
- * and leaves out nothing; fixes after the window are never left out here. Imports keep every fix:
- * their start is the first row's own time.
+ * its stamped time less the session's clock when it was recorded (start plus elapsed). A receiver's
+ * clock and the phone's run at the same rate, so fresh fixes keep about the same offset; a fix in the
+ * first [StartWindowMicros] whose offset is more than [StaleMillis] below that of a fix recorded after
+ * it in that window was stamped well before it reached the recorder. A phone clock set wrong moves
+ * every offset alike and leaves out nothing; fixes after the window are never left out here. Imports
+ * keep every fix: their start is the first row's own time.
  */
 private fun staleFixes(session: SessionData, sets: List<SampleSet>, times: List<Double?>): Set<Int> {
     val first = times.indexOfFirst { it != null }
@@ -293,6 +293,11 @@ private fun staleFixes(session: SessionData, sets: List<SampleSet>, times: List<
         time?.takeIf { sets[i].tMicros <= windowEnd }
             ?.let { i to it - (session.info.startUtcMillis + sets[i].tMicros / MicrosPerMilli) }
     }
-    val usual = offsets.map { it.second }.sorted()[offsets.size / 2]
-    return offsets.filter { it.second < usual - StaleMillis }.mapTo(HashSet()) { it.first }
+    val stale = HashSet<Int>()
+    var laterMax = Double.NEGATIVE_INFINITY
+    for ((i, offset) in offsets.asReversed()) {
+        if (offset < laterMax - StaleMillis) stale += i
+        laterMax = maxOf(laterMax, offset)
+    }
+    return stale
 }
