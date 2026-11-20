@@ -288,9 +288,8 @@ class ReplayDriveTest {
         if (start == null || end == null) return null
         val millis = end.second - start.second
         val cpu = end.first - start.first
-        if (millis <= 0 || cpu < 0) return null
-        return (cpu * MillisPerSecond / millis)
-            .also { Log.i(Tag, "fake-gnss thread %.1f ms CPU a second over the drive".format(it)) }
+        return (cpu * MillisPerSecond / millis).takeIf { millis > 0 && cpu >= 0 }
+            ?.also { Log.i(Tag, "fake-gnss thread %.1f ms CPU a second over the drive".format(it)) }
     }
 
     /**
