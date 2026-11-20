@@ -103,7 +103,8 @@ internal class VboReader(private val fallbackEpochDay: Long) {
         val sats: Int,
         val forward: Int,
         val lateral: Int,
-        val accelFactor: Double,
+        val forwardFactor: Double,
+        val lateralFactor: Double,
         val extras: List<Extra>,
     ) {
         fun point(row: List<String>, utcMicros: Long): ImportPoint {
@@ -116,8 +117,8 @@ internal class VboReader(private val fallbackEpochDay: Long) {
                 headingDeg = v(heading),
                 altM = v(height),
                 sats = v(sats).let { if (it.isNaN()) it else (it.toLong() and SatsMask).toDouble() },
-                accelForwardG = v(forward) * accelFactor,
-                accelLateralG = v(lateral) * accelFactor,
+                accelForwardG = v(forward) * forwardFactor,
+                accelLateralG = v(lateral) * lateralFactor,
                 extras = if (extras.isEmpty()) {
                     ImportPoint.EmptyValues
                 } else {
@@ -142,8 +143,10 @@ internal class VboReader(private val fallbackEpochDay: Long) {
                 if (time < 0 || lat < 0 || lon < 0) {
                     throw ImportFormatException("the VBO file has no time, latitude or longitude column")
                 }
-                val kmh = find("velocity", "velocity kmh", "speed")
-                val knots = if (kmh < 0) find("velocity knots") else -1
+                // The unit-bearing header first: a "velocity" column whose header says knots is in knots
+                // (review v1.34.1 F11: the short name used to win and knots were stored as km/h).
+                val knots = find("velocity knots")
+                val kmh = if (knots < 0) find("velocity", "velocity kmh", "speed") else -1
                 val forward = names.indices.firstOrNull { isAccel(names[it], header[it], Longitudinal) } ?: -1
                 val lateral = names.indices.firstOrNull { isAccel(names[it], header[it], Lateral) } ?: -1
                 val known = setOf(
@@ -153,7 +156,6 @@ internal class VboReader(private val fallbackEpochDay: Long) {
                 // [channel units] lists one line per non-standard column, in column order.
                 val nonStandard = names.indices.filter { header[it] !in VboStandardChannels }
                 val unitOf = if (units.size == nonStandard.size) nonStandard.zip(units).toMap() else emptyMap()
-                val accelUnit = (unitOf[forward] ?: unitOf[lateral]).orEmpty().lowercase()
                 val extras = names.indices
                     .filter { it !in known && names[it].lowercase() !in Dropped && header[it] !in Dropped }
                     .take(ImportLimits.MaxExtraChannels)
@@ -167,7 +169,9 @@ internal class VboReader(private val fallbackEpochDay: Long) {
                     sats = find("sats", "satellites"),
                     forward = forward,
                     lateral = lateral,
-                    accelFactor = if (accelUnit.startsWith("m/s")) 1.0 / StandardGravity else 1.0,
+                    // Each axis in its own unit (review v1.34.1 F12).
+                    forwardFactor = gFactor(unitOf[forward]),
+                    lateralFactor = gFactor(unitOf[lateral]),
                     extras = extras,
                 )
             }
@@ -199,7 +203,6 @@ internal class VboReader(private val fallbackEpochDay: Long) {
         const val MsPerDay = 86_400_000L
         const val MicrosPerMilli = 1_000L
         const val KmhPerKnot = 1.852
-        const val StandardGravity = 9.80665
         const val SatsMask = 0x3FL
 
         /** Column names of video sync and other bookkeeping, not data. */
@@ -241,3 +244,13 @@ internal class VboReader(private val fallbackEpochDay: Long) {
         }
     }
 }
+
+private const val StandardGravity = 9.80665
+
+/**
+ * Factor to g for an acceleration column whose unit is [unit]: m/s² is divided by standard gravity,
+ * anything else (G, g, blank) is taken as g. Used per axis by the VBO and RaceChrono CSV readers
+ * (review v1.34.1 F12).
+ */
+internal fun gFactor(unit: String?): Double =
+    if (unit.orEmpty().trim().lowercase().startsWith("m/s")) 1.0 / StandardGravity else 1.0

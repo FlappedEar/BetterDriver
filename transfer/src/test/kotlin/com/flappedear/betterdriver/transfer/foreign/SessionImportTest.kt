@@ -27,6 +27,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.zip.GZIPOutputStream
 import kotlin.math.abs
 import kotlin.math.cos
@@ -49,7 +51,8 @@ class SessionImportTest {
     @TempDir
     lateinit var tmp: File
 
-    private val store by lazy { SessionStore(File(tmp, "sessions")) }
+    /** Session ids are named in the phone's zone; fixed here so the tests pass in any zone (review v1.34.1 F21). */
+    private val store by lazy { SessionStore(File(tmp, "sessions"), zone = { ZoneOffset.UTC }) }
     private val staging by lazy { File(tmp, "staging") }
     private val importer by lazy { SessionImport(store, staging) }
 
@@ -303,6 +306,22 @@ class SessionImportTest {
         assertNotEquals(a.id, b.id)
         assertEquals(listOf(b.id), store.list().map { it.id })
         assertTrue(a.id.startsWith("20261012-104200-"), a.id)
+    }
+
+    @Test
+    fun `an import id is named in the phone's zone, the start instant stays UTC (review v1_34_1 F21)`() {
+        val starts = listOf(ZoneOffset.UTC to "20261012-104200-", ZoneId.of("Europe/Warsaw") to "20261012-124200-")
+            .map { (zone, prefix) ->
+                val zoned = SessionStore(File(tmp, "zoned-$prefix"), zone = { zone })
+                val id = fixture("racelogic-25hz.vbo").use {
+                    SessionImport(zoned, File(tmp, "staging-$prefix")).import(
+                        it, "file", listOf(track), CircuitList.Empty, today = LocalDate.of(2026, 10, 12),
+                    )
+                }.id
+                assertTrue(id.startsWith(prefix), "$zone: $id")
+                zoned.list().single().info.startUtcMillis
+            }
+        assertEquals(starts[0], starts[1], "the same start instant in both zones")
     }
 
     @Test

@@ -25,7 +25,7 @@ private const val IdSuffixChars = 8
 class SessionStore(
     val root: File,
     /** The time zone session ids are named in: the phone's own, read at each new session (FBBD-217). */
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val folders = SessionFolders(root.path)
 
