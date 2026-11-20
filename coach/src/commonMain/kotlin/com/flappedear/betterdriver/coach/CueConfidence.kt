@@ -5,9 +5,12 @@ import com.flappedear.betterdriver.recorder.Confidence
 
 // How far a corner cue can be trusted (FBBD-177): no precise advice from weak evidence. A pass
 // whose positions stop for a while, or that nearly stops, is not something to coach from at all
-// (Low: no cue, and never a target). Positions far apart, a speed worked out from positions, a
-// difference no bigger than the usual pass-to-pass spread, too few passes to tell, or a corner not
-// matched to the track's corners leave the cue Medium: said without its number.
+// (Low: no cue, and never a target). A difference no bigger than the usual pass-to-pass spread is
+// Low too (FBBD-414): inside the lap-to-lap noise the evidence does not support a direction either,
+// so the corner gets no cue and the skip is logged; losses that only shrink lap after lap are a driver
+// still learning the corner, not noise, and stay Medium. Positions far apart, a speed worked out from
+// positions, too few passes to tell, or a corner not matched to the track's corners leave the cue
+// Medium: said without its number.
 
 /** A pass with no position for longer than this (or [CueGapIntervals] of its usual interval) is Low. */
 const val CueGapMicros = 500_000L
@@ -32,6 +35,7 @@ object CueDoubts {
     const val SPEED_NOT_MEASURED = "not_measured"
     const val SPREAD = "within_spread"
     const val FEW_PASSES = "few_passes"
+    const val IMPROVING = "improving"
     const val IDENTITY = "identity"
 
     /** A short text for a logged [code]. */
@@ -42,13 +46,14 @@ object CueDoubts {
         SPEED_NOT_MEASURED -> "speed worked out from positions, not measured"
         SPREAD -> "within the usual pass-to-pass spread"
         FEW_PASSES -> "too few passes to tell"
+        IMPROVING -> "still getting faster lap by lap"
         IDENTITY -> "corner not matched to the track's corners"
         else -> code
     }
 
     /** The cap a logged [code] puts on a cue. */
     fun cap(code: String): Confidence =
-        if (code == GNSS_GAP || code == VERY_LOW_SPEED) Confidence.LOW else Confidence.MEDIUM
+        if (code == GNSS_GAP || code == VERY_LOW_SPEED || code == SPREAD) Confidence.LOW else Confidence.MEDIUM
 }
 
 private fun doubt(code: String, text: String = CueDoubts.text(code)) = CueDoubt(code, CueDoubts.cap(code), text)
@@ -81,7 +86,9 @@ fun cueDoubts(last: CornerPass, target: CornerPass, losses: List<Long>, unidenti
     if (losses.size < CueConsistentPasses) {
         doubts += doubt(CueDoubts.FEW_PASSES)
     } else if (gain <= (losses.max() - losses.min()) / 2) {
-        doubts += doubt(CueDoubts.SPREAD)
+        // Losses shrinking lap after lap are a trend, not noise: the driver is still learning the corner,
+        // and the direction holds (Medium, without its number). Up and down, they are noise (Low, FBBD-414).
+        doubts += doubt(if (losses.zipWithNext().all { (a, b) -> b <= a }) CueDoubts.IMPROVING else CueDoubts.SPREAD)
     }
     if (unidentified) doubts += doubt(CueDoubts.IDENTITY)
     return doubts.sortedBy { it.cap }

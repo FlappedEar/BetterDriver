@@ -149,6 +149,7 @@ internal object PolishReview : ReviewWords {
         CueDoubts.SPEED_NOT_MEASURED -> "prędkość wyliczona z pozycji, nie zmierzona"
         CueDoubts.SPREAD -> "w granicach zwykłego rozrzutu między przejazdami"
         CueDoubts.FEW_PASSES -> "za mało przejazdów, by ocenić"
+        CueDoubts.IMPROVING -> "wciąż szybciej z okrążenia na okrążenie"
         CueDoubts.IDENTITY -> "zakręt nie dopasowany do zakrętów toru"
         else -> code
     }

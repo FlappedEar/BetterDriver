@@ -72,6 +72,21 @@ object CoachEvents {
     fun quietText(lap: Int, reason: String) = "lap=$lap reason=$reason"
 
     /**
+     * A corner cue held back for weak evidence (FBBD-414): text from [skipText]. Its own kind, not
+     * [PROBLEM], since nothing failed: the validation report keeps counting only cues that could not
+     * be said.
+     */
+    const val SKIPPED = "coach_skipped"
+
+    fun skipText(skip: CueSkip): String = buildString {
+        append("lap=").append(skip.lap)
+        append(" corner=").append(skip.corner)
+        skip.turn?.let { append(" turn=").append(it) }
+        skip.cornerId?.let { append(" corner_id=").append(it) }
+        append(" why=").append(skip.doubts.joinToString(",") { it.code })
+    }
+
+    /**
      * The coach is back on the lap it went quiet on (FBBD-254): after cooling down, two corners in a row
      * near their best (FBBD-252); after the pit lane, back up to speed. Text "lap=<n> after=<the
      * [QUIET] reason>". The passes it skipped while quiet are not used, the later ones are.

@@ -236,7 +236,10 @@ class CoachReplayTest {
             val c = check(replay, laps)
             val name = replay.name
             val corner = c.heard.count { it.kind == CueKind.Corner }
-            assertTrue(corner > 0, "$name: corner cues")
+            // The first outing's focus corners lose up and down within their spread on this session: no
+            // direction is said there, each skip is logged instead (FBBD-414).
+            val skipped = replay.events.count { it.kind == CoachEvents.SKIPPED }
+            assertTrue(corner > 0 || (name == "live, first outing" && skipped > 0), "$name: corner cues")
             assertTrue(c.heard.any { it.kind == CueKind.LapTime }, "$name: lap times")
             // >= 50 m before the braking point at 150 km/h, i.e. 1.2 s, on >= 95 % of the corner cues.
             val onTime = c.margins.count { it >= MarginMicros }
@@ -328,7 +331,8 @@ class CoachReplayTest {
         val map = ref.map()
         val recorded = tracedLaps(track, store.read(recording.id).coachFixes()).associateBy { it.lap.number }
         val judged = review.cues.filter { it.result != null }
-        assertTrue(judged.size >= 10, "results to spot-check: ${judged.size}")
+        // 10 before FBBD-414; cues within a corner's usual spread are no longer said, nor measured.
+        assertTrue(judged.size >= 8, "results to spot-check: ${judged.size}")
         for (r in judged) {
             val result = r.result!!
             val cue = r.cue

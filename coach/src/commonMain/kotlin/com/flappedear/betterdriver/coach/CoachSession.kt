@@ -115,6 +115,7 @@ class CoachSession(
             events += CoachEvent(fix.tMicros, CoachEvents.RESUMED, CoachEvents.resumedText(quietLap, was))
         }
         quiet = reason
+        for (k in u.skipped) events += CoachEvent(k.tMicros, CoachEvents.SKIPPED, CoachEvents.skipText(k))
         for (r in u.results) {
             events += CoachEvent(r.tMicros, CoachEvents.RESULT, CoachEvents.resultText(r))
             line = lines.result(r)

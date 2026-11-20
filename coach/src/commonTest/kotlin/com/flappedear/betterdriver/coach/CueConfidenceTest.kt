@@ -48,12 +48,18 @@ class CueConfidenceTest {
     }
 
     @Test
-    fun `a gain within the usual spread - too few passes - or an unmatched corner leave a cue Medium`() {
+    fun `a gain within the usual spread is Low - too few passes or an unmatched corner leave a cue Medium`() {
         val steadyLosses = listOf(300_000L, 310_000L, 305_000L)
         assertTrue(cueDoubts(slower, target, steadyLosses, unidentified = false).isEmpty())
+        // FBBD-414: inside the lap-to-lap noise there is no direction to give either.
         val scattered = cueDoubts(slower, target, listOf(0L, 700_000L, 300_000L), unidentified = false)
         assertEquals(listOf(CueDoubts.SPREAD), scattered.map { it.code })
-        assertEquals(Confidence.MEDIUM, confidenceOf(scattered))
+        assertEquals(Confidence.LOW, confidenceOf(scattered))
+        assertFalse(slower.unusable(), "the spread says nothing of the pass itself")
+        // Losses only shrinking are a driver still learning the corner: the direction holds, without its number.
+        val learning = cueDoubts(slower, target, listOf(1_500_000L, 900_000L, 300_000L), unidentified = false)
+        assertEquals(listOf(CueDoubts.IMPROVING), learning.map { it.code })
+        assertEquals(Confidence.MEDIUM, confidenceOf(learning))
         val one = cueDoubts(slower, target, listOf(300_000L), unidentified = false)
         assertEquals(listOf(CueDoubts.FEW_PASSES), one.map { it.code })
         val unmatched = cueDoubts(slower, target, steadyLosses, unidentified = true)
@@ -166,19 +172,37 @@ class CueConfidenceTest {
     }
 
     @Test
+    fun `a corner whose loss is within its usual spread gets no cue and the skip is logged`() {
+        // FBBD-414: corner 2 braked 60 m early, then right, then 15 m early, in turn. After the 15 m lap the
+        // losses read 60, 0, 15 m worth: up and down, and the last one less than half that spread, inside
+        // the lap-to-lap noise. No direction is said; the skip is reported instead.
+        fun early(m: Double) = SimCircuit.Pace(earlierM = listOf(0.0, m, 0.0, 0.0))
+        val paces = listOf(steady) + List(3) { listOf(early(60.0), steady, early(15.0)) }.flatten()
+        val engine = CueEngine(track, CoachSettings(Verbosity.Full), reference(steady, steady, steady))
+        val updates = sim.drive(paces).fixes.map { engine.update(it) }
+        val skips = updates.flatMap { it.skipped }.filter { it.corner == 2 }
+        val cues = updates.flatMap { it.cues }.filter { it.kind == CueKind.Corner && it.corner == 2 }
+        assertTrue(skips.isNotEmpty(), "cues: ${cues.map { "${it.lap} ${it.text}" }}")
+        assertTrue(skips.all { s -> s.doubts.any { it.code == CueDoubts.SPREAD } }, "skips: $skips")
+        val text = CoachEvents.skipText(skips.first())
+        assertTrue(text.startsWith("lap=${skips.first().lap} corner=2 "), text)
+        assertTrue(text.endsWith(" why=within_spread"), text)
+    }
+
+    @Test
     fun `a cue's confidence and doubts are logged and read back`() {
         val cue = Cue(
             7, 0, 4, CueKind.Corner, "Turn 2, brake a little later", 2, Advice.BrakeLater(10, precise = false),
             slower, target, confidence = Confidence.MEDIUM,
-            doubts = listOf(CueDoubt(CueDoubts.SPREAD, Confidence.MEDIUM, CueDoubts.text(CueDoubts.SPREAD))),
+            doubts = listOf(CueDoubt(CueDoubts.FEW_PASSES, Confidence.MEDIUM, CueDoubts.text(CueDoubts.FEW_PASSES))),
         )
         val text = CoachEvents.cueText(cue)
-        assertTrue(" conf=MEDIUM why=within_spread " in text, text)
+        assertTrue(" conf=MEDIUM why=few_passes " in text, text)
         val back = assertNotNull(CoachEvents.parseCue(0, text))
         assertEquals(Confidence.MEDIUM, back.confidence)
         assertEquals(Advice.BrakeLater(10, precise = false), back.advice)
-        assertEquals(listOf(CueDoubts.SPREAD), back.doubts.map { it.code })
-        assertEquals("Medium confidence: within the usual pass-to-pass spread", back.confidenceText())
+        assertEquals(listOf(CueDoubts.FEW_PASSES), back.doubts.map { it.code })
+        assertEquals("Medium confidence: too few passes to tell", back.confidenceText())
         // A cue logged before FBBD-177 was said with its number.
         val logged = "seq=1 lap=4 kind=Corner corner=2 advice=brake_later:10 text=x"
         val old = assertNotNull(CoachEvents.parseCue(0, logged))
