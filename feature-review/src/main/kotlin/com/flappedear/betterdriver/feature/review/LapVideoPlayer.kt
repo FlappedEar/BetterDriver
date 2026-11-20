@@ -34,7 +34,13 @@ import java.io.File
  * [lane] (0: lap A, 1: lap B) is where it reports its frames to [LapReviewProbe].
  */
 @OptIn(UnstableApi::class)
-internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
+internal class LapVideoPlayer(
+    context: Context,
+    muted: Boolean,
+    lane: Int,
+    /** Where playback's drift, seeks and rate changes are counted for the app log (FBBD-455). */
+    private val stats: LapReviewStats = LapReviewStats(),
+) {
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         if (muted) volume = 0f
         setSeekParameters(SeekParameters.EXACT)
@@ -108,12 +114,16 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
             player.playWhenReady = false
         }
         val step = followStep(player.currentPosition, target.mediaMillis, rate, playing, stopping)
+        // Only a player already playing has a drift; one just starting is still on its way.
+        val playingNow = playing && player.playWhenReady
+        if (playingNow) stats.drift(player.currentPosition - target.mediaMillis)
         val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
         // Wanted before this frame's seek, so the frame after a seek still runs and sees it land.
         val pending = seekPending(step, lastSeekMillis)
         step.seekMillis?.let { ms ->
             if (seekDue(ms, lastSeekMillis) && nowNanos - lastSeekNanos >= gap) {
                 player.seekTo(ms)
+                if (playingNow) stats.seekedWhilePlaying()
                 lastSeekMillis = ms
                 lastSeekNanos = nowNanos
                 stopping = false
@@ -136,7 +146,10 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
         val fresh = rate != lastRate || !player.playWhenReady
         lastRate = rate
         if (rateChangeDue(if (fresh) null else speed, wanted, (nowNanos - speedSetNanos) / NanosPerMilli)) {
-            if (wanted != speed) player.setPlaybackSpeed(wanted)
+            if (wanted != speed) {
+                player.setPlaybackSpeed(wanted)
+                stats.rateChanged()
+            }
             speed = wanted
             speedSetNanos = nowNanos
         }
