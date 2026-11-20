@@ -132,7 +132,8 @@ class NotifyLinkCoreTest {
     }
 
     private fun raceBox(device: Device, states: MutableList<LinkState>) = NotifyLinkCore(
-        "AA:BB", device, { device.t }, { states += it }, 3_000, 10_000, 30_000, ReconnectPolicy(500, 3_000), Int.MAX_VALUE,
+        "AA:BB", device, { device.t }, { states += it },
+        3_000, 10_000, 30_000, ReconnectPolicy(500, 3_000), Int.MAX_VALUE,
     )
 
     @Test
