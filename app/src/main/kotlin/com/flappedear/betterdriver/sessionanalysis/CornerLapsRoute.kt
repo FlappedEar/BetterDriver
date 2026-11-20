@@ -10,13 +10,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.navigation.NavHostController
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.feature.analysis.CornerLapsScreen
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.EveryPassTitle
 import com.flappedear.betterdriver.feature.analysis.ProvideCornerLaps
 import com.flappedear.betterdriver.shell.ShellTopBar
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * Same corner across laps (FBBD-153): [content] (the analysis screen of [source]'s analysis), whose
@@ -46,7 +46,7 @@ internal fun CornerLapsRoute(
         val c = corner
         ui = null
         if (analysis != null && c != null) {
-            ui = withContext(Dispatchers.Default) { cornerLaps(analysis, source.session, c, lapVideo) }
+            ui = inBackground(Dispatchers.Default) { cornerLaps(analysis, source.session, c, lapVideo) }
         }
     }
     val states = rememberSaveableStateHolder()

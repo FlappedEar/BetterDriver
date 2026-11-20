@@ -57,11 +57,11 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.flappedear.betterdriver.analysis.line.PerfectLapScene
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /** Test tags: the button on "Where to find time" (UI-184 A) and the player. */
@@ -369,7 +369,7 @@ private suspend fun save(
 ): Saving {
     update(Saving.Running(0f))
     return try {
-        val video = withContext(Dispatchers.Default) {
+        val video = inBackground(Dispatchers.Default) {
             val name = "perfect-lap-${System.currentTimeMillis()}"
             savePerfectLapVideo(context, scene, painter, name) { update(Saving.Running(it)) }
         }

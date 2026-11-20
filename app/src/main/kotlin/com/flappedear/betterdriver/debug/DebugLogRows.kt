@@ -12,12 +12,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.ListRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.Locale
 
@@ -40,14 +40,14 @@ fun DebugLogRows(onCameraTest: (() -> Unit)? = null) {
     var problem by remember { mutableStateOf<String?>(null) }
     var size by remember { mutableStateOf<Long?>(null) }
     var changes by remember { mutableIntStateOf(0) }
-    LaunchedEffect(busy, changes) { size = withContext(Dispatchers.IO) { DebugLogShare.logBytes(context) } }
+    LaunchedEffect(busy, changes) { size = inBackground(Dispatchers.IO) { DebugLogShare.logBytes(context) } }
     ListRow("Share log", if (busy) "Preparing…" else mb(size) ?: "…", divider = false, onClick = {
         if (!busy) {
             busy = true
             problem = null
             scope.launch {
                 val zip = try {
-                    withContext(Dispatchers.IO) { DebugLogShare.prepare(context) }
+                    inBackground(Dispatchers.IO) { DebugLogShare.prepare(context) }
                 } catch (e: IOException) {
                     DebugLog.w("DebugLogs", "could not prepare the log", e)
                     problem = "Could not prepare the log: ${e.message}"
@@ -75,7 +75,7 @@ fun DebugLogRows(onCameraTest: (() -> Unit)? = null) {
                 TextButton(onClick = {
                     confirmClear = false
                     scope.launch {
-                        withContext(Dispatchers.IO) { AppLog.clear(context) }
+                        inBackground(Dispatchers.IO) { AppLog.clear(context) }
                         changes++
                     }
                 }) { Text("Clear") }

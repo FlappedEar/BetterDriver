@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.analysis.line.dayPlan
 import com.flappedear.betterdriver.analysis.line.dayProof
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.coach.dayPlanStore
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.feature.analysis.TrackDayScreen
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.feature.analysis.trackDayUi
@@ -37,7 +38,6 @@ import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
@@ -72,7 +72,7 @@ internal fun TrackDayRoute(ids: List<String>, onBack: () -> Unit) {
         if (state !is TrackDayState.Reading) return@LaunchedEffect
         // Taken before any session is read, so a day read before a restore is not kept (FBBD-156).
         val epoch = AppDataGate.epoch
-        state = withContext(Dispatchers.Default) {
+        state = inBackground(Dispatchers.Default) {
             trackDayState(
                 SessionStore(sessionsDir(context)), TrackStore(tracksDir(context)), dayPlanStore(context), ids, epoch,
             )

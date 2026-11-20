@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.live.GnssCue
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.gnssCue
@@ -15,7 +16,6 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.withContext
 
 private const val Tag = "GnssSound"
 private const val ToneVolume = 80
@@ -33,7 +33,7 @@ fun GnssSound(gnss: GnssState?, enabled: Boolean) {
     // Made off the main thread while the sound is on, released when it is turned off or the screen goes.
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
-        val made = withContext(Dispatchers.Default + NonCancellable) { newToneGenerator() } ?: return@LaunchedEffect
+        val made = inBackground(Dispatchers.Default + NonCancellable) { newToneGenerator() } ?: return@LaunchedEffect
         try {
             tones = made
             awaitCancellation()

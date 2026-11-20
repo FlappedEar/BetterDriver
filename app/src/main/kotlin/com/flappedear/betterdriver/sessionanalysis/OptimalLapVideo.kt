@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
 import com.flappedear.betterdriver.analysis.optimal.compositeOptions
 import com.flappedear.betterdriver.analysis.optimal.unreadableCompositeOptions
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -28,7 +29,6 @@ import com.flappedear.betterdriver.videoexport.videoBlocked
 import com.flappedear.betterdriver.videoexport.videoExportFileName
 import com.flappedear.betterdriver.videoexport.videoPartOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * The composite lap video from the lap analysis (FBBD-163, FBBD-178), under the lap times: the
@@ -53,7 +53,7 @@ internal fun OptimalLapVideo(
     var open by rememberSaveable(sessionId) { mutableStateOf(false) }
     var part by rememberSaveable(sessionId) { mutableStateOf(RealisticOptimalLap) }
     LaunchedEffect(analysis, lapVideo) {
-        options = withContext(Dispatchers.IO) { compositeOptionsOf(analysis, lapVideo) }
+        options = inBackground(Dispatchers.IO) { compositeOptionsOf(analysis, lapVideo) }
     }
     val pickFile = rememberLauncherForActivityResult(CreateDocument(Mp4MimeType)) { uri ->
         if (uri != null) exports.start(sessionId, part, uri, recording)

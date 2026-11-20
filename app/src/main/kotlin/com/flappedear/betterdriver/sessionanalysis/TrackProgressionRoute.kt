@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.analysis.progression.addNewest
 import com.flappedear.betterdriver.analysis.progression.systemDayZone
 import com.flappedear.betterdriver.coach.coachingHistoryStore
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.feature.analysis.ProgressionActions
 import com.flappedear.betterdriver.feature.analysis.ProgressionChoice
 import com.flappedear.betterdriver.feature.analysis.ProgressionPeriod
@@ -40,7 +41,6 @@ import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** The progression at one track (FBBD-181), opened from a session's summary. */
 internal fun NavGraphBuilder.progressionDestination(nav: NavHostController, padding: PaddingValues) {
@@ -86,7 +86,7 @@ internal fun TrackProgressionRoute(
     var mapping by remember(trackId) { mutableStateOf(CornerMapping.SameRevisionOnly) }
     LaunchedEffect(trackId) {
         // Made off the main thread: making the stores reads the disk (FBBD-41).
-        val stores = withContext(Dispatchers.IO) {
+        val stores = inBackground(Dispatchers.IO) {
             val tracks = TrackStore(tracksDir(context))
             val history = coachingHistoryStore(context)
             val track = tracks.get(trackId)
@@ -101,15 +101,17 @@ internal fun TrackProgressionRoute(
         val epoch = AppDataGate.epoch
         // Only the track's own sessions count towards the limits (other tracks' are skipped on reading).
         val (summaries, current) =
-            withContext(Dispatchers.IO) { progressionCandidates(stores.sessions, history, trackId) }
+            inBackground(Dispatchers.IO) { progressionCandidates(stores.sessions, history, trackId) }
         val byId = summaries.associateBy { it.id }
         addNewest(
             summaries.map { it.id },
             current = { it in current },
             tried = { triedAt(trackId, it) },
             add = { id ->
-                val added = withContext(Dispatchers.Default) { addToHistory(byId.getValue(id), stores, trackId, epoch) }
-                if (added == AddResult.Added) records =withContext(Dispatchers.IO) { readHistory(history, trackId) }
+                val added = inBackground(Dispatchers.Default) {
+                    addToHistory(byId.getValue(id), stores, trackId, epoch)
+                }
+                if (added == AddResult.Added) records = inBackground(Dispatchers.IO) { readHistory(history, trackId) }
                 added
             },
             left = { adding = it },
@@ -118,7 +120,7 @@ internal fun TrackProgressionRoute(
     LaunchedEffect(records, grouping, period, day, excluded, adding, title, mapping) {
         val kept = records ?: return@LaunchedEffect
         val choice = progressionChoice(grouping, period, day, excluded)
-        state = withContext(Dispatchers.Default) {
+        state = inBackground(Dispatchers.Default) {
             val zone = systemDayZone()
             val today = ProgressionDay.at(System.currentTimeMillis(), zone)
             ProgressionState.Ready(
