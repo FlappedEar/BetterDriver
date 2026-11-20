@@ -48,6 +48,8 @@ class CoachLineRealTest {
     private class Day(
         val reference: CoachReference,
         val laps: Map<String, List<TracedLap>>,
+        /** Each session's clock at its first sample, where the analysis's telemetry time is 0. */
+        val origins: Map<String, Long?>,
         val line: LineAnalysis,
         val plan: LinePlan,
         /** The track with the corner identity the analysis gave it (FBBD-172), as the app keeps it. */
@@ -70,7 +72,8 @@ class CoachLineRealTest {
         val line = assertNotNull(analyzeLine(analysis, session, others))
         val identity = analysis.identity?.number?.takeIf { analysis.identified }
         val plan = linePlan(line, assertNotNull(analysis.axis).origin, track.id, "1606", 0L, identity)
-        return Day(reference, laps, line, plan, track.copy(identity = analysis.identity))
+        val origins = data.mapValues { (_, d) -> d.sampleSets.minOfOrNull { it.tMicros } }
+        return Day(reference, laps, origins, line, plan, track.copy(identity = analysis.identity))
     }
 
     @Test
@@ -79,11 +82,23 @@ class CoachLineRealTest {
         val planned = PlannedTargets(
             day.plan.sessionId,
             day.plan.corners.mapNotNull { c ->
-                c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) }
+                c.cornerId?.let {
+                    val target = c.target
+                    PlannedTarget(it, target.sessionId, target.lapSeconds, lapStartSeconds = target.lapStartSeconds)
+                }
             },
         )
         assertTrue(planned.targets.size >= 8, "planned ${planned.targets.size}")
-        val sessions = day.laps.map { (k, l) -> SessionLaps(k, l) }
+        // Every planned lap is found by its start (F5): the analysis and the coach agree on when each lap began.
+        val unstarted = planned.targets.filter { t ->
+            val laps = day.laps.getValue(t.sessionId).filter { it.lap.countsForBest }
+            val at = day.origins.getValue(t.sessionId)!! + (t.lapStartSeconds!! * 1e6).toLong()
+            laps.none {
+                abs(it.lap.startMicros - at) <= 1_000_000L && abs(it.lap.timeMicros / 1e6 - t.lapSeconds) <= 0.06
+            }
+        }
+        assertTrue(unstarted.isEmpty(), "planned laps not found by their start: ${unstarted.map { it.cornerId }}")
+        val sessions = day.laps.map { (k, l) -> SessionLaps(k, l, day.origins.getValue(k)) }
         val reference = assertNotNull(buildReference(day.identified, sessions, planned))
         assertTrue(reference.planSession == "1606")
         val byId = day.plan.corners.filter { it.cornerId != null }.associateBy { it.cornerId }

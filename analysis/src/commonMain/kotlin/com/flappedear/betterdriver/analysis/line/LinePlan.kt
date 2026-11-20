@@ -55,6 +55,11 @@ data class PlanPass(
     val line: List<PlanPoint> = emptyList(),
     /** What the hands did (FBBD-321); null without the car's steering angle. */
     val steering: SteeringPass? = null,
+    /**
+     * When the lap started, seconds from the session's first sample: which lap it is, where two laps
+     * of the session share a time (F5). Null in a plan saved before it.
+     */
+    val lapStartSeconds: Double? = null,
 )
 
 /** One corner of the plan; [cornerId] is the track's CornerId (FBBD-172), null when the analysis had none. */
@@ -267,6 +272,7 @@ fun linePlan(
         throttle = mark(p, p.pickupMeters),
         line = p.line.map(::point),
         steering = p.steering,
+        lapStartSeconds = p.lapStartSeconds,
     )
     fun edge(meters: Double, at: MetricPoint, progress: Double): PlanPoint {
         val g = unprojectCoordinate(at.eastMeters, at.northMeters, origin)

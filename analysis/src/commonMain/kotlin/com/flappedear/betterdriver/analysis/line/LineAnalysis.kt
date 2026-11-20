@@ -120,6 +120,8 @@ data class LinePass(
     val steering: SteeringPass? = null,
     /** The engine speed at the slowest point (FBBD-326); null without the car's. */
     val apexRpm: Double? = null,
+    /** When the lap started, seconds from the session's first sample: the lap's identity in its session (F5). */
+    val lapStartSeconds: Double? = null,
 )
 
 /** Where the laps went at one point: the road they used, at least, though not necessarily all of it. */
@@ -346,6 +348,7 @@ internal class LineReader(
                 measured.observation.lineOffsetMeters, line, source.id,
                 steeringOf(line, turnsLeft(k), axis.lengthMeters),
                 apexRpm,
+                laps[i].startTelemetryTime,
             )
         }
         val seconds = windows.map { w -> laps.indices.map { timed.times[it].sector(w.window.id)?.seconds } }

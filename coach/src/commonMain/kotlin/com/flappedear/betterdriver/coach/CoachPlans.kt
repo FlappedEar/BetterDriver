@@ -14,6 +14,7 @@ fun plannedTargets(plan: LinePlan) = PlannedTargets(
             PlannedTarget(
                 it, c.target.sessionId, c.target.lapSeconds,
                 c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0, c.gear?.gear,
+                c.target.lapStartSeconds,
             )
         }
     },
@@ -27,7 +28,9 @@ fun plannedTargets(plan: LinePlan) = PlannedTargets(
  */
 fun PlannedTargets.drivenOnly(): PlannedTargets = PlannedTargets(
     sessionId,
-    targets.map { PlannedTarget(it.cornerId, it.sessionId, it.lapSeconds, gear = it.gear) },
+    targets.map {
+        PlannedTarget(it.cornerId, it.sessionId, it.lapSeconds, gear = it.gear, lapStartSeconds = it.lapStartSeconds)
+    },
     gearbox,
 )
 

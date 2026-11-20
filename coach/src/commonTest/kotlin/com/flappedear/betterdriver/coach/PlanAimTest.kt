@@ -48,6 +48,24 @@ class PlanAimTest {
     }
 
     @Test
+    fun `the plan's lap is found by its start where two laps share its time`() {
+        val laps = laps(steady, steady, steady, steady).filter { it.lap.countsForBest }
+        val origin = 5_000_000L
+        val third = laps[2]
+        val seconds = third.lap.timeMicros / 1e6
+        // Laps driven alike: the time alone is no identity (FBBD-405).
+        assertTrue(laps.count { kotlin.math.abs(it.lap.timeMicros / 1e6 - seconds) <= 0.06 } > 1)
+        assertNull(plannedLap(laps, origin, PlannedTarget("c2", "s1", seconds)))
+        // With the lap's start, seconds from the session's first sample (F5), it is that lap, 0.4 s apart or not.
+        val start = (third.lap.startMicros - origin) / 1e6 + 0.4
+        assertTrue(plannedLap(laps, origin, PlannedTarget("c2", "s1", seconds, lapStartSeconds = start)) === third)
+        // Without the session's clock, as before.
+        assertNull(plannedLap(laps, null, PlannedTarget("c2", "s1", seconds, lapStartSeconds = start)))
+        // A start no lap of that time has: the time alone decides, as before.
+        assertNull(plannedLap(laps, origin, PlannedTarget("c2", "s1", seconds, lapStartSeconds = 9_999.0)))
+    }
+
+    @Test
     fun `cues aim at the plan's pass - not the second fastest`() {
         // Earlier, corner 2 was braked later twice: without a plan, early braking there is told to brake later.
         val reference = reference(early2, steady, steady)
