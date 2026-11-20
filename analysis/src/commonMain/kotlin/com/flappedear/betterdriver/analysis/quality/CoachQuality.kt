@@ -25,6 +25,7 @@ private const val KmhPerMps = 3.6
 private const val MinMarginKmh = 5.0
 
 /** A cue as the coach logged it: when it was triggered, its number, and metres to the braking zone. */
+@Suppress("LongParameterList") // The fields of one coach_cue line.
 internal class LoggedCue(
     val tMicros: Long,
     val seq: Int,
