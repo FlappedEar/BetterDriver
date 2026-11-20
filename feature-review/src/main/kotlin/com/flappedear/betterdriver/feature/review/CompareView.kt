@@ -91,7 +91,7 @@ internal fun CompareView(
     val st = remember(c.a.key, c.b.key) { ReviewTransport(c, startFraction) }
     SideEffect { st.comparison = c }
     PauseWhenHidden { st.playing = false }
-    LaunchedEffect(st) { followFrames(st, pa, pb, log) }
+    LaunchedEffect(st) { log.until({ st.speed }) { followFrames(st, pa, pb, log) } }
     // Tagged so the emulator tests can scrub it (FBBD-24).
     val chart = Modifier.fillMaxWidth().height(ChartHeight).testTag(ReviewChartTag)
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
@@ -132,15 +132,6 @@ internal fun CompareView(
  * Compose can go idle and a paused review costs no frames ([frameLoopNeeded]).
  */
 private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer, log: LapReviewLog) {
-    // The review closing or a new pair of laps ends playback too: its line is written (FBBD-455).
-    try {
-        followLoop(st, pa, pb, log)
-    } finally {
-        log.stopped(System.nanoTime(), st.speed)
-    }
-}
-
-private suspend fun followLoop(st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer, log: LapReviewLog) {
     var last = 0L
     while (true) {
         var t = 0L

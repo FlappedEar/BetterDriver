@@ -117,21 +117,23 @@ internal class LapVideoPlayer(
         // Only a player already playing has a drift; one just starting is still on its way.
         val playingNow = playing && player.playWhenReady
         if (playingNow) stats.drift(player.currentPosition - target.mediaMillis)
-        val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
         // Wanted before this frame's seek, so the frame after a seek still runs and sees it land.
         val pending = seekPending(step, lastSeekMillis)
-        step.seekMillis?.let { ms ->
-            if (seekDue(ms, lastSeekMillis) && nowNanos - lastSeekNanos >= gap) {
-                player.seekTo(ms)
-                if (playingNow) stats.seekedWhilePlaying()
-                lastSeekMillis = ms
-                lastSeekNanos = nowNanos
-                stopping = false
-            }
-        }
+        step.seekMillis?.let { seek(it, playing, playingNow, nowNanos) }
         setSpeed(step.speed, rate, nowNanos)
         if (player.playWhenReady != playing) player.playWhenReady = playing
         return pending
+    }
+
+    /** Seeks to [ms] when due and the last seek is old enough for [playing] or scrubbing. */
+    private fun seek(ms: Long, playing: Boolean, playingNow: Boolean, nowNanos: Long) {
+        val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
+        if (!seekDue(ms, lastSeekMillis) || nowNanos - lastSeekNanos < gap) return
+        player.seekTo(ms)
+        if (playingNow) stats.seekedWhilePlaying()
+        lastSeekMillis = ms
+        lastSeekNanos = nowNanos
+        stopping = false
     }
 
     fun pause() {

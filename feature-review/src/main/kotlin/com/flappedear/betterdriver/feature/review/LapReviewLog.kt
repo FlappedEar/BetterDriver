@@ -29,6 +29,18 @@ internal class LapReviewLog(private val write: (String) -> Unit = { DebugLog.i(T
         return line
     }
 
+    /**
+     * Runs [frames] (the review's frame loop); when it ends, as the review closes or another pair of
+     * laps takes over, playback ends too and its line is written at the [speed] then.
+     */
+    suspend fun until(speed: () -> Double, frames: suspend () -> Unit) {
+        try {
+            frames()
+        } finally {
+            stopped(System.nanoTime(), speed())
+        }
+    }
+
     private companion object {
         const val Tag = "LapReview"
         const val NanosPerMicro = 1_000L
