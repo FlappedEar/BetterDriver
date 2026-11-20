@@ -19,13 +19,13 @@ enum BackupBridge {
     /// Where files to hand to the share sheet or the file mover are written.
     static var outbox: URL { FileManager.default.temporaryDirectory.appendingPathComponent("backup", isDirectory: true) }
 
-    /// At app start, before anything reads the data: finishes a restore the app was stopped in, as Android.
-    static func finishOrClear() {
-        do {
-            try backups.finishOrClear()
-        } catch {
-            AppLog.e(tag, "could not finish the restore: \(error.localizedDescription)")
-        }
+    /// Before anything reads the data: finishes a restore the app was stopped in, as Android. Returns
+    /// whether the data may be used; false while a committed restore stays unfinished (FBBD-476).
+    @discardableResult
+    static func finishOrClear() -> Bool {
+        let usable = backups.finishOrClear { AppLog.e(tag, $0) }
+        if !usable { AppLog.e(tag, "restore unfinished: the app stays closed until it is finished") }
+        return usable
     }
 
     /// BetterDriver-backup-2026-10-31.bdbackup, with today's local date, as Android names it.
@@ -146,7 +146,12 @@ final class BackupModel: ObservableObject {
                 }
             } catch {
                 AppLog.w(BackupBridge.tag, "restore failed: \(error.localizedDescription)")
-                await MainActor.run { self.line = Line(text: "Restore failed: \(error.localizedDescription)", failed: true) }
+                // Failed after its commit and not finished on the spot: nothing may use the data now.
+                let blocked = BackupBridge.backups.blocked
+                await MainActor.run {
+                    self.line = Line(text: "Restore failed: \(error.localizedDescription)", failed: true)
+                    if blocked { RestoreGate.shared.block() }
+                }
             }
         }
     }
@@ -168,7 +173,12 @@ final class BackupModel: ObservableObject {
                 }
             } catch {
                 AppLog.w(BackupBridge.tag, "restore failed: \(error.localizedDescription)")
-                await MainActor.run { self.line = Line(text: "Restore failed: \(error.localizedDescription)", failed: true) }
+                // Failed after its commit and not finished on the spot: nothing may use the data now.
+                let blocked = BackupBridge.backups.blocked
+                await MainActor.run {
+                    self.line = Line(text: "Restore failed: \(error.localizedDescription)", failed: true)
+                    if blocked { RestoreGate.shared.block() }
+                }
             }
         }
     }
@@ -433,5 +443,84 @@ enum IncomingRoute {
         default:
             return false
         }
+    }
+}
+
+/// Review v1.34.1 F2 (FBBD-476), as Android's RestoreUnfinished: a restore that failed after its
+/// commit leaves the data part old, part restored. Until it is finished the app shows only this
+/// screen: no recording, no edits, no other restore, so finishing it later cannot delete a track
+/// saved in the meantime. Checked at launch before anything reads the data, and after a failed
+/// restore in this run.
+@MainActor
+final class RestoreGate: ObservableObject {
+    static let shared = RestoreGate()
+
+    @Published private(set) var blocked = false
+    @Published private(set) var trying = false
+    /// What starts once the data may be used (the launch's data steps), run once.
+    private var whenUsable: (() -> Void)?
+
+    /// At launch: finishes a pending restore; [start] runs now if the data is usable, else after Try again.
+    func check(then start: @escaping () -> Void) {
+        if BackupBridge.finishOrClear() {
+            start()
+        } else {
+            whenUsable = start
+            blocked = true
+        }
+    }
+
+    /// A restore in this run failed after its commit and could not be finished.
+    func block() {
+        blocked = true
+    }
+
+    /// Try again: finishes the restore off the main thread, then reloads what the app holds.
+    func retry() {
+        guard !trying else { return }
+        trying = true
+        Task.detached {
+            let usable = BackupBridge.finishOrClear()
+            await MainActor.run {
+                self.trying = false
+                guard usable else { return }
+                AppLog.i(BackupBridge.tag, "finished the unfinished restore")
+                self.blocked = false
+                if let start = self.whenUsable {
+                    self.whenUsable = nil
+                    start()
+                }
+                SettingsModel.shared.reload()
+                NotificationCenter.default.post(name: .tracksChanged, object: nil)
+                SessionsModel.shared.reload()
+            }
+        }
+    }
+}
+
+/// The only screen while a restore is unfinished (FBBD-476), with Android's words.
+struct RestoreUnfinishedView: View {
+    @ObservedObject var gate: RestoreGate
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("The restore could not be finished")
+                .font(.title2.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text(
+                "BetterDriver stopped while restoring a backup, and finishing it failed, often because the "
+                    + "phone is out of space. The app stays closed until it is finished, so old and restored "
+                    + "data never mix. Free some space, then try again."
+            )
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            Button(gate.trying ? "Trying…" : "Try again") { gate.retry() }
+                .buttonStyle(.borderedProminent)
+                .disabled(gate.trying)
+                .accessibilityIdentifier("restoreTryAgain")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("restoreUnfinished")
     }
 }
