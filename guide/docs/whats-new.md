@@ -13,6 +13,18 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.35.0
+
+- Coach: no corner cue when the time lost there is within the corner's usual lap-to-lap spread; the line plan's target lap is matched by its start, and the coach aims only at a pass you have driven at least twice.
+- Analysis: a lap through the pit lane is an in lap and the lap after it an out lap, as in live timing; neither is ranked as best lap or used as the coach's reference.
+- Android: the phone camera keeps retrying after an error for the whole session, and a **Phone video stopped** alert shows on the track screen.
+- Android: a failed GoPro download leaves no partial file.
+- iPhone and iPad: a restore that could not finish closes the app to a **Restore unfinished** screen with **Try again**, as on Android.
+- iPhone and iPad: after **Clear log**, the next shared log holds nothing from before the clear.
+- iPhone: a session lists every source it recorded; the VBO leaves out a cached fix from before the session start.
+- Import: VBO speed in knots and each acceleration axis in its own unit are read correctly.
+- About: all four bundled fonts are credited.
+
 ## 1.34.1
 
 - iPhone and iPad: every tab shows its title at the top again; on iOS 27 the top was empty and **Sessions** was drawn over the first session card. On the **Car** tab, **Edit** sits beside the car's name.
