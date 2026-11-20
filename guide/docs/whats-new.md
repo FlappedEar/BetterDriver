@@ -15,6 +15,9 @@ The full notes of every release are on
 
 ## 1.35.0
 
+- Phone video: a new file every 5 minutes, so a crash or a dead phone loses at most the last few minutes of video.
+- Recording: a STOP that could not write the end of the session says so instead of "saved".
+- iPhone: **Share** right after **STOP** waits for the phone video to finish.
 - Coach: no corner cue when the time lost there is within the corner's usual lap-to-lap spread; the line plan's target lap is matched by its start, and the coach aims only at a pass you have driven at least twice.
 - Analysis: a lap through the pit lane is an in lap and the lap after it an out lap, as in live timing; neither is ranked as best lap or used as the coach's reference.
 - Android: the phone camera keeps retrying after an error for the whole session, and a **Phone video stopped** alert shows on the track screen.
