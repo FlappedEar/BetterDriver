@@ -43,6 +43,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.recorder.video.PhoneFileLength
 import com.flappedear.betterdriver.recorder.video.PhoneFileRetry
 import com.flappedear.betterdriver.recorder.video.PhoneVideoAlert
 import com.flappedear.betterdriver.recorder.video.VideoFiles
@@ -106,7 +107,8 @@ internal const val MaxFileBytes = 4_000_000_000L
  * (FBBD-278, [OwnFps]).
  * Files, sync reports and stops work the same way.
  *
- * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
+ * Each recording is one file in the session's video directory (phone_0001.mp4 and on), at most
+ * [PhoneFileLength] (5 min) or [MaxFileBytes] long; the next file follows at once (FBBD-468). A restart
  * after an error ends the file and starts the next one, so a file always has one resolution and frame
  * rate. Video stops only at Android's thermal shutdown, which ends the file first (ThermalPolicy), or
  * when no ladder step can start. A file that fails while recording never ends the session's video: the
@@ -345,6 +347,16 @@ class PhoneCamera(
     private fun supportedSteps(p: ProcessCameraProvider): List<VideoMode> = supportedPhoneModes(p, ladder)
 
     /**
+     * The file [name] in [dir]. A new file starts every 5 min, as on the iPhone (FBBD-468), so a killed
+     * process loses at most that much video.
+     */
+    private fun fileOutput(name: String): FileOutputOptions =
+        FileOutputOptions.Builder(File(dir, name))
+            .setFileSizeLimit(MaxFileBytes)
+            .setDurationLimitMillis(PhoneFileLength.MILLIS)
+            .build()
+
+    /**
      * Starts the next file at [stepIndex] of [steps], binding the camera only for a new step. Falls down
      * the ladder if that fails.
      */
@@ -376,8 +388,7 @@ class PhoneCamera(
             resultChanges = ResultChanges() // per file: a file that follows a full one starts fresh
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
-            val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()
-            var pending = recorder.prepareRecording(context, output)
+            var pending = recorder.prepareRecording(context, fileOutput(name))
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             fileStarted = false
@@ -566,7 +577,8 @@ class PhoneCamera(
     private fun onFinalized(name: String, e: VideoRecordEvent.Finalize) {
         recording = null
         // A full file is finished and playable: the next file starts at once, and it is no restart.
-        val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
+        val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED ||
+            e.error == VideoRecordEvent.Finalize.ERROR_DURATION_LIMIT_REACHED
         val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
         fileEnded(name, full, if (error) "error_${e.error}" else null, e.cause)
         stoppedIfIdle()

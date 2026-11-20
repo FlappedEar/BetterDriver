@@ -46,6 +46,8 @@ final class PhoneVideoFinishing {
 
     private let lock = NSLock()
     private var pending: [String: Int] = [:]
+    /// Called once each when the session's last file is finished ([whenDone]).
+    private var waiters: [String: [() -> Void]] = [:]
 
     /// A file of session [sessionId] started finishing.
     func begin(sessionId: String) {
@@ -60,8 +62,10 @@ final class PhoneVideoFinishing {
         lock.lock()
         let left = max((pending[sessionId] ?? 1) - 1, 0)
         pending[sessionId] = left == 0 ? nil : left
+        let done = left == 0 ? waiters.removeValue(forKey: sessionId) ?? [] : []
         lock.unlock()
         guard left == 0 else { return false }
+        done.forEach { $0() }
         DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
         return true
     }
@@ -72,25 +76,38 @@ final class PhoneVideoFinishing {
         defer { lock.unlock() }
         return pending[sessionId] != nil
     }
-}
 
-/// How long one phone video file records before the next one starts (FBBD-468, audit 7 Nov BD-T02).
-/// The files are not fragmented (FBBD-441), so an MP4 gets its index only when it is finished: a
-/// killed app or a crash leaves the file it was writing unplayable. A new file every [seconds] bounds
-/// that loss to one file's length instead of the whole session. Review, the data video and the VBO
-/// export already join a session's files on the session clock (Android starts a new file when one is
-/// full too), so a file change is no gap in the session's video apart from a frame or two.
-///
-/// OFF until after Moto Park (2026-11-08): a recording change the day before the track, and a lap
-/// spanning two files in the data video and the frames lost at each change are not proven by a test
-/// yet (no camera in the simulator). [on] turns it on.
-enum PhoneFileLength {
-    static let on = false
-    static let seconds = 300.0
+    /// Runs [done] once no file of session [sessionId] is being finished: now if none is.
+    func whenDone(sessionId: String, _ done: @escaping () -> Void) {
+        lock.lock()
+        guard pending[sessionId] != nil else {
+            lock.unlock()
+            done()
+            return
+        }
+        waiters[sessionId, default: []].append(done)
+        lock.unlock()
+    }
 
-    /// Whether a file that started at [startedAt] is full at [now]; [limit] for the tests.
-    static func full(startedAt: Double, now: Double, limit: Double = seconds) -> Bool {
-        now - startedAt >= limit
+    /// Waits until every file of session [sessionId] is finished, at most [timeout] seconds; true when
+    /// they are (review v1.34.1 F8: Share copied a phone MP4 still without its index right after STOP).
+    func finished(sessionId: String, timeout: TimeInterval) async -> Bool {
+        if !busy(sessionId: sessionId) { return true }
+        return await withCheckedContinuation { (answer: CheckedContinuation<Bool, Never>) in
+            let once = NSLock()
+            var answered = false
+            let reply = { (value: Bool) in
+                once.lock()
+                let first = !answered
+                answered = true
+                once.unlock()
+                if first { answer.resume(returning: value) }
+            }
+            whenDone(sessionId: sessionId) { reply(true) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                reply(!self.busy(sessionId: sessionId))
+            }
+        }
     }
 }
 

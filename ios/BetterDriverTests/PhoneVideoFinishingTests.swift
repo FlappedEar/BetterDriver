@@ -1,4 +1,5 @@
 import AVFoundation
+import BetterDriverCore
 import UIKit
 import XCTest
 @testable import BetterDriver
@@ -39,6 +40,27 @@ final class PhoneVideoFinishingTests: XCTestCase {
         XCTAssertFalse(finishing.busy(sessionId: "never"))
     }
 
+    /// Review v1.34.1 F8 (FBBD-477): Share waits for the session's last file; a file that never
+    /// finishes ends the wait at its timeout, saying so.
+    func testShareWaitsForTheLastFileToFinish() async {
+        let finishing = PhoneVideoFinishing()
+        let none = await finishing.finished(sessionId: "x", timeout: 1)
+        XCTAssertTrue(none, "nothing finishing: no wait")
+        finishing.begin(sessionId: "a")
+        finishing.begin(sessionId: "a")
+        async let waited = finishing.finished(sessionId: "a", timeout: 10)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            finishing.end(sessionId: "a")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { finishing.end(sessionId: "a") }
+        }
+        let done = await waited
+        XCTAssertTrue(done)
+        XCTAssertFalse(finishing.busy(sessionId: "a"))
+        finishing.begin(sessionId: "stuck")
+        let gaveUp = await finishing.finished(sessionId: "stuck", timeout: 0.3)
+        XCTAssertFalse(gaveUp, "a file that never finishes is not shared")
+    }
+
     /// FBBD-350, FBBD-468 (audit 7 Nov BD-T03): the app is killed while a file is still being written.
     /// The writer is made as the app makes it (PhoneCamera.makeWriter), so this proves what the shipped
     /// files do: with fragments, the file as it is on disk then plays up to its last fragment; without
@@ -68,12 +90,12 @@ final class PhoneVideoFinishingTests: XCTestCase {
     /// FBBD-468 (audit 7 Nov BD-T02): files end when full and the next starts at the following frame,
     /// as PhoneCamera does, with the full file finishing while the next one records. Killed in the
     /// fourth file, the app keeps the three before it whole: what is lost is at most one file's length.
-    /// A 2 s file stands for the app's 5 min. The app does this only with PhoneFileLength.on (off until
-    /// after Moto Park); the test keeps the writer side ready for it.
+    /// A 2 s file stands for the app's 5 min (shared PhoneFileLength, on since FBBD-468 step 2).
     func testFullFilesBoundWhatAKilledAppLoses() async throws {
-        XCTAssertEqual(PhoneFileLength.seconds, 300)
-        XCTAssertFalse(PhoneFileLength.full(startedAt: 10, now: 309.9))
-        XCTAssertTrue(PhoneFileLength.full(startedAt: 10, now: 310))
+        let length = PhoneFileLength.shared
+        XCTAssertEqual(length.SECONDS, 300)
+        XCTAssertFalse(length.full(startedAt: 10, now: 309.9, limit: length.SECONDS))
+        XCTAssertTrue(length.full(startedAt: 10, now: 310, limit: length.SECONDS))
         let dir = try Self.folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let limit = 2.0
@@ -82,7 +104,7 @@ final class PhoneVideoFinishingTests: XCTestCase {
         var startedAt = 0.0
         for i in 0..<(7 * Int(Self.fps)) {
             let pts = CMTime(value: CMTimeValue(i), timescale: Self.fps)
-            if let file = current, PhoneFileLength.full(startedAt: startedAt, now: pts.seconds, limit: limit) {
+            if let file = current, length.full(startedAt: startedAt, now: pts.seconds, limit: limit) {
                 // Finished on its own, as finishFile does: the next file does not wait for it.
                 let writer = file.writer
                 file.markFinished()

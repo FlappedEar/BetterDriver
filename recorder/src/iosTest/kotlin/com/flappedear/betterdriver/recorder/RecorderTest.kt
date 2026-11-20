@@ -177,6 +177,45 @@ class RecorderTest {
         assertEquals(SessionState.INTERRUPTED, store.state(rec.id))
     }
 
+    /** Review v1.34.1 F9 (FBBD-478): a STOP whose end cannot be written is no clean stop. */
+    @Test
+    fun aStopWhoseEndFailsSaysSo() {
+        val rec = Recorder(store, RecorderConfig(syncIntervalMs = 1_000)).start(info)
+        rec.submit(set(0))
+        rec.awaitWritten()
+        rec.breakFileForTest()
+        assertFalse(rec.stop(), "the end record could not be written")
+        assertEquals("error", rec.endReason)
+        assertEquals(SessionState.INTERRUPTED, store.state(rec.id), "left for recovery, not finished")
+    }
+
+    /**
+     * Review v1.34.1 F13 (FBBD-478): the disk fills part way through a batch the writer already took
+     * from the queue. Every record handed in is either on disk or counted as dropped.
+     */
+    @Test
+    fun aStorageStopInsideABatchCountsTheRestAsDropped() {
+        val config = RecorderConfig(storageCheckIntervalMs = 0, storageWarnBytes = 100, storageStopBytes = 100)
+        val rec = Recorder(store, config).start(info)
+        var checks = 0
+        // Plenty of space through set 0's batch (a check after the record and one after the batch),
+        // none from the next record on.
+        rec.freeBytesForTest = { if (++checks <= 2) 1L shl 40 else 50L }
+        rec.writeDelayMicrosForTest = 20_000
+        rec.submit(set(0))
+        usleep(5_000u)
+        // Queued while set 0 is written: the writer takes these ten as one batch.
+        for (i in 1..10) rec.submit(set(i))
+        rec.awaitWritten()
+        assertTrue(waitFor(2_000) { !rec.isRecording })
+        assertEquals("storage_full", rec.endReason)
+        val kept = store.read(rec.id).sampleSets.size
+        val finished = parseProperties(PosixFiles.readBytes(PosixFiles.join(rec.dir, SessionFileNames.FINISHED)))
+        val dropped = finished["droppedSamples"]!!.toInt()
+        assertEquals(11, kept + dropped, "kept $kept, dropped $dropped of 11")
+        assertTrue(kept < 11, "the disk filled before the batch was written")
+    }
+
     /** FBBD-350 R2: a source hands its record over and returns; it never waits for a slow disk. */
     @Test
     fun aSlowDiskDoesNotHoldTheSource() {

@@ -290,6 +290,17 @@ final class SessionsModel {
         AppLog.i(Self.shareTag, "\(id): preparing to share")
         let started = Date()
         Task {
+            // The phone video's last file may still be getting its index after STOP (review v1.34.1 F8):
+            // the bundle waits for it, else it would carry an MP4 that passes its byte checks but never plays.
+            if PhoneVideoFinishing.shared.busy(sessionId: id) {
+                AppLog.i(Self.shareTag, "\(id): waiting for the phone video to finish")
+                guard await PhoneVideoFinishing.shared.finished(sessionId: id, timeout: Self.videoWait) else {
+                    sharing = nil
+                    AppLog.w(Self.shareTag, "\(id): phone video still finishing after \(Int(Self.videoWait)) s, not shared")
+                    message = "The phone video is still being finished. Try Share again in a moment."
+                    return
+                }
+            }
             let result: Result<URL, Error> = await Task.detached {
                 // One step per percent reaches the list, not one per 64 KB piece.
                 var shown = -1
@@ -317,6 +328,8 @@ final class SessionsModel {
     }
 
     private static let shareTag = "Share"
+    /// How long Share waits for a phone video file still being finished (FBBD-477).
+    static let videoWait: TimeInterval = 60
 
     /// Deletes [session] and its video (FBBD-90); a failure is said in [message].
     func delete(_ session: SessionRow) {

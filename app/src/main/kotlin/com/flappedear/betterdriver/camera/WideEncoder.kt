@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.video.PhoneFileLength
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -41,6 +42,8 @@ internal class WideEncoder(
     private val clockNanos: () -> Long,
     private val events: Events,
     cutMarginBytes: Long = CutMarginBytes,
+    /** A file's longest video before the next one starts (FBBD-468: 5 min, as the iPhone). */
+    cutMicros: Long = PhoneFileLength.MICROS,
     /**
      * False for the test without MP4 (FBBD-278): both encoders run as when recording, and each sample's
      * buffer goes back to its encoder at once, with no copy, writer or muxer. No file is opened.
@@ -98,7 +101,7 @@ internal class WideEncoder(
     /** Video samples' time from encoder to MP4, logged once a minute ([SampleTiming.line]). */
     val timing = SampleTiming()
     private val lock = Any()
-    private val cuts = FileCuts(target.maxFileBytes - cutMarginBytes)
+    private val cuts = FileCuts(target.maxFileBytes - cutMarginBytes, cutUs = cutMicros)
     private val videoDone = CountDownLatch(1)
     private val audioDone = CountDownLatch(if (pcm == null) 0 else 1)
 

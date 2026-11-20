@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.camera
 
 import com.flappedear.betterdriver.camera.FileCuts.Audio
 import com.flappedear.betterdriver.camera.FileCuts.Video
+import com.flappedear.betterdriver.recorder.video.PhoneFileLength
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,6 +20,30 @@ class FileCutsTest {
         assertEquals(frameUs, cuts.baseUs)
         assertEquals(Audio.Drop, cuts.audio(frameUs - 1, 4).action)
         assertEquals(Audio.Current, cuts.audio(frameUs, 4).action)
+    }
+
+    /** FBBD-468: a file that holds 5 min of video ends at the next keyframe, however few bytes it has. */
+    @Test
+    fun aFileFullInTimeAsksForAKeyframeAndTheNextOneCuts() {
+        val cuts = FileCuts(cutBytes = Long.MAX_VALUE, cutUs = 10 * frameUs)
+        cuts.video(5 * frameUs, 100, key = true, nextReady = false)
+        assertFalse(cuts.video(14 * frameUs, 100, key = false, nextReady = false).askKeyframe)
+        assertFalse(cuts.due)
+        val full = cuts.video(15 * frameUs, 100, key = false, nextReady = false)
+        assertTrue("asked once the file holds 10 frames' time", full.askKeyframe)
+        assertTrue(cuts.due)
+        val cut = cuts.video(16 * frameUs, 100, key = true, nextReady = true)
+        assertEquals(Video.Cut, cut.action)
+        assertEquals(16 * frameUs, cuts.baseUs)
+        assertFalse("the new file starts its own 5 min", cuts.due)
+        assertFalse(cuts.video(25 * frameUs, 100, key = false, nextReady = false).askKeyframe)
+        assertTrue(cuts.video(26 * frameUs, 100, key = false, nextReady = false).askKeyframe)
+    }
+
+    @Test
+    fun theAppCutsEveryFiveMinutes() {
+        assertEquals(300_000_000L, PhoneFileLength.MICROS)
+        assertEquals(300_000L, PhoneFileLength.MILLIS)
     }
 
     @Test

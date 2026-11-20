@@ -4,12 +4,17 @@ package com.flappedear.betterdriver.camera
  * Where each encoded sample of a 2.7K recording goes, as [WideEncoder] cuts it into files (FBBD-248).
  *
  * A file starts at a video keyframe; the first frames before one are dropped. Once a file holds
- * [cutBytes], the encoder is asked for a keyframe, and the next one starts the next file, so files
- * follow each other frame for frame. Sound recorded before that keyframe still goes to the file that
- * just ended, which closes with the first sound after it (or, when sound has stalled, [closeAfterUs]
- * of video later), so neither track has a gap at the cut. Times are the encoder's, in microseconds.
+ * [cutBytes] or [cutUs] of video (5 min, FBBD-468), the encoder is asked for a keyframe, and the
+ * next one starts the next file, so files follow each other frame for frame. Sound recorded before
+ * that keyframe still goes to the file that just ended, which closes with the first sound after it
+ * (or, when sound has stalled, [closeAfterUs] of video later), so neither track has a gap at the cut.
+ * Times are the encoder's, in microseconds.
  */
-internal class FileCuts(private val cutBytes: Long, private val closeAfterUs: Long = DefaultCloseAfterUs) {
+internal class FileCuts(
+    private val cutBytes: Long,
+    private val closeAfterUs: Long = DefaultCloseAfterUs,
+    private val cutUs: Long = Long.MAX_VALUE,
+) {
     /** What to do with a video sample. */
     enum class Video { Drop, Start, Cut, Write }
 
@@ -41,18 +46,27 @@ internal class FileCuts(private val cutBytes: Long, private val closeAfterUs: Lo
     var previousOpen = false
         private set
 
+    /** The newest video sample's time. */
+    private var lastUs = 0L
+
     /** Whether the current file is full enough that the next keyframe starts the next file. */
-    val due: Boolean get() = started && bytes >= cutBytes
+    val due: Boolean get() = started && (bytes >= cutBytes || lastUs - baseUs >= cutUs)
 
     /**
      * A video sample at [ptsUs] of [size] bytes, a keyframe when [key]. [nextReady]: whether the next
      * file is known, without which the current one goes on.
      */
-    fun video(ptsUs: Long, size: Int, key: Boolean, nextReady: Boolean): VideoStep = when {
+    fun video(ptsUs: Long, size: Int, key: Boolean, nextReady: Boolean): VideoStep {
+        if (started) lastUs = ptsUs
+        return place(ptsUs, size, key, nextReady)
+    }
+
+    private fun place(ptsUs: Long, size: Int, key: Boolean, nextReady: Boolean): VideoStep = when {
         !started && !key -> VideoStep(Video.Drop)
         !started -> {
             started = true
             firstUs = ptsUs
+            lastUs = ptsUs
             begin(ptsUs, size, Video.Start, closePrevious = false)
         }
         cutsAt(ptsUs, key, nextReady) -> begin(ptsUs, size, Video.Cut, closePrevious = previousOpen)
