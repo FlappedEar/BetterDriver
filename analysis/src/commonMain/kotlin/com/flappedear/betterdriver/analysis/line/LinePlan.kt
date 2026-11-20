@@ -55,6 +55,11 @@ data class PlanPass(
     val line: List<PlanPoint> = emptyList(),
     /** What the hands did (FBBD-321); null without the car's steering angle. */
     val steering: SteeringPass? = null,
+    /**
+     * When the lap started, seconds from the session's first sample: which lap it is, where two laps
+     * of the session share a time (F5). Null in a plan saved before it.
+     */
+    val lapStartSeconds: Double? = null,
 )
 
 /** One corner of the plan; [cornerId] is the track's CornerId (FBBD-172), null when the analysis had none. */
@@ -79,7 +84,20 @@ data class PlanCorner(
     val brakeRoom: PlanBrakeRoom? = null,
     /** A lower gear at the slowest point (FBBD-326); null without. */
     val gear: PlanGear? = null,
-)
+    /**
+     * The second fastest pass over every lap at the track: a time driven twice (FBBD-177). The [target]
+     * where that is ahead of the reference; where nothing is ahead the target shown is the reference's
+     * own pass, driven once, and the coach aims at this one instead (F4). Null in a plan saved before it,
+     * or with fewer than two passes.
+     */
+    val confirming: PlanPass? = null,
+) {
+    /**
+     * The pass driven twice the coach aims at (FBBD-177, F4): the [target] where it is ahead of the
+     * reference, else the [confirming] pass; in a plan saved before it, the target.
+     */
+    val drivenTarget: PlanPass get() = if (gainSeconds > 0.0) target else confirming ?: target
+}
 
 /**
  * [CornerGear] as kept (FBBD-326): be in [gear] at the slowest point, not [from]; [higherLaps] of
@@ -267,6 +285,7 @@ fun linePlan(
         throttle = mark(p, p.pickupMeters),
         line = p.line.map(::point),
         steering = p.steering,
+        lapStartSeconds = p.lapStartSeconds,
     )
     fun edge(meters: Double, at: MetricPoint, progress: Double): PlanPoint {
         val g = unprojectCoordinate(at.eastMeters, at.northMeters, origin)
@@ -305,6 +324,7 @@ fun linePlan(
                         g.lowerPullG, g.higherPullG, g.seconds,
                     )
                 },
+                confirming = c.confirming?.let(::pass),
             )
         },
         gearbox = line.gearbox,

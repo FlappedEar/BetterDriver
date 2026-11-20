@@ -127,7 +127,7 @@ class CoachLibrary(
     /** What [match] found: each usable session's track, and the laps it already traced on the way. */
     private class Found(
         val trackOf: Map<String, String>,
-        val laps: Map<Pair<String, String>, List<TracedLap>>,
+        val laps: Map<Pair<String, String>, SessionLaps>,
         val complete: Boolean,
     )
 
@@ -138,7 +138,7 @@ class CoachLibrary(
         val ids = saved.map { it.id }.toSet()
         val timeable = saved.filter { it.timeable }
         val trackOf = HashMap<String, String>()
-        val laps = HashMap<Pair<String, String>, List<TracedLap>>()
+        val laps = HashMap<Pair<String, String>, SessionLaps>()
         var changed = known.keys.retainAll(listed.map { it.id }.toSet())
         var complete = true
         for (s in listed.filter { it.state != SessionState.RECORDING }) {
@@ -173,7 +173,7 @@ class CoachLibrary(
         s: SessionSummary,
         place: SessionPlace,
         timeable: List<Track>,
-        laps: MutableMap<Pair<String, String>, List<TracedLap>>,
+        laps: MutableMap<Pair<String, String>, SessionLaps>,
     ): SessionPlace {
         var data: SessionData? = null
         var p = place
@@ -203,12 +203,12 @@ class CoachLibrary(
         id: String,
         data: SessionData,
         near: List<Track>,
-        laps: MutableMap<Pair<String, String>, List<TracedLap>>,
+        laps: MutableMap<Pair<String, String>, SessionLaps>,
     ): String? {
         val positions = data.coachFixes().mapNotNull { runCatching { GeoPoint(it.lat, it.lon) }.getOrNull() }
         val at = trackAlong(positions, near)
-        val traced = at?.let { tracedLaps(it, data.coachFixes()) }.orEmpty()
-        if (at == null || traced.none { it.lap.kind == LapKind.Timed }) return null
+        val traced = at?.let { sessionLaps(it, data) }
+        if (at == null || traced == null || traced.laps.none { it.lap.kind == LapKind.Timed }) return null
         laps[id to at.id] = traced
         return at.id
     }
@@ -244,8 +244,8 @@ class CoachLibrary(
         for (id in here) {
             val traced = found.laps[id to track.id]
             if (traced == null && stop()) return null
-            val read = traced ?: readOrNull(sessions.dir(id))?.let { tracedLaps(track, it.coachFixes()) }
-            read?.let { laps += SessionLaps(id, it) }
+            val read = traced ?: readOrNull(sessions.dir(id))?.let { sessionLaps(track, it) }
+            read?.let { laps += it }
         }
         return laps
     }

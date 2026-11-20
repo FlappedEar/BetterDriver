@@ -15,11 +15,11 @@ import com.flappedear.betterdriver.coach.CoachVoiceOut
 import com.flappedear.betterdriver.coach.CueSound
 import com.flappedear.betterdriver.coach.CueSoundStart
 import com.flappedear.betterdriver.coach.PlannedTargets
-import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
+import com.flappedear.betterdriver.coach.sessionLaps
 import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.recorder.log.logInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -238,7 +238,7 @@ internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) : Coa
         val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
             current.planKey == plan?.key
         if (upToDate) return current
-        val laps = here.mapNotNull { id -> readOrNull(id)?.let { SessionLaps(id, tracedLaps(track, it.coachFixes())) } }
+        val laps = here.mapNotNull { id -> readOrNull(id)?.let { sessionLaps(track, it) } }
         val built = buildReference(track, laps, plan)
         keep(track.id, built)
         return built

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.track.Track
@@ -61,15 +62,22 @@ data class CoachReference(
          * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
          * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
          * the apex (UI-170 B). 6: aims carry the plan's gear and the reference the gearbox (FBBD-326).
-         * 7: a plan lap that two laps match in time gives no aim (FBBD-405). An older file is rebuilt
-         * from the sessions.
+         * 7: a plan lap that two laps match in time gives no aim (FBBD-405). 8: the plan's lap is found
+         * by its start where the plan has it (F5). An older file is rebuilt from the sessions.
          */
-        const val Version = 7
+        const val Version = 8
     }
 }
 
-/** A session's laps at one track, with the session's id. */
-class SessionLaps(val sessionId: String, val laps: List<TracedLap>)
+/**
+ * A session's laps at one track, with the session's id. [originMicros]: the session clock at its first
+ * sample, where the analysis's telemetry time is 0, so a line plan's lap is found by its start (F5).
+ */
+class SessionLaps(val sessionId: String, val laps: List<TracedLap>, val originMicros: Long? = null)
+
+/** [data]'s laps at [track], with its first sample's time. */
+fun sessionLaps(track: Track, data: SessionData): SessionLaps =
+    SessionLaps(data.id, tracedLaps(track, data.coachFixes()), data.sampleSets.minOfOrNull { it.tMicros })
 
 /** The corner [corner]'s aim: the line plan's pass there, or the second fastest pass (FBBD-177). */
 fun CoachReference.aim(corner: Int): CornerPass? =
@@ -80,7 +88,11 @@ fun CoachReference.aim(corner: Int): CornerPass? =
  * Where the plan has a braking point beyond his best (FBBD-312), the aim brakes [brakeLaterMeters]
  * later than that lap did and is [brakeLaterSeconds] faster, so the coach asks for the step.
  * [gear] is the plan's gear at the slowest point (FBBD-326), asked for with the brake cue.
+ * [lapStartSeconds]: when that lap started, seconds from the session's first sample (F5); null in a
+ * plan saved before it, which is then found by its time alone. [driven]: for a braking point beyond
+ * his best, the corner's target driven twice without the step (F4), which [drivenOnly] aims at.
  */
+@Suppress("LongParameterList") // The plan's lap (session, time, start), its step, gear and the driven alternative.
 class PlannedTarget(
     val cornerId: String,
     val sessionId: String,
@@ -88,6 +100,8 @@ class PlannedTarget(
     val brakeLaterMeters: Int = 0,
     val brakeLaterSeconds: Double = 0.0,
     val gear: Int? = null,
+    val lapStartSeconds: Double? = null,
+    val driven: PlannedTarget? = null,
 )
 
 /** The targets of a track's line plan, made from session [sessionId] (FBBD-306). */
@@ -97,7 +111,8 @@ class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>, va
         get() = sessionId + targets.joinToString("") { t ->
             val later = if (t.brakeLaterMeters > 0) "+${t.brakeLaterMeters}" else ""
             val gear = t.gear?.let { "/$it" }.orEmpty()
-            "|${t.cornerId}=${t.sessionId}@${t.lapSeconds}$later$gear"
+            val start = t.lapStartSeconds?.let { "~$it" }.orEmpty()
+            "|${t.cornerId}=${t.sessionId}@${t.lapSeconds}$start$later$gear"
         }
 }
 
@@ -116,13 +131,14 @@ private fun Double.centi() = (this * CentiUnits).roundToLong() / CentiUnits
 fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTargets? = null): CoachReference? {
     // Laps with a GNSS gap (audit A11) are left out: their time is partly interpolated.
     val timed = sessions.flatMap { s -> s.laps.filter { it.lap.countsForBest }.map { s.sessionId to it } }
+    val origins = sessions.associate { it.sessionId to it.originMicros }
     val (bestSession, best) = timed.minByOrNull { it.second.lap.timeMicros } ?: return null
     val found = findCorners(best.trace)
     // Named by the track's corners (FBBD-172); the coach names them again from the track it runs at.
     val corners = lapFrame(track)?.let { identifyCorners(found, best.trace, it, track.identity) } ?: found
     val map = CornerMap(best.trace, corners)
     val targets = bestPasses(timed.flatMap { (_, l) -> map.passes(l.trace, l.lap.number) }, ConfirmingPasses)
-    val aims = plan?.let { aims(map, timed, it) }.orEmpty()
+    val aims = plan?.let { aims(map, timed, origins, it) }.orEmpty()
     val t = best.trace
     return CoachReference(
         trackId = track.id,
@@ -149,15 +165,15 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
  * the planned lap, when that lap is one of [timed] and the pass is not too weak to coach from; at a
  * braking corner with a braking point beyond his best, that pass braking later ([beyond]).
  */
-private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: PlannedTargets): List<CornerPass> =
+private fun aims(
+    map: CornerMap,
+    timed: List<Pair<String, TracedLap>>,
+    origins: Map<String, Long?>,
+    plan: PlannedTargets,
+): List<CornerPass> =
     plan.targets.flatMap { p ->
         val numbers = map.corners.filter { it.cornerId == p.cornerId }.map { it.number }.toSet()
-        // The analysis and the coach number laps each their own way, so the plan's lap is the session's
-        // lap with its time. Two laps that close are no identity (FBBD-405): no aim, rather than a guess.
-        val lap = timed.filter { it.first == p.sessionId }
-            .map { it.second }
-            .filter { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) <= SameLapSeconds }
-            .singleOrNull()
+        val lap = plannedLap(timed.filter { it.first == p.sessionId }.map { it.second }, origins[p.sessionId], p)
         if (numbers.isEmpty() || lap == null) {
             emptyList()
         } else {
@@ -169,6 +185,27 @@ private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: Pla
                 }
         }
     }.distinctBy { it.corner }.sortedBy { it.corner }
+
+/**
+ * The lap of [laps] (one session's) that [p] plans from. The analysis and the coach number laps each
+ * their own way, so it is the lap with the plan's time; where the plan has the lap's start and the
+ * session its clock at the first sample ([originMicros]), the one that also started then (F5), and
+ * none when no lap of that time did. Without a start, two laps that close in time are no identity
+ * (FBBD-405): no lap, rather than a guess.
+ */
+fun plannedLap(laps: List<TracedLap>, originMicros: Long?, p: PlannedTarget): TracedLap? {
+    val sameTime = laps.filter { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) <= SameLapSeconds }
+    val at = p.lapStartSeconds?.let { start -> originMicros?.plus((start * MicrosPerSecond).roundToLong()) }
+    // With a start, only a lap that started then is that lap: another of the same time is another lap.
+    return if (at == null) {
+        sameTime.singleOrNull()
+    } else {
+        sameTime.filter { abs(it.lap.startMicros - at) <= SameStartMicros }.minByOrNull { abs(it.lap.startMicros - at) }
+    }
+}
+
+/** The analysis and the coach place a lap's start on the same line crossing, apart by at most this. */
+private const val SameStartMicros = 1_000_000L
 
 /**
  * This pass braking [meters] later and [seconds] faster to the apex (FBBD-312): a braking point

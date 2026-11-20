@@ -13,13 +13,14 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.LineToleranceMeters
 import com.flappedear.betterdriver.coach.PickupToleranceMeters
-import com.flappedear.betterdriver.coach.PlannedTarget
-import com.flappedear.betterdriver.coach.PlannedTargets
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.TracedLap
 import com.flappedear.betterdriver.coach.aim
 import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
+import com.flappedear.betterdriver.coach.drivenOnly
+import com.flappedear.betterdriver.coach.plannedLap
+import com.flappedear.betterdriver.coach.plannedTargets
 import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.coach.tighterBy
 import com.flappedear.betterdriver.coach.unusable
@@ -48,6 +49,8 @@ class CoachLineRealTest {
     private class Day(
         val reference: CoachReference,
         val laps: Map<String, List<TracedLap>>,
+        /** Each session's clock at its first sample, where the analysis's telemetry time is 0. */
+        val origins: Map<String, Long?>,
         val line: LineAnalysis,
         val plan: LinePlan,
         /** The track with the corner identity the analysis gave it (FBBD-172), as the app keeps it. */
@@ -70,37 +73,49 @@ class CoachLineRealTest {
         val line = assertNotNull(analyzeLine(analysis, session, others))
         val identity = analysis.identity?.number?.takeIf { analysis.identified }
         val plan = linePlan(line, assertNotNull(analysis.axis).origin, track.id, "1606", 0L, identity)
-        return Day(reference, laps, line, plan, track.copy(identity = analysis.identity))
+        val origins = data.mapValues { (_, d) -> d.sampleSets.minOfOrNull { it.tMicros } }
+        return Day(reference, laps, origins, line, plan, track.copy(identity = analysis.identity))
     }
 
     @Test
     fun `the coach aims at the line plan's target lap in every corner, at the plan's speed`() {
         val day = day()
-        val planned = PlannedTargets(
-            day.plan.sessionId,
-            day.plan.corners.mapNotNull { c ->
-                c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) }
-            },
-        )
+        // Only what he has driven (FBBD-415): every aim is a pass driven twice (F4), none a step beyond it.
+        val planned = plannedTargets(day.plan).drivenOnly()
         assertTrue(planned.targets.size >= 8, "planned ${planned.targets.size}")
-        val sessions = day.laps.map { (k, l) -> SessionLaps(k, l) }
+        // A planned lap is found by its start (F5), and the start makes it one lap: none is the lap after or before.
+        val found = planned.targets.associate { t ->
+            val laps = day.laps.getValue(t.sessionId).filter { it.lap.countsForBest }
+            t.cornerId to plannedLap(laps, day.origins.getValue(t.sessionId), t)
+        }
+        assertTrue(found.values.count { it != null } >= 8, "planned laps found: $found")
+        val sessions = day.laps.map { (k, l) -> SessionLaps(k, l, day.origins.getValue(k)) }
         val reference = assertNotNull(buildReference(day.identified, sessions, planned))
         assertTrue(reference.planSession == "1606")
         val byId = day.plan.corners.filter { it.cornerId != null }.associateBy { it.cornerId }
         val pairs = reference.corners.mapNotNull { c -> byId[c.cornerId]?.let { c to it } }
         assertTrue(pairs.size == reference.corners.size, "coach corners without a plan corner")
+        // The pass driven twice: the target where it is ahead, else the confirming pass, not the reference's own (F4).
+        val driven = pairs.associate { (c, p) -> c.number to p.drivenTarget }
+        assertTrue(
+            pairs.any { (c, p) -> p.gainSeconds <= 0.0 && driven.getValue(c.number) !== p.target },
+            "no corner where the plan shows the reference's own pass",
+        )
+        // Each corner aims at the plan's lap, or, where the coach has no such lap, at no planned pass at all.
         val missed = pairs.filter { (c, p) ->
-            val lap = day.laps.getValue(p.target.sessionId)
-                .minBy { abs(it.lap.timeMicros / 1e6 - p.target.lapSeconds) }
-            reference.aim(c.number)?.lap != lap.lap.number || reference.aims.none { it.corner == c.number }
+            val lap = found[p.cornerId]
+            val aimed = reference.aims.firstOrNull { it.corner == c.number }
+            if (lap == null) aimed != null else aimed?.lap != lap.lap.number
         }
         assertTrue(missed.isEmpty(), "corners aiming at another lap: ${missed.map { it.second.name }}")
         // The slowest point, where the coach corner's apex is in the plan corner's window.
-        val speeds = pairs.mapNotNull { (c, p) ->
-            val kmh = p.target.apex?.speedKmh?.takeIf { c.apexAt in p.startMeters..p.endMeters }
+        val speeds = pairs.filter { (_, p) -> found[p.cornerId] != null }.mapNotNull { (c, p) ->
+            val kmh = driven.getValue(c.number).apex?.speedKmh?.takeIf { c.apexAt in p.startMeters..p.endMeters }
             kmh?.let { Triple(p.name, it, assertNotNull(reference.aim(c.number)).minKmh) }
         }
-        assertTrue(speeds.size >= 8, "compared $speeds")
+        // Corners whose pass driven twice is on a lap the coach has none like aim at no planned pass and are
+        // not compared: in 16:06 the analysis's laps start at 443, 558 and 675 s, the coach's at 648, 763, 873 s.
+        assertTrue(speeds.size >= 6, "compared $speeds")
         assertTrue(speeds.all { (_, plan, coach) -> abs(plan - coach) <= 2.0 }, "plan vs coach apex speed $speeds")
     }
 
