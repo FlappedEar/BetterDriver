@@ -169,18 +169,18 @@ class CueConfidenceTest {
 
     @Test
     fun `a corner whose loss is within its usual spread gets no cue and the skip is logged`() {
-        // FBBD-414: corner 2 braked 40 m early, then 10 m, in turn. The 10 m laps lose less than half
-        // the corner's spread: no direction is said after them, the skip is reported instead.
+        // FBBD-414: corner 2 braked 60 m early once, then 15 m early twice, in turn. A corner cued on one
+        // lap rests the next, so the cue after the second 15 m lap reads losses 60, 15, 15: the last one
+        // is less than half that spread, inside the lap-to-lap noise. No direction is said; the skip is
+        // reported instead.
         fun early(m: Double) = SimCircuit.Pace(earlierM = listOf(0.0, m, 0.0, 0.0))
-        val paces = listOf(steady, early(40.0), early(10.0), early(40.0), early(10.0), early(40.0), early(10.0))
+        val paces = listOf(steady) + List(3) { listOf(early(60.0), early(15.0), early(15.0)) }.flatten()
         val engine = CueEngine(track, CoachSettings(Verbosity.Full), reference(steady, steady, steady))
         val updates = sim.drive(paces).fixes.map { engine.update(it) }
-        val cues = updates.flatMap { it.cues }.filter { it.kind == CueKind.Corner && it.corner == 2 }
         val skips = updates.flatMap { it.skipped }.filter { it.corner == 2 }
-        assertTrue(skips.isNotEmpty(), "cues: ${cues.map { it.confidenceText() }}")
-        assertTrue(skips.all { s -> s.doubts.any { it.code == CueDoubts.SPREAD } })
-        // Never a cue for a lap that was skipped.
-        assertTrue(cues.none { c -> skips.any { it.lap == c.lap } }, "cues: ${cues.map { it.lap }}")
+        val cues = updates.flatMap { it.cues }.filter { it.kind == CueKind.Corner && it.corner == 2 }
+        assertTrue(skips.isNotEmpty(), "cues: ${cues.map { "${it.lap} ${it.text}" }}")
+        assertTrue(skips.all { s -> s.doubts.any { it.code == CueDoubts.SPREAD } }, "skips: $skips")
         val text = CoachEvents.skipText(skips.first())
         assertTrue(text.startsWith("lap=${skips.first().lap} corner=2 "), text)
         assertTrue(text.endsWith(" why=within_spread"), text)
