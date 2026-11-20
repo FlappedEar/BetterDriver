@@ -163,7 +163,7 @@ class RecorderService : Service() {
     private lateinit var cpu: CpuLock
 
     /** Camera reports (FBBD-21) from the camera process are logged into the running recording. */
-    private val clients = LiveClients(
+    private val clients: LiveClients = LiveClients(
         state = ::state,
         onVideo = { data, sender ->
             if (active != null) cameraWatch.reported(sender?.binder)
@@ -187,7 +187,7 @@ class RecorderService : Service() {
      * The camera process dying mid-recording ends the session's video (it is not restarted): the
      * status says so, and the track screen shows "Phone video stopped" (FBBD-470, review F7).
      */
-    private val cameraWatch = CameraProcessWatch<IBinder>(::linkDeath, { f -> main.post { f() } }) {
+    private val cameraWatch: CameraProcessWatch<IBinder> = CameraProcessWatch(::linkDeath, { f -> main.post { f() } }) {
         if (active != null) {
             DebugLog.w(Tag, "camera process died: no more video this session")
             cameraStatus = PhoneVideoAlert.STATUS_ERROR to false
