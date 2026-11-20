@@ -39,6 +39,27 @@ final class PhoneVideoFinishingTests: XCTestCase {
         XCTAssertFalse(finishing.busy(sessionId: "never"))
     }
 
+    /// Review v1.34.1 F8 (FBBD-477): Share waits for the session's last file; a file that never
+    /// finishes ends the wait at its timeout, saying so.
+    func testShareWaitsForTheLastFileToFinish() async {
+        let finishing = PhoneVideoFinishing()
+        let none = await finishing.finished(sessionId: "x", timeout: 1)
+        XCTAssertTrue(none, "nothing finishing: no wait")
+        finishing.begin(sessionId: "a")
+        finishing.begin(sessionId: "a")
+        async let waited = finishing.finished(sessionId: "a", timeout: 10)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            finishing.end(sessionId: "a")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { finishing.end(sessionId: "a") }
+        }
+        let done = await waited
+        XCTAssertTrue(done)
+        XCTAssertFalse(finishing.busy(sessionId: "a"))
+        finishing.begin(sessionId: "stuck")
+        let gaveUp = await finishing.finished(sessionId: "stuck", timeout: 0.3)
+        XCTAssertFalse(gaveUp, "a file that never finishes is not shared")
+    }
+
     /// FBBD-350, FBBD-468 (audit 7 Nov BD-T03): the app is killed while a file is still being written.
     /// The writer is made as the app makes it (PhoneCamera.makeWriter), so this proves what the shipped
     /// files do: with fragments, the file as it is on disk then plays up to its last fragment; without
