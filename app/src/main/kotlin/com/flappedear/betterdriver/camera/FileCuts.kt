@@ -4,10 +4,11 @@ package com.flappedear.betterdriver.camera
  * Where each encoded sample of a 2.7K recording goes, as [WideEncoder] cuts it into files (FBBD-248).
  *
  * A file starts at a video keyframe; the first frames before one are dropped. Once a file holds
- * [cutBytes] or [cutUs] of video (5 min, FBBD-468), the encoder is asked for a keyframe, and the next one starts the next file, so files
- * follow each other frame for frame. Sound recorded before that keyframe still goes to the file that
- * just ended, which closes with the first sound after it (or, when sound has stalled, [closeAfterUs]
- * of video later), so neither track has a gap at the cut. Times are the encoder's, in microseconds.
+ * [cutBytes] or [cutUs] of video (5 min, FBBD-468), the encoder is asked for a keyframe, and the
+ * next one starts the next file, so files follow each other frame for frame. Sound recorded before
+ * that keyframe still goes to the file that just ended, which closes with the first sound after it
+ * (or, when sound has stalled, [closeAfterUs] of video later), so neither track has a gap at the cut.
+ * Times are the encoder's, in microseconds.
  */
 internal class FileCuts(
     private val cutBytes: Long,

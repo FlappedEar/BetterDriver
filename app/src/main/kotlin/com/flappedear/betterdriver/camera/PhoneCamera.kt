@@ -347,6 +347,16 @@ class PhoneCamera(
     private fun supportedSteps(p: ProcessCameraProvider): List<VideoMode> = supportedPhoneModes(p, ladder)
 
     /**
+     * The file [name] in [dir]. A new file starts every 5 min, as on the iPhone (FBBD-468), so a killed
+     * process loses at most that much video.
+     */
+    private fun fileOutput(name: String): FileOutputOptions =
+        FileOutputOptions.Builder(File(dir, name))
+            .setFileSizeLimit(MaxFileBytes)
+            .setDurationLimitMillis(PhoneFileLength.MILLIS)
+            .build()
+
+    /**
      * Starts the next file at [stepIndex] of [steps], binding the camera only for a new step. Falls down
      * the ladder if that fails.
      */
@@ -378,12 +388,7 @@ class PhoneCamera(
             resultChanges = ResultChanges() // per file: a file that follows a full one starts fresh
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
-            // A new file every 5 min, as the iPhone (FBBD-468): a killed process loses at most that much.
-            val output = FileOutputOptions.Builder(File(dir, name))
-                .setFileSizeLimit(MaxFileBytes)
-                .setDurationLimitMillis(PhoneFileLength.MILLIS)
-                .build()
-            var pending = recorder.prepareRecording(context, output)
+            var pending = recorder.prepareRecording(context, fileOutput(name))
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             fileStarted = false
