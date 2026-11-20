@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
  */
 class RecordedSourcesTest {
     @Test
-    fun `an iPhone session with phone GPS lists every source it starts, by Android's names`() {
+    fun `an iPhone session with phone GPS lists every source it starts by the Android names`() {
         val devices = RecordedSources.list(
             "Phone GPS", RecordedReceiver.PHONE, phoneImu = true, obd = true, heartRate = true, tyres = true,
         )
@@ -19,7 +19,7 @@ class RecordedSourcesTest {
     }
 
     @Test
-    fun `a RaceBox keeps its own name first, for the log and the Micro check`() {
+    fun `a RaceBox keeps its own name first for the log and the Micro check`() {
         val devices = RecordedSources.list(
             "RaceBox Micro 3242703553", RecordedReceiver.RACEBOX,
             phoneImu = true, obd = false, heartRate = false, tyres = true,
@@ -28,7 +28,7 @@ class RecordedSourcesTest {
     }
 
     @Test
-    fun `the Demo track is made up, and a listed receiver adds no kind`() {
+    fun `the Demo track is made up and a listed receiver adds no kind`() {
         val demo = RecordedSources.list(
             "Demo track", RecordedReceiver.MADE_UP, phoneImu = false, obd = false, heartRate = false, tyres = false,
         )
