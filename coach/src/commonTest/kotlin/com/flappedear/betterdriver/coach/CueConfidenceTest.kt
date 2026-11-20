@@ -56,6 +56,10 @@ class CueConfidenceTest {
         assertEquals(listOf(CueDoubts.SPREAD), scattered.map { it.code })
         assertEquals(Confidence.LOW, confidenceOf(scattered))
         assertFalse(slower.unusable(), "the spread says nothing of the pass itself")
+        // Losses only shrinking are a driver still learning the corner: the direction holds, without its number.
+        val learning = cueDoubts(slower, target, listOf(1_500_000L, 900_000L, 300_000L), unidentified = false)
+        assertEquals(listOf(CueDoubts.IMPROVING), learning.map { it.code })
+        assertEquals(Confidence.MEDIUM, confidenceOf(learning))
         val one = cueDoubts(slower, target, listOf(300_000L), unidentified = false)
         assertEquals(listOf(CueDoubts.FEW_PASSES), one.map { it.code })
         val unmatched = cueDoubts(slower, target, steadyLosses, unidentified = true)
@@ -169,12 +173,11 @@ class CueConfidenceTest {
 
     @Test
     fun `a corner whose loss is within its usual spread gets no cue and the skip is logged`() {
-        // FBBD-414: corner 2 braked 60 m early once, then 15 m early twice, in turn. A corner cued on one
-        // lap rests the next, so the cue after the second 15 m lap reads losses 60, 15, 15: the last one
-        // is less than half that spread, inside the lap-to-lap noise. No direction is said; the skip is
-        // reported instead.
+        // FBBD-414: corner 2 braked 60 m early, then right, then 15 m early, in turn. After the 15 m lap the
+        // losses read 60, 0, 15 m worth: up and down, and the last one less than half that spread, inside
+        // the lap-to-lap noise. No direction is said; the skip is reported instead.
         fun early(m: Double) = SimCircuit.Pace(earlierM = listOf(0.0, m, 0.0, 0.0))
-        val paces = listOf(steady) + List(3) { listOf(early(60.0), early(15.0), early(15.0)) }.flatten()
+        val paces = listOf(steady) + List(3) { listOf(early(60.0), steady, early(15.0)) }.flatten()
         val engine = CueEngine(track, CoachSettings(Verbosity.Full), reference(steady, steady, steady))
         val updates = sim.drive(paces).fixes.map { engine.update(it) }
         val skips = updates.flatMap { it.skipped }.filter { it.corner == 2 }
