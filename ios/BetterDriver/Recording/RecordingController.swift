@@ -155,11 +155,13 @@ final class RecordingController: ObservableObject {
             return
         }
         error = nil
+        let setup = SettingsModel.shared.setup
+        let active = setup.active()
         let info = SessionInfo(
             startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
-            car: SettingsModel.shared.setup.active().car?.name ?? "",
+            car: active.car?.name ?? "",
             track: "",
-            devices: [receiver.name],
+            devices: Self.devices(receiver, setup: setup, active: active),
             startFinish: nil,
             channels: [],
             imported: nil
@@ -180,7 +182,6 @@ final class RecordingController: ObservableObject {
         self.receiver = receiver
         // The receiver's link stays open after the session too, until the app closes (Arek 2026-11-05).
         HeldConnections.shared.choose(receiver)
-        let setup = SettingsModel.shared.setup
         tileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false)
         secondTileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: true)
         session = live
@@ -243,7 +244,6 @@ final class RecordingController: ObservableObject {
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
-        let active = setup.active()
         // OBD-II from the adapters listed in Settings › Equipment only, Bluetooth LE then Wi-Fi, by the
         // rule Android uses (FBBD-349): none listed, none read. Not with the Demo track's made-up car.
         if receiver != .demoTrack, ObdLink.anyListed(setup) {
@@ -314,6 +314,26 @@ final class RecordingController: ObservableObject {
     func obdStatus() -> ObdStatus? { obd?.status() }
 
     /// The strap the session records: the shared rule's (FBBD-349), by the iPhone's identifier for it.
+    /// The session's devices (FBBD-436): the receiver, then the sources the session starts below, by
+    /// the names Android lists, so the VBO, the session check and provenance read them as on Android.
+    static func devices(_ receiver: Receiver, setup: Setup, active: ActiveSession) -> [String] {
+        let kind: RecordedReceiver = switch receiver {
+        case .raceBox: .racebox
+        case .phone: .phone
+        case .simulated, .demoTrack: .madeUp
+        case .listed: .other
+        }
+        let carData = receiver != .demoTrack
+        return RecordedSources.shared.list(
+            receiverName: receiver.name,
+            receiver: kind,
+            phoneImu: carData,
+            obd: carData && ObdLink.anyListed(setup),
+            heartRate: strap(active) != nil,
+            tyres: bridge(active) != nil
+        )
+    }
+
     static func strap(_ active: ActiveSession) -> (id: UUID, name: String)? {
         guard let item = active.heartRateStrap, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
         return (id, item.name)

@@ -20,9 +20,12 @@ class VboForwardTimeTest {
 
     private val gnss = FakeGnss()
 
-    private fun export(fixes: List<SampleSet>): Pair<VboExporter.Written, List<String>> {
+    private fun export(
+        fixes: List<SampleSet>,
+        startUtcMillis: Long = gnss.startUtcMillis,
+    ): Pair<VboExporter.Written, List<String>> {
         val store = SessionStore(tmp)
-        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))
+        val rec = Recorder(store).start(SessionInfo(startUtcMillis, channels = GnssChannels.ALL))
         fixes.forEach(rec::submit)
         rec.stop()
         val out = ByteArrayOutputStream()
@@ -62,5 +65,32 @@ class VboForwardTimeTest {
         val (written, times) = export(sets)
         assertEquals(50, times.size)
         assertEquals(VboExporter.Written(rows = 50, fixes = 50, repeated = 0), written)
+    }
+
+    @Test
+    fun `a cached fix handed over first, stamped seconds before the start, gets no row`() {
+        // iOS 2026-11-02: the cached fix (3.52 s before START) arrived first, then the new ones.
+        val sets = listOf(fix(-88, 0)) + (0L..4L).map { fix(it, 10_000 + it * 40_000) }
+        val (written, times) = export(sets)
+        assertEquals(listOf("080000.000", "080000.040", "080000.080", "080000.120", "080000.160"), times)
+        assertEquals(VboExporter.Written(rows = 5, fixes = 5, repeated = 1), written)
+    }
+
+    @Test
+    fun `a fix stamped under two seconds before the start keeps its row`() {
+        // A receiver's clock and the phone's differ a little; one second is not a cached fix.
+        val sets = listOf(fix(-25, 0)) + (0L..4L).map { fix(it, 10_000 + it * 40_000) }
+        val (written, times) = export(sets)
+        assertEquals("075959.000", times.first())
+        assertEquals(VboExporter.Written(rows = 6, fixes = 6, repeated = 0), written)
+    }
+
+    @Test
+    fun `a phone clock set a minute ahead keeps every row`() {
+        // Every fix is stamped before the start the phone's clock gave: none is left out.
+        val sets = (0L until 10L).map { fix(it, it * 40_000) }
+        val (written, times) = export(sets, startUtcMillis = gnss.startUtcMillis + 60_000)
+        assertEquals(10, times.size)
+        assertEquals(VboExporter.Written(rows = 10, fixes = 10, repeated = 0), written)
     }
 }
