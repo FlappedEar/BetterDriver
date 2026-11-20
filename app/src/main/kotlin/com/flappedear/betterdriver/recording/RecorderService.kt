@@ -294,9 +294,7 @@ class RecorderService : Service() {
                 } else {
                     CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
                 }
-                // The weather at the track (FBBD-403); debug builds' emulator tests can switch it off (WeatherHook).
-                val weather = if (WeatherHook.fetches(this)) recordingWeather(recording, weatherFetch) else null
-                listOfNotNull(coach, weather).forEach(recording.listeners::add)
+                listOfNotNull(coach, recordingWeather(recording, weatherFetch)).forEach(recording.listeners::add)
                 // Ends the recording here only when its writer has stopped, also for stops the recorder makes
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }

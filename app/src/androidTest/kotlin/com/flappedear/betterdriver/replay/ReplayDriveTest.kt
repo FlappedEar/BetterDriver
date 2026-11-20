@@ -37,7 +37,6 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recording.DemoReplay
 import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
-import com.flappedear.betterdriver.recording.WeatherHook
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
@@ -103,8 +102,6 @@ class ReplayDriveTest {
         CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties").path)
             .write(CoachSettings(Verbosity.Full, language = language, learningLaps = LearningLaps))
         earlierOuting()
-        // The laps are from 27 Sep, replayed today: today's weather at the track is not theirs (WeatherHook).
-        File(d.app.filesDir, WeatherHook.FileName).writeText("")
         AppLog.clear(d.app)
     }
 
@@ -288,8 +285,11 @@ class ReplayDriveTest {
 
     /** The fake-gnss thread's mean CPU in ms a second between [start] and [end]; null without both. */
     private fun gnssCpuPerSecond(start: Pair<Double, Long>?, end: Pair<Double, Long>?): Double? {
-        if (start == null || end == null || end.second <= start.second || end.first < start.first) return null
-        return ((end.first - start.first) * MillisPerSecond / (end.second - start.second))
+        if (start == null || end == null) return null
+        val millis = end.second - start.second
+        val cpu = end.first - start.first
+        if (millis <= 0 || cpu < 0) return null
+        return (cpu * MillisPerSecond / millis)
             .also { Log.i(Tag, "fake-gnss thread %.1f ms CPU a second over the drive".format(it)) }
     }
 
