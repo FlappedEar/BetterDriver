@@ -28,7 +28,7 @@ enum LogShare {
         for file in log.files() {
             try fm.copyItem(at: file, to: folder.appendingPathComponent(file.lastPathComponent))
         }
-        try Data(systemLog().utf8).write(to: folder.appendingPathComponent("oslog.txt"))
+        try Data(systemLog(since: log.clearedAt).utf8).write(to: folder.appendingPathComponent("oslog.txt"))
         let zip = out.appendingPathComponent("\(name).zip")
         try zipFolder(folder, to: zip)
         try? fm.removeItem(at: folder)
@@ -53,16 +53,21 @@ enum LogShare {
         "BetterDriver \(AppInfo.version)\n\(DeviceInfo.model), \(DeviceInfo.system)\nPrepared \(Date())\n"
     }
 
-    /// This run's entries in the system log; iOS lets an app read its own process's.
-    private static func systemLog() -> String {
+    /// This run's entries in the system log; iOS lets an app read its own process's. Only those after
+    /// [since], the last Clear log, so a cleared log stays cleared (review v1.34.1 F14, FBBD-483), and
+    /// not the app's own lines, which are in its log already (and private in the system log). The
+    /// newest [keep] are kept as they stream past, never all of them at once (F15).
+    static func systemLog(since: Date?, keep: Int = systemLines) -> String {
         do {
             let store = try OSLogStore(scope: .currentProcessIdentifier)
-            let entries = try store.getEntries(at: store.position(timeIntervalSinceLatestBoot: 0))
-            var lines: [String] = []
-            for case let entry as OSLogEntryLog in entries {
+            let start = since.map { store.position(date: $0) } ?? store.position(timeIntervalSinceLatestBoot: 0)
+            var lines = NewestLogLines(capacity: keep)
+            for case let entry as OSLogEntryLog in try store.getEntries(at: start) {
+                if let since, entry.date < since { continue }
+                if entry.subsystem == AppLog.subsystem { continue }
                 lines.append("\(entry.date) \(entry.subsystem) \(entry.category) \(entry.composedMessage)")
             }
-            return lines.suffix(systemLines).joined(separator: "\n") + "\n"
+            return lines.ordered.joined(separator: "\n") + "\n"
         } catch {
             return "system log not available: \(error.localizedDescription)\n"
         }
@@ -114,4 +119,29 @@ enum LogShare {
     }
 
     private static let tag = "DebugLogs"
+}
+
+/// The newest [capacity] lines of a stream, held in a ring: memory stays at [capacity] lines however
+/// many go past (review v1.34.1 F15, FBBD-483).
+struct NewestLogLines {
+    let capacity: Int
+    private var ring: [String] = []
+    private var next = 0
+
+    init(capacity: Int) { self.capacity = max(0, capacity) }
+
+    mutating func append(_ line: String) {
+        guard capacity > 0 else { return }
+        if ring.count < capacity {
+            ring.append(line)
+        } else {
+            ring[next] = line
+        }
+        next = (next + 1) % capacity
+    }
+
+    /// Oldest first.
+    var ordered: [String] {
+        ring.count < capacity ? ring : Array(ring[next...] + ring[..<next])
+    }
 }
