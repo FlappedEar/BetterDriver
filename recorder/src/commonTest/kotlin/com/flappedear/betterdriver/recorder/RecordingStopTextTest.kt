@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 class RecordingStopTextTest {
     @Test
-    fun `a write failure never says the session is saved (review F9)`() {
+    fun `a write failure never says the session is saved, review F9`() {
         val text = RecordingStopText.ended("error")!!
         assertFalse("saved" in text, text)
         assertTrue("recovered" in text, text)
