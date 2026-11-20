@@ -83,6 +83,7 @@ class SmokeSetup {
         .outerRule(GrantPermissionRule.grant(*appPermissions()))
         .around(Seeded)
         .around(NoAppErrors)
+        .around(OffMainCompose())
         .around(compose)
 
     /** Writes the fixtures before the app first reads its data in this process. */

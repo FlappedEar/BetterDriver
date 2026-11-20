@@ -55,6 +55,8 @@ dependencies {
     api(libs.compose.ui)
     api(libs.compose.material3)
     api(libs.compose.ui.tooling.preview)
+    // inBackground (FBBD-485).
+    implementation(libs.kotlinx.coroutines.core)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

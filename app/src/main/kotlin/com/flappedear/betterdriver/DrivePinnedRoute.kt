@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.coach.DriveFocus
 import com.flappedear.betterdriver.coach.DrivePinned
 import com.flappedear.betterdriver.coach.driveFocus
 import com.flappedear.betterdriver.coach.sessionFocusStore
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.shell.lastTimeHere
@@ -16,7 +17,6 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.tracks.Here
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /**
@@ -31,7 +31,7 @@ internal fun rememberDrivePinned(here: Here?, sessions: Sessions): DrivePinned {
     val ids = sessions.list.map { it.id }.toSet()
     val focus by produceState<DriveFocus?>(null, trackId, ids) {
         value = trackId?.let { id ->
-            withContext(Dispatchers.IO) {
+            inBackground(Dispatchers.IO) {
                 try {
                     driveFocus(sessionFocusStore(context).latest(id, kept = { it in ids }))
                 } catch (e: IOException) {

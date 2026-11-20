@@ -11,11 +11,11 @@ import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.optimal.PedalState
 import com.flappedear.betterdriver.coach.linePlanStore
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.feature.track.MapPedal
 import com.flappedear.betterdriver.feature.track.MapPoint
 import com.flappedear.betterdriver.feature.track.NextCorner
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** Further than this from the plan's line the car is off the track: the pits, the paddock. */
 private const val OffTrackMeters = 50.0
@@ -103,7 +103,7 @@ fun rememberNextCorners(trackId: String?): NextCornerFinder? {
     val context = LocalContext.current
     val finder by produceState<NextCornerFinder?>(null, trackId) {
         value = trackId?.let { id ->
-            withContext(Dispatchers.IO) {
+            inBackground(Dispatchers.IO) {
                 linePlanStore(context).get(id)?.let(::NextCornerFinder)?.takeIf { it.drawable }
             }
         }

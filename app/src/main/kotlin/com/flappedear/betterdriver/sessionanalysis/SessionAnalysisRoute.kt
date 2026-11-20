@@ -51,6 +51,7 @@ import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.linePlanStore
 import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.sessionFocusStore
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
@@ -94,7 +95,6 @@ import com.flappedear.betterdriver.timing.track.proposeTrack
 import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.videoexport.SessionVideoTab
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * The cards of a session that need no laps: its acceleration runs (FBBD-154), its G-forces and its
@@ -231,12 +231,12 @@ internal fun SessionAnalysisRoute(
     val tracks = remember { Tracks.get(context) }
     val coachPicks = remember { CoachPicksRepo.get(context) }
     val verbosity = remember { CoachPrefs.get(context) }.settings.verbosity
-    val allPicks by coachPicks.picks.collectAsState()
+    val allPicks by coachPicks.picks.collectAsState(context = Dispatchers.Main.immediate)
     val trackId = (load as? Load.Done)?.loaded?.track?.id
     val picks = trackId?.let { allPicks[it] }
     LaunchedEffect(id) {
         if (load != null) return@LaunchedEffect
-        load = withContext(Dispatchers.Default) {
+        load = inBackground(Dispatchers.Default) {
             val epoch = AppDataGate.epoch
             val started = SystemClock.elapsedRealtime()
             val read = analysedOr<Load>(id, { Load.Failed(it) }) {
@@ -251,20 +251,20 @@ internal fun SessionAnalysisRoute(
     // The session's validation report (FBBD-183): read, or made the first time the session is opened.
     LaunchedEffect(id) {
         if (kept.qualityRead) return@LaunchedEffect
-        quality = withContext(Dispatchers.IO) { qualityReports(context).load(id)?.let(::qualityUi) }
+        quality = inBackground(Dispatchers.IO) { qualityReports(context).load(id)?.let(::qualityUi) }
         kept.qualityRead = true
     }
     // The session's weather (FBBD-403): kept by the recording, or fetched now when it is missing.
     LaunchedEffect(id) {
         if (kept.weatherRead) return@LaunchedEffect
-        weather = withContext(Dispatchers.IO) { sessionWeather(context).load(id) }
+        weather = inBackground(Dispatchers.IO) { sessionWeather(context).load(id) }
         kept.weatherRead = true
     }
     // The earlier sessions at the track are read after the analysis shows, so they never delay it.
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
         if (progress != null) return@LaunchedEffect
-        progress = withContext(Dispatchers.IO) {
+        progress = inBackground(Dispatchers.IO) {
             val loaded = l.loaded
             val earlier = earlierSessions(store.value, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
             progressAgainst(loaded.analysis, earlier)
@@ -275,7 +275,7 @@ internal fun SessionAnalysisRoute(
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
         if (line !is LineState.Reading) return@LaunchedEffect
-        line = withContext(Dispatchers.Default) {
+        line = inBackground(Dispatchers.Default) {
             val loaded = l.loaded
             analysedOr<LineState>(id, { LineState.Unavailable(it.message) }) {
                 val others = lineSessions(store.value, id, loaded.track, loaded.tracks)
@@ -290,7 +290,7 @@ internal fun SessionAnalysisRoute(
         analysed = when (val l = load) {
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
-            is Load.Done -> withContext(Dispatchers.Default) {
+            is Load.Done -> inBackground(Dispatchers.Default) {
                 analysedOr<AnalysisState>(id, { it }) { readyState(l.loaded, compared, progress, line) }
             }
         }
@@ -301,7 +301,7 @@ internal fun SessionAnalysisRoute(
         val l = load as? Load.Done ?: return@LaunchedEffect
         if (kept.coachingKept) return@LaunchedEffect
         val loaded = l.loaded
-        coaching = withContext(Dispatchers.Default) {
+        coaching = inBackground(Dispatchers.Default) {
             val store = sessionFocusStore(context)
             val at = loaded.startUtcMillis
             keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
@@ -317,13 +317,13 @@ internal fun SessionAnalysisRoute(
     LaunchedEffect(line, coaching) {
         val l = load as? Load.Done ?: return@LaunchedEffect
         if (line !is LineState.Ready || coaching.attempts.isEmpty()) return@LaunchedEffect
-        proof = withContext(Dispatchers.IO) { lastFocusProof(linePlanStore(context), l.loaded.track.id, id, coaching) }
+        proof = inBackground(Dispatchers.IO) { lastFocusProof(linePlanStore(context), l.loaded.track.id, id, coaching) }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
     LaunchedEffect(analysed, picks, quality, weather, verbosity, coaching, proof) {
         val l = load as? Load.Done
-        val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
+        val picked = if (l == null) analysed else inBackground(Dispatchers.Default) { withPicks(analysed, l, picks) }
         state = picked.withQuality(quality).withWeather(weather)
             .withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
     }

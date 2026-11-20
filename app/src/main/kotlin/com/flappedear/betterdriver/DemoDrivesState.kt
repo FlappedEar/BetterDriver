@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.flappedear.betterdriver.analysis.demo.DemoSession
 import com.flappedear.betterdriver.analysis.demo.DemoTrack
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.DemoReplay
@@ -18,7 +19,6 @@ import com.flappedear.betterdriver.sessionanalysis.sessionLabel
 import com.flappedear.betterdriver.shell.DemoDrive
 import com.flappedear.betterdriver.shell.DemoDrives
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * The Demo track's "Drives" choice (FBBD-235): the shared list ([DemoTrack.choices], as on the iPhone,
@@ -31,7 +31,7 @@ internal fun rememberDemoDrives(): DemoDrives? {
     val context = LocalContext.current
     var chosen by remember { mutableStateOf(DemoReplay.sessionId(context)) }
     val choices by produceState<List<DemoDrive>?>(null) {
-        value = withContext(Dispatchers.IO) { demoChoices(context) }
+        value = inBackground(Dispatchers.IO) { demoChoices(context) }
     }
     val list = choices ?: return null
     return DemoDrives(

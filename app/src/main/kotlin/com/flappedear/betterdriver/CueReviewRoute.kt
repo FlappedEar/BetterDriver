@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.read
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
@@ -22,7 +23,6 @@ import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.shell.CueReviewScreen
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** The cue review destination, [Routes.CueReviewPattern]. */
 internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingValues, layout: LayoutSize) {
@@ -43,7 +43,7 @@ internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingV
 internal fun CueReviewRoute(nav: NavHostController, id: String, layout: LayoutSize) {
     val context = LocalContext.current
     val review by produceState<CueReview?>(null, id) {
-        value = withContext(Dispatchers.IO) { CueReview.read(SessionStore(sessionsDir(context)), id) }
+        value = inBackground(Dispatchers.IO) { CueReview.read(SessionStore(sessionsDir(context)), id) }
     }
     val title = Sessions.get(context).list.firstOrNull { it.id == id }?.let(::sessionTitle).orEmpty()
     CueReviewScreen(title, review, onBack = { nav.popBackStack() }, layout = layout)

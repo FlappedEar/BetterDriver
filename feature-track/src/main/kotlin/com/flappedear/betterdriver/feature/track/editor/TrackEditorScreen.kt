@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.timing.edit.line
 import com.flappedear.betterdriver.timing.edit.lineRefs
 import com.flappedear.betterdriver.timing.live.LapBook
@@ -55,7 +56,6 @@ import com.flappedear.betterdriver.timing.map.TileSources
 import com.flappedear.betterdriver.timing.track.SegmentEdit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 /** Wide enough for the map and the lap table side by side (UI-25). */
 private val TabletWidth = 720.dp
@@ -100,7 +100,7 @@ fun TrackEditorScreen(
             return@LaunchedEffect
         }
         delay(RetimeDelayMs) // Dragging a line end changes the track many times a second.
-        books = withContext(Dispatchers.Default) { sessions.map { timeSession(track, it.fixes.asSequence()) } }
+        books = inBackground(Dispatchers.Default) { sessions.map { timeSession(track, it.fixes.asSequence()) } }
     }
     val back: () -> Unit = when {
         state.selected != null -> state::cancel

@@ -48,6 +48,7 @@ import com.flappedear.betterdriver.shell.NearbyDevice
 import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.newSetupId
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -314,7 +315,7 @@ internal fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
         } else {
             flowOf(emptyList())
         }
-    }.collectAsState(initial = emptyList())
+    }.collectAsState(initial = emptyList(), context = Dispatchers.Main.immediate)
 }
 
 /** A standard-service device; one that advertises no name is shown by its model and address. */

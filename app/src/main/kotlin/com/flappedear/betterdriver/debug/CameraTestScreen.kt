@@ -33,6 +33,7 @@ import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.camera.CameraTestState
 import com.flappedear.betterdriver.camera.CameraTestState.Status
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.ListRow
@@ -43,7 +44,6 @@ import com.flappedear.betterdriver.shell.allGranted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 
 private const val PollMs = 1_000L
@@ -68,7 +68,7 @@ fun CameraTestScreen(onBack: () -> Unit) {
     var watching by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
-            state = withContext(Dispatchers.IO) { CameraTestState.read(context) }?.let(::unlessStale)
+            state = inBackground(Dispatchers.IO) { CameraTestState.read(context) }?.let(::unlessStale)
             now = System.currentTimeMillis()
             if (state?.status == Status.Running) watching = true
             delay(PollMs)
@@ -89,7 +89,7 @@ fun CameraTestScreen(onBack: () -> Unit) {
                 else -> Start(starting = watching) {
                     watching = true
                     scope.launch {
-                        withContext(Dispatchers.IO) { CameraTestState.clear(context) }
+                        inBackground(Dispatchers.IO) { CameraTestState.clear(context) }
                         state = null
                         startTest(context)
                     }
@@ -180,7 +180,7 @@ private fun Ended(state: CameraTestState) {
             problem = null
             scope.launch {
                 val zip = try {
-                    withContext(Dispatchers.IO) { DebugLogShare.prepare(context) }
+                    inBackground(Dispatchers.IO) { DebugLogShare.prepare(context) }
                 } catch (e: IOException) {
                     DebugLog.w("CameraTest", "could not prepare the log", e)
                     problem = "Could not prepare the log: ${e.message}"

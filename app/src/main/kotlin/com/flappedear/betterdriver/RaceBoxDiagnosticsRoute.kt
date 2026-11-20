@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxDiagnostics
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsText
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.RaceBoxLink
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.imuCalibrations
 import com.flappedear.betterdriver.setup.Equipment
@@ -36,7 +37,6 @@ import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 private const val RefreshMs = 250L
 
@@ -132,7 +132,7 @@ private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): Cal
     val state = remember(address) { CalibrationState() }
     // The calibration file is read and written off the main thread (FBBD-41).
     LaunchedEffect(address) {
-        diag.calibration(withContext(Dispatchers.IO) { address?.let { store.value.load(it) } })
+        diag.calibration(inBackground(Dispatchers.IO) { address?.let { store.value.load(it) } })
     }
     LaunchedEffect(state.running) {
         if (!state.running) return@LaunchedEffect
@@ -142,7 +142,7 @@ private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): Cal
             is ImuCalibration.Result.Failed -> result.failure.text
             is ImuCalibration.Result.Ok -> try {
                 // Under the restore gate (FBBD-156), so a restore swapping the calibrations never drops it.
-                withContext(Dispatchers.IO) {
+                inBackground(Dispatchers.IO) {
                     address?.let { AppDataGate.write { store.value.save(it, result.calibration) } }
                 }
                 diag.calibration(result.calibration)

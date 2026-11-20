@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.coach.OutputDelayProbe
 import com.flappedear.betterdriver.coach.TtsVoice
 import com.flappedear.betterdriver.coach.Voice
 import com.flappedear.betterdriver.coach.VoiceMode
+import com.flappedear.betterdriver.core.ui.effect.inBackground
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.shell.CoachSettingsScreen
 import com.flappedear.betterdriver.shell.CoachVoiceScreen
@@ -41,7 +42,6 @@ import com.flappedear.betterdriver.shell.sampleCue
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 /**
  * Settings › App › Spoken coach (FBBD-98, UI-64 B): saved as it changes, read at the next session start.
@@ -53,11 +53,11 @@ internal fun NavGraphBuilder.coachSettings(nav: NavHostController, padding: Padd
         val context = LocalContext.current
         val coach = remember(context) { CoachPrefs.get(context) }
         val picks = remember(context) { CoachPicksRepo.get(context) }
-        val byTrack by picks.picks.collectAsState()
+        val byTrack by picks.picks.collectAsState(context = Dispatchers.Main.immediate)
         var names by remember { mutableStateOf<Map<String, String>?>(null) }
         LaunchedEffect(Unit) {
             picks.loadAll()
-            names = withContext(Dispatchers.IO) {
+            names = inBackground(Dispatchers.IO) {
                 TrackStore(tracksDir(context)).all().associate { it.id to it.displayName }
             }
         }
@@ -156,7 +156,7 @@ private fun rememberVoices(voice: Voice, engine: String?): PhoneSpeech? {
     LaunchedEffect(voice, resumes, engine) {
         var waited = 0L
         while (true) {
-            val read = withContext(Dispatchers.IO) {
+            val read = inBackground(Dispatchers.IO) {
                 voice.voices(engine)?.let { vs ->
                     val engines = voice.engines(engine).orEmpty().map { EngineRow(it.first, it.second) }
                     PhoneSpeech(vs, engines, voice.defaultEngine(engine))
@@ -194,7 +194,7 @@ private fun rememberDelayNow(lowLatency: Boolean): String? {
     var line by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(context, lowLatency) {
         while (true) {
-            line = withContext(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(lowLatency)) }
+            line = inBackground(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(lowLatency)) }
             delay(DelayCheckMillis)
         }
     }
