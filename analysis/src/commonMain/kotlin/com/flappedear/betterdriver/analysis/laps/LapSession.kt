@@ -69,6 +69,12 @@ enum class LapReferenceIssue {
 
     /** Its time, path length or average speed cannot be a lap of the circuit. */
     ImplausibleLap,
+
+    /** It crossed the pit entry line: the live timer's in lap, never the best (review v1.34.1 F3, FBBD-482). */
+    InLap,
+
+    /** It crossed the pit exit line, or followed an in lap where the pit lane crosses the line (FBBD-482). */
+    OutLap,
 }
 
 /** A gate-to-gate interval. Times are seconds on the recording's clock. */

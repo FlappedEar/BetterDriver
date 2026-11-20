@@ -80,6 +80,7 @@ const val LeftAcceleration = "accel_left"
  * of exactly 0°, 0° (no fix) is no data. [startFinish] (the track's start/finish line) becomes
  * the start gate; without one no laps are found. [finish], a point-to-point track's finish line
  * (FBBD-155), becomes a finish gate, and the laps are then the runs from start to finish.
+ * [pitEntry] and [pitExit], a circuit's pit lines, mark in and out laps (FBBD-482).
  * Only the recorded channels [keep] accepts are read: the VBO's G columns need the accelerometers
  * and GPS, not an hour of every other channel in memory as well (FBBD-232).
  */
@@ -88,6 +89,8 @@ fun telemetrySessionOf(
     data: SessionData,
     startFinish: TrackLine?,
     finish: TrackLine? = null,
+    pitEntry: TrackLine? = null,
+    pitExit: TrackLine? = null,
     keep: (ChannelDef) -> Boolean = { true },
 ): TelemetrySession {
     val sets = data.sampleSets.sortedBy { it.tMicros }
@@ -130,6 +133,8 @@ fun telemetrySessionOf(
     val gates = listOfNotNull(
         startFinish?.let { gate(TimingGateType.Start, "Start/finish", it) },
         finish?.let { gate(TimingGateType.Finish, "Finish", it) },
+        pitEntry?.let { gate(TimingGateType.PitEntry, "Pit entry", it) },
+        pitExit?.let { gate(TimingGateType.PitExit, "Pit exit", it) },
     )
     return TelemetrySession(channels, aliases, gates)
 }
@@ -160,9 +165,19 @@ private class Samples {
 
 private const val InitialSamples = 1024
 
-/** [track]'s session as analysis input: its start/finish line and, on a point-to-point track, its finish. */
+/**
+ * [track]'s session as analysis input: its start/finish line and, on a point-to-point track, its
+ * finish. On a circuit its pit entry and exit lines go too, so review leaves out the in and out laps
+ * the live timer leaves out (review v1.34.1 F3, FBBD-482).
+ */
 fun telemetrySessionOf(data: SessionData, track: Track): TelemetrySession =
-    telemetrySessionOf(data, track.startFinish, track.finish?.takeIf { track.pointToPoint })
+    telemetrySessionOf(
+        data,
+        track.startFinish,
+        track.finish?.takeIf { track.pointToPoint },
+        pitEntry = track.pitEntry?.takeUnless { track.pointToPoint },
+        pitExit = track.pitExit?.takeUnless { track.pointToPoint },
+    )
 
 /** A BetterDriver line as an analysis gate: endpoint A is its left end, so forwards is direction +1. */
 private fun gate(type: TimingGateType, name: String, line: TrackLine) = TimingGate(

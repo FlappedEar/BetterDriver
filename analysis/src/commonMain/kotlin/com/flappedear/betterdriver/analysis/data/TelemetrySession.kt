@@ -133,6 +133,12 @@ enum class TimingGateType {
 
     /** The finish of a point-to-point track (FBBD-155); the Start gate is then its start. */
     Finish,
+
+    /** A circuit's pit entry line: a lap that crosses it is an in lap, as the live timer has it (FBBD-482). */
+    PitEntry,
+
+    /** A circuit's pit exit line: a lap that crosses it is an out lap (FBBD-482). */
+    PitExit,
 }
 
 /** A timing line between two endpoints. */
