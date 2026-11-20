@@ -58,4 +58,12 @@ class PhoneFileRetryTest {
         assertNull(PhoneVideoAlert.detail("Stopped: too hot"))
         assertNull(PhoneVideoAlert.detail(null))
     }
+
+    @Test
+    fun `a phone video file is full after five minutes on both apps`() {
+        assertFalse(PhoneFileLength.full(startedAt = 10.0, now = 309.9))
+        assertTrue(PhoneFileLength.full(startedAt = 10.0, now = 310.0))
+        assertEquals(PhoneFileLength.SECONDS * 1_000_000, PhoneFileLength.MICROS.toDouble())
+        assertEquals(PhoneFileLength.SECONDS * 1_000, PhoneFileLength.MILLIS.toDouble())
+    }
 }

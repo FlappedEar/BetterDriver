@@ -68,12 +68,12 @@ final class PhoneVideoFinishingTests: XCTestCase {
     /// FBBD-468 (audit 7 Nov BD-T02): files end when full and the next starts at the following frame,
     /// as PhoneCamera does, with the full file finishing while the next one records. Killed in the
     /// fourth file, the app keeps the three before it whole: what is lost is at most one file's length.
-    /// A 2 s file stands for the app's 5 min. The app does this only with PhoneFileLength.on (off until
-    /// after Moto Park); the test keeps the writer side ready for it.
+    /// A 2 s file stands for the app's 5 min (shared PhoneFileLength, on since FBBD-468 step 2).
     func testFullFilesBoundWhatAKilledAppLoses() async throws {
-        XCTAssertEqual(PhoneFileLength.seconds, 300)
-        XCTAssertFalse(PhoneFileLength.full(startedAt: 10, now: 309.9))
-        XCTAssertTrue(PhoneFileLength.full(startedAt: 10, now: 310))
+        let length = PhoneFileLength.shared
+        XCTAssertEqual(length.SECONDS, 300)
+        XCTAssertFalse(length.full(startedAt: 10, now: 309.9, limit: length.SECONDS))
+        XCTAssertTrue(length.full(startedAt: 10, now: 310, limit: length.SECONDS))
         let dir = try Self.folder()
         defer { try? FileManager.default.removeItem(at: dir) }
         let limit = 2.0
@@ -82,7 +82,7 @@ final class PhoneVideoFinishingTests: XCTestCase {
         var startedAt = 0.0
         for i in 0..<(7 * Int(Self.fps)) {
             let pts = CMTime(value: CMTimeValue(i), timescale: Self.fps)
-            if let file = current, PhoneFileLength.full(startedAt: startedAt, now: pts.seconds, limit: limit) {
+            if let file = current, length.full(startedAt: startedAt, now: pts.seconds, limit: limit) {
                 // Finished on its own, as finishFile does: the next file does not wait for it.
                 let writer = file.writer
                 file.markFinished()

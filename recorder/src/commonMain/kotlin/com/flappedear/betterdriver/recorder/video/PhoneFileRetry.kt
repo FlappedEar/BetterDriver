@@ -67,3 +67,23 @@ object PhoneVideoAlert {
         else -> null
     }
 }
+
+/**
+ * How long one phone video file records before the next one starts, on both apps (FBBD-468, audit
+ * 7 Nov BD-T02). An MP4 gets its index only when it is finished, so a killed app, a crash or a dead
+ * phone leaves the file it was writing unplayable. A new file every [SECONDS] bounds that loss to one
+ * file's length instead of the whole session. Review, the data video, the composite laps and the VBO
+ * export join a session's files on the session clock, so a file change costs at most a frame or two.
+ */
+object PhoneFileLength {
+    const val SECONDS = 300.0
+
+    /** [SECONDS] in microseconds, for encoders that count in them. */
+    const val MICROS = 300_000_000L
+
+    /** [SECONDS] in milliseconds, for CameraX's duration limit. */
+    const val MILLIS = 300_000L
+
+    /** Whether a file that started at [startedAt] is full at [now] (seconds); [limit] for the tests. */
+    fun full(startedAt: Double, now: Double, limit: Double = SECONDS): Boolean = now - startedAt >= limit
+}

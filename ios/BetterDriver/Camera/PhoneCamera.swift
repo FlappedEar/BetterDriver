@@ -266,9 +266,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 failedFile(input: "writer", frame: sample)
             }
             // A full file is finished and the next starts with this frame (FBBD-468, BD-T02): a killed
-            // app loses at most the file it was writing. Off until after Moto Park (PhoneFileLength.on).
-            if PhoneFileLength.on, let writer, writer.status == .writing,
-               PhoneFileLength.full(startedAt: fileStartedAt, now: Self.seconds(pts)) {
+            // app loses at most the file it was writing (shared PhoneFileLength, 5 min, as Android).
+            if let writer, writer.status == .writing,
+               PhoneFileLength.shared.full(startedAt: fileStartedAt, now: Self.seconds(pts), limit: PhoneFileLength.shared.SECONDS) {
                 finishFile(reason: "file_full")
             }
             if writer == nil, running, retry.mayOpen(at: Self.seconds(pts)) { open(at: pts, frame: sample) }
