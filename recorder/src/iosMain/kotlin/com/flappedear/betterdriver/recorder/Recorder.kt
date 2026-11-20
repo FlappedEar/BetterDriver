@@ -71,6 +71,13 @@ class Recording internal constructor(
     private var drainScheduled = false
     private var dropped = 0L
 
+    /**
+     * Records of the batch being written that are not written yet (writer thread, under the file
+     * lock). A storage stop part way through a batch counts them as dropped (review v1.34.1 F13): the
+     * batch has already left the queue, so counting the queue alone missed them.
+     */
+    private var unwritten = 0
+
     // The file side: the writer, the sync timer and stop take it; everything below is under it.
     private val files = NSRecursiveLock()
     private val writer = dispatch_queue_create("com.flappedear.betterdriver.recorder.writer", null)
@@ -167,7 +174,8 @@ class Recording internal constructor(
     /**
      * Ends the recording cleanly: what the queue already took is written, then an end record, a final
      * fsync and finished.properties; what comes after is not taken. Returns when that is on disk.
-     * False if it had already ended.
+     * False if it had already ended, or if writing the end failed (review v1.34.1 F9): the session is
+     * then not finished, only what reached the disk is kept for recovery, and [endReason] is "error".
      */
     fun stop(reason: String = "user"): Boolean {
         // Intake closes first, before waiting for the file lock: a writer busy with a backlog would
@@ -181,7 +189,7 @@ class Recording internal constructor(
         // A write failure while the queue was written has already ended it.
         if (endReason != null) return false
         finish(reason)
-        return true
+        return endReason == reason
     }
 
     /** Tests only: whether written data still waits for its fsync. */
@@ -296,13 +304,16 @@ class Recording internal constructor(
     private fun write(batch: List<Queued>) {
         if (batch.isEmpty()) return
         val begun = nowMicros()
+        unwritten = batch.size
         for (q in batch) {
             if (endReason != null || killedForTest) return
             stats.waited(nowMicros() - q.atMicros)
             val record = q.record
             if (record is Record.Channel) define(record.def) else append(record)
+            unwritten--
             if (endReason == null) maintain()
         }
+        unwritten = 0
         stats.wrote(nowMicros() - begun)
     }
 
@@ -442,9 +453,11 @@ class Recording internal constructor(
     @Suppress("TooGenericExceptionCaught") // Any failure must still end the recording, keeping what is on disk.
     private fun finish(reason: String) {
         try {
+            val notWritten = unwritten
+            unwritten = 0
             intake {
                 accepting = false
-                dropped += queue.size
+                dropped += queue.size + notWritten
                 queue.clear()
             }
             reportDrops()
