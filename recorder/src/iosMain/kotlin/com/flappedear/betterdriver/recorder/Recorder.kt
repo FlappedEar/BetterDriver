@@ -23,40 +23,8 @@ import platform.darwin.dispatch_sync
 import platform.darwin.dispatch_time
 import platform.posix.usleep
 
-private const val Mib = 1L shl 20
-private const val DefaultSyncMs = 500L
-private const val DefaultChunkMib = 8L
-private const val DefaultChunkAgeMs = 60_000L
-private const val DefaultWarnMib = 200L
-private const val DefaultStopMib = 50L
-private const val DefaultStorageCheckMs = 2_000L
-private const val MaxSyncIntervalMs = 1_000L
 private const val NanosPerMilli = 1_000_000L
 private const val MicrosPerMilli = 1_000L
-private const val DefaultQueueCapacity = 100_000
-
-/**
- * As RecorderConfig on Android: sources hand records to a write queue and return, and one writer
- * puts them into the files (FBBD-350 R2).
- */
-data class RecorderConfig(
-    /** Written data is fsynced at least this often, so a power loss loses at most about this much (FBBD-70). */
-    val syncIntervalMs: Long = DefaultSyncMs,
-    val chunkMaxBytes: Long = DefaultChunkMib * Mib,
-    val chunkMaxAgeMs: Long = DefaultChunkAgeMs,
-    /** Below this much free space the recorder warns. */
-    val storageWarnBytes: Long = DefaultWarnMib * Mib,
-    /** Below this much free space the recorder stops cleanly, keeping what it has. */
-    val storageStopBytes: Long = DefaultStopMib * Mib,
-    val storageCheckIntervalMs: Long = DefaultStorageCheckMs,
-    /** Records waiting for the writer, at most; beyond it a record is counted as dropped, as on Android. */
-    val queueCapacity: Int = DefaultQueueCapacity,
-) {
-    init {
-        require(syncIntervalMs in 1..MaxSyncIntervalMs) { "syncIntervalMs must be 1..1000 to meet the 1 s loss limit" }
-        require(queueCapacity > 0) { "queueCapacity must be positive" }
-    }
-}
 
 /**
  * Crash-safe session recorder for iOS (FBBD-332), writing the same session files as the Android
@@ -115,10 +83,9 @@ class Recording internal constructor(
     private var chunkOpenedMs = 0L
     private var lastSyncMs = 0L
     private var dirty = false
-    private var lastStorageCheckMs: Long? = null
-    private var storageWarned = false
+    private val storageGuard = StorageGuard(config)
     private var rotate = true
-    private var reportedDrops = 0L
+    private val drops = DropReport()
     private var syncs = 0
     private val stats = WriterStats()
 
@@ -357,18 +324,15 @@ class Recording internal constructor(
     private fun maintain() {
         val now = elapsedMs()
         if (storageExhausted(now)) {
-            finish(STORAGE_FULL)
+            finish(EndReasons.STORAGE_FULL)
         } else if (now - lastSyncMs >= config.syncIntervalMs) {
             syncOrFail()
         }
     }
 
     private fun reportDrops() {
-        val d = intake { dropped }
-        if (d != reportedDrops) {
-            reportedDrops = d
-            append(Record.Event(RecorderEvent(nowMicros(), EventKinds.DROPPED_SAMPLES, d.toString())))
-        }
+        val d = drops.due(intake { dropped }) ?: return
+        append(Record.Event(RecorderEvent(nowMicros(), EventKinds.DROPPED_SAMPLES, d.toString())))
     }
 
     /** A periodic fsync; a failure ends the recording, which then waits for recovery. */
@@ -385,8 +349,7 @@ class Recording internal constructor(
     @Suppress("TooGenericExceptionCaught") // Any failure must still leave the data on disk and end the recording.
     private fun append(record: Record) {
         try {
-            val due = chunkBytes >= config.chunkMaxBytes || elapsedMs() - chunkOpenedMs >= config.chunkMaxAgeMs
-            if (rotate && due) {
+            if (rotate && config.chunkDue(chunkBytes, elapsedMs() - chunkOpenedMs)) {
                 closeChunk()
                 openChunk()
             }
@@ -455,24 +418,21 @@ class Recording internal constructor(
         }
     }
 
-    /** Checks free space now and then. Warns once when low; true when the recording must stop. */
+    /** Checks free space now and then (StorageGuard). Warns once when low; true when the recording must stop. */
     private fun storageExhausted(now: Long): Boolean {
-        val last = lastStorageCheckMs
-        if (last != null && now - last < config.storageCheckIntervalMs) return false
-        lastStorageCheckMs = now
-        val free = freeBytesForTest?.invoke() ?: PosixFiles.usableBytes(dir)
-        // From here on every write adds exactly its own frame: a rotation's channel table would eat
-        // the space kept for the end record.
-        if (free < config.storageStopBytes) rotate = false
-        if (free < config.storageWarnBytes && !storageWarned) {
-            storageWarned = true
+        val check = storageGuard.check(now) {
+            freeBytesForTest?.invoke() ?: PosixFiles.usableBytes(dir)
+        } ?: return false
+        val free = check.freeBytes
+        if (check.stop) rotate = false
+        if (check.warn) {
             append(Record.Event(RecorderEvent(nowMicros(), EventKinds.STORAGE_LOW, free.toString())))
             onStorageLow?.invoke(free)
         }
-        if (free < config.storageStopBytes) {
+        if (check.stop) {
             append(Record.Event(RecorderEvent(nowMicros(), EventKinds.STORAGE_FULL, free.toString())))
         }
-        return free < config.storageStopBytes && endReason == null
+        return check.stop && endReason == null
     }
 
     /**
@@ -513,7 +473,7 @@ class Recording internal constructor(
             platform.posix.close(fd)
             fd = -1
         }
-        end(ERROR)
+        end(EndReasons.ERROR)
     }
 
     private fun end(reason: String) {
@@ -523,11 +483,6 @@ class Recording internal constructor(
             lockFd = -1
         }
         onEnded?.invoke(reason)
-    }
-
-    private companion object {
-        const val STORAGE_FULL = "storage_full"
-        const val ERROR = "error"
     }
 }
 

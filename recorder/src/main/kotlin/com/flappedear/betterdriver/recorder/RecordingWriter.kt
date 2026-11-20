@@ -40,9 +40,8 @@ internal class RecordingWriter(
     private val stopIntake = input.stopIntake
     private val chunks = ChunkWriter(dir, config.chunkMaxBytes, config.chunkMaxAgeMs, config.syncIntervalMs, nanoTime)
     private var lastFlushNanos = 0L
-    private var lastStorageCheckNanos: Long? = null
-    private var storageWarned = false
-    private var reportedDrops = 0L
+    private val storageGuard = StorageGuard(config)
+    private val drops = DropReport()
 
     /** The session's metadata as last written: its channels grow as sources define theirs (FBBD-174). */
     private lateinit var meta: SessionInfo
@@ -62,7 +61,7 @@ internal class RecordingWriter(
         } catch (_: Exception) {
             // Already failing; the data written so far is what we keep.
         }
-        RecorderStatus.Stopped("error", t)
+        RecorderStatus.Stopped(EndReasons.ERROR, t)
     }
 
     private fun loop(): String {
@@ -81,10 +80,10 @@ internal class RecordingWriter(
                 // The sync thread makes it durable.
                 if (queue.isEmpty() || nanoTime() - lastFlushNanos >= config.flushIntervalMs * NanosPerMilli) flush()
                 // Checked on every pass, so a queue that never empties cannot skip the storage stop.
-                if (storageExhausted()) reason = STORAGE_FULL
+                if (storageExhausted()) reason = EndReasons.STORAGE_FULL
             }
         }
-        if (reason == STORAGE_FULL) drainAcceptedWrites()
+        if (reason == EndReasons.STORAGE_FULL) drainAcceptedWrites()
         return reason
     }
 
@@ -164,35 +163,24 @@ internal class RecordingWriter(
     }
 
     private fun reportDrops() {
-        val d = dropped.get()
-        if (d != reportedDrops) {
-            reportedDrops = d
-            chunks.write(Record.Event(RecorderEvent(nowMicros(), EventKinds.DROPPED_SAMPLES, d.toString())))
-        }
+        val d = drops.due(dropped.get()) ?: return
+        chunks.write(Record.Event(RecorderEvent(nowMicros(), EventKinds.DROPPED_SAMPLES, d.toString())))
     }
 
-    /** Checks free space now and then. Warns once when low; true when the recording must stop. */
+    /** Checks free space now and then (StorageGuard). Warns once when low; true when the recording must stop. */
     private fun storageExhausted(): Boolean {
-        val now = nanoTime()
-        val last = lastStorageCheckNanos
-        if (last != null && now - last < config.storageCheckIntervalMs * NanosPerMilli) return false
-        lastStorageCheckNanos = now
-        val free = runCatching { storage.usableBytes(dir) }.getOrDefault(Long.MAX_VALUE)
-        // From here on every write adds exactly its own frame: a rotation's channel table would eat
-        // the space kept for the end record.
-        if (free < config.storageStopBytes) chunks.rotate = false
-        if (free < config.storageWarnBytes && !storageWarned) {
-            storageWarned = true
+        val check = storageGuard.check(nanoTime() / NanosPerMilli) {
+            runCatching { storage.usableBytes(dir) }.getOrDefault(Long.MAX_VALUE)
+        } ?: return false
+        val free = check.freeBytes
+        if (check.stop) chunks.rotate = false
+        if (check.warn) {
             chunks.write(Record.Event(RecorderEvent(nowMicros(), EventKinds.STORAGE_LOW, free.toString())))
             listeners.dispatch { it.onStatus(RecorderStatus.StorageLow(free)) }
         }
-        if (free < config.storageStopBytes) {
+        if (check.stop) {
             chunks.write(Record.Event(RecorderEvent(nowMicros(), EventKinds.STORAGE_FULL, free.toString())))
         }
-        return free < config.storageStopBytes
-    }
-
-    private companion object {
-        const val STORAGE_FULL = "storage_full"
+        return check.stop
     }
 }

@@ -17,45 +17,8 @@ import kotlin.concurrent.read
 import kotlin.concurrent.write
 
 private const val NanosPerMicro = 1_000L
-private const val MaxSyncIntervalMs = 1_000L
-private const val Mib = 1L shl 20
-private const val DefaultFlushMs = 100L
-private const val DefaultSyncMs = 500L
-private const val DefaultChunkMib = 8L
-private const val DefaultChunkAgeMs = 60_000L
-private const val DefaultWarnMib = 200L
-private const val DefaultStopMib = 50L
-private const val DefaultStorageCheckMs = 2_000L
-private const val DefaultQueueCapacity = 100_000
-private const val DefaultListenerQueueCapacity = 1_024
 private const val StopTimeoutMs = 10_000L
 private const val StopOfferMs = 100L
-
-data class RecorderConfig(
-    /**
-     * Written data is handed to the OS whenever the write queue is empty and at least this often,
-     * so killing the process loses (almost) nothing.
-     */
-    val flushIntervalMs: Long = DefaultFlushMs,
-    /** Flushed data is fsynced at least this often, so a power loss loses at most about this much (FBBD-70). */
-    val syncIntervalMs: Long = DefaultSyncMs,
-    val chunkMaxBytes: Long = DefaultChunkMib * Mib,
-    val chunkMaxAgeMs: Long = DefaultChunkAgeMs,
-    /** Below this much free space the recorder warns. */
-    val storageWarnBytes: Long = DefaultWarnMib * Mib,
-    /** Below this much free space the recorder stops cleanly, keeping what it has. */
-    val storageStopBytes: Long = DefaultStopMib * Mib,
-    val storageCheckIntervalMs: Long = DefaultStorageCheckMs,
-    val queueCapacity: Int = DefaultQueueCapacity,
-    val listenerQueueCapacity: Int = DefaultListenerQueueCapacity,
-) {
-    init {
-        require(syncIntervalMs in 1..MaxSyncIntervalMs) {
-            "syncIntervalMs must be 1..1000 to meet the 1 s loss limit"
-        }
-        require(flushIntervalMs in 1..syncIntervalMs) { "flushIntervalMs must be 1..syncIntervalMs" }
-    }
-}
 
 fun interface StorageProbe {
     fun usableBytes(dir: File): Long
