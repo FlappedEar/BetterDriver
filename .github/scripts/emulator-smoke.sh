@@ -37,6 +37,7 @@ logcat=$!
 status=0
 built=0
 bash .github/scripts/wait-apk-build.sh || { status=1; built=1; }
+bash .github/scripts/fresh-app.sh
 
 # With the APKs built in the background the tests start about a minute after boot, while Android
 # is still busy with its post-boot work, and WideEncoderTest then loses frames (220 of 241). Wait
