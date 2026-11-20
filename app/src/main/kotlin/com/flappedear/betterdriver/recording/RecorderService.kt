@@ -36,6 +36,7 @@ import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.video.PhoneVideoAlert
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.gear.LiveGear
 import com.flappedear.betterdriver.timing.live.SessionTiming
@@ -162,9 +163,10 @@ class RecorderService : Service() {
     private lateinit var cpu: CpuLock
 
     /** Camera reports (FBBD-21) from the camera process are logged into the running recording. */
-    private val clients = LiveClients(
+    private val clients: LiveClients = LiveClients(
         state = ::state,
-        onVideo = { data ->
+        onVideo = { data, sender ->
+            if (active != null) cameraWatch.reported(sender?.binder)
             data.getString(RecorderProtocol.VIDEO_SESSION)?.let { session ->
                 afterVideo.report(
                     session,
@@ -180,6 +182,19 @@ class RecorderService : Service() {
         },
         onUi = { data -> active?.recording?.let { logUiReport(it, data) } },
     )
+
+    /**
+     * The camera process dying mid-recording ends the session's video (it is not restarted): the
+     * status says so, and the track screen shows "Phone video stopped" (FBBD-470, review F7).
+     */
+    private val cameraWatch: CameraProcessWatch<IBinder> = CameraProcessWatch(::linkDeath, { f -> main.post { f() } }) {
+        if (active != null) {
+            DebugLog.w(Tag, "camera process died: no more video this session")
+            cameraStatus = PhoneVideoAlert.STATUS_ERROR to false
+            clients.broadcast()
+        }
+    }
+
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
 
     /** The stop's report waits for the camera's last file (FBBD-247). */
@@ -353,6 +368,7 @@ class RecorderService : Service() {
         if (ended == null || ended.recording !== recording) return
         ended.coach?.unbind()
         ended.device.stop()
+        cameraWatch.forget()
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         DebugLog.session = null
