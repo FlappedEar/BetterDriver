@@ -68,6 +68,13 @@ jobs:
             fi
           done
           exit $missing
+      # Review v1.34.1 F10, F16, F17: the release gate counts only complete iOS passes, files the iOS
+      # app bundles from outside ios/ start iOS CI, and the smoke job's crash finder sees an app
+      # crash in a busy log.
+      - name: CI gate self-tests
+        run: |
+          python3 .github/scripts/ios-gates-test.py
+          python3 .github/scripts/logcat-problems-test.py
       # Every Android or iOS screen and platform log tag has a row in docs/parity.md, and a row where
       # one platform lacks the feature names its Jira issue (FBBD-361).
       - name: Feature parity matrix
