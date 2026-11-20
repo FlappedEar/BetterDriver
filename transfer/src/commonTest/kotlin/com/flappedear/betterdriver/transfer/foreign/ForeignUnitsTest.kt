@@ -12,10 +12,10 @@ import kotlin.test.assertTrue
  */
 class ForeignUnitsTest {
     private class Points : ImportSink {
-        val points = ArrayList<ImportPoint>()
+        val received = ArrayList<ImportPoint>()
         override fun extras(columns: List<ExtraColumn>) = Unit
         override fun point(p: ImportPoint) {
-            points += p
+            received += p
         }
         override fun skipped() = Unit
     }
@@ -51,7 +51,7 @@ class ForeignUnitsTest {
         }
         val sink = Points()
         VboReader(fallbackEpochDay = 0).read(lines(text), sink)
-        return sink.points.single()
+        return sink.received.single()
     }
 
     private fun csv(longUnit: String, latUnit: String): ImportPoint {
@@ -62,7 +62,7 @@ class ForeignUnitsTest {
         """.trimIndent()
         val sink = Points()
         RaceChronoCsvReader.read(lines(text), sink)
-        return sink.points.single()
+        return sink.received.single()
     }
 
     private fun near(expected: Double, actual: Double, what: String) =
