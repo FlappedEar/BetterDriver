@@ -341,7 +341,7 @@ class LiveSession private constructor(
             // provisional line placed where there is none is logged (FBBD-335), as on Android.
             // The log's lines of this recording, as Android's recorder service adds them (logTo).
             val receiver = info.devices.firstOrNull().orEmpty()
-            val logs = listOf(
+            val logs = listOfNotNull(
                 LoggingListener(recording.id, receiver, info.startUtcMillis, recording::nowMicros),
                 GnssSecondLog(
                     recording.id,
@@ -350,7 +350,10 @@ class LiveSession private constructor(
                 ),
                 HeartRateLog(recording.id),
                 // The weather at the track (FBBD-403): at the first fix and every 15 minutes, as on Android.
-                recordingWeather(recording.id, recording.dir, info.startUtcMillis),
+                // None for a made-up receiver: its positions are not where the car is, so that place's
+                // weather now is not the drive's, as on Android.
+                recordingWeather(recording.id, recording.dir, info.startUtcMillis)
+                    .takeIf { receiver !in DemoReceivers },
             )
             lateinit var session: LiveSession
             val timing = SessionTiming({ TrackFiles.read(tracksDir) }, circuits, onLap = { lap, predicted ->
@@ -370,6 +373,9 @@ class LiveSession private constructor(
         }
     }
 }
+
+/** The receivers whose positions are made up, by the name the drive screen gives them. */
+private val DemoReceivers = setOf("Simulated GPS", "Demo track")
 
 /** One look at a running recording for the track screen. */
 data class LiveScreen(
