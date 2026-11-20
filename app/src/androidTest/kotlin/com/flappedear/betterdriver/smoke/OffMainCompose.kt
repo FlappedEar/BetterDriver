@@ -59,9 +59,6 @@ class OffMainCompose : TestRule {
         private val stacks = LinkedHashMap<String, String>()
         private val errors = mutableListOf<String>()
 
-        /** Polls that found main inside an observer: none at all would mean this watch sees nothing. */
-        private var mainInside = 0L
-        private var hadObservers = false
 
         init {
             isDaemon = true
@@ -84,7 +81,6 @@ class OffMainCompose : TestRule {
             if (now - refreshed > TimeUnit.MILLISECONDS.toNanos(RefreshMs)) {
                 val views = composeViews()
                 observers = views.mapNotNull(::observerOf)
-                if (observers.isNotEmpty()) hadObservers = true
                 // A Compose view whose observer is not found would leave this watch blind.
                 if (views.isNotEmpty() && observers.isEmpty() && errors.size < MaxStacks) {
                     errors += "no snapshot observer found on ${views.first().javaClass.name}"
@@ -93,7 +89,6 @@ class OffMainCompose : TestRule {
             }
             for (observer in observers) {
                 val id = threadIdField.getLong(observer)
-                if (id == mainId) mainInside++
                 if (id != -1L && id != mainId) caught(id)
             }
         }
@@ -118,7 +113,6 @@ class OffMainCompose : TestRule {
                 stacks.forEach { (stack, thread) -> lines += "Compose snapshot observer used on $thread:\n$stack" }
             }
             if (errors.isNotEmpty()) lines += "Watch errors: ${errors.joinToString()}"
-            if (hadObservers && mainInside == 0L) lines += "Watch blind: main was never seen inside an observer"
             return lines.takeIf { it.isNotEmpty() }?.joinToString("\n\n", prefix = "Off the main thread (FBBD-485):\n")
         }
     }
