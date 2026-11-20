@@ -177,7 +177,16 @@ final class BackupModel: ObservableObject {
                 let blocked = BackupBridge.backups.blocked
                 await MainActor.run {
                     self.line = Line(text: "Restore failed: \(error.localizedDescription)", failed: true)
-                    if blocked { RestoreGate.shared.block() }
+                    if blocked {
+                        RestoreGate.shared.block()
+                    } else {
+                        // A failure after the commit that was finished on the spot left the backup's
+                        // data in place: the app reads it again, so a cached setup is never saved
+                        // over the restored one. Before the commit nothing changed; reading again is harmless.
+                        SettingsModel.shared.reload()
+                        NotificationCenter.default.post(name: .tracksChanged, object: nil)
+                        SessionsModel.shared.reload()
+                    }
                 }
             }
         }
