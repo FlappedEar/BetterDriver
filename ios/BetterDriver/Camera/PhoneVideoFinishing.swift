@@ -73,7 +73,6 @@ final class PhoneVideoFinishing {
         return pending[sessionId] != nil
     }
 }
-}
 
 /// How long one phone video file records before the next one starts (FBBD-468, audit 7 Nov BD-T02).
 /// The files are not fragmented (FBBD-441), so an MP4 gets its index only when it is finished: a
