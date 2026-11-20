@@ -63,8 +63,8 @@ interface NotifyLinkIo {
 }
 
 /**
- * The life cycle of a Bluetooth LE link to one device that notifies a standard characteristic
- * (Heart Rate Measurement, Location and Speed, ...), the same on Android and the iPhone (FBBD-358):
+ * The life cycle of a Bluetooth LE link to one device that notifies (a RaceBox, Heart Rate
+ * Measurement, Location and Speed, ...), the same on Android and the iPhone (FBBD-358):
  * connect, subscribe, and reconnect after a drop, a failure, no data within the setup time of
  * connecting (15 s, 30 s on a background connection), or [silenceTimeoutMs] without data, until
  * [stop]. Setups that bring no data change how the next one connects ([SetupLadder]); after
@@ -145,6 +145,17 @@ class NotifyLinkCore(
 
     /** The setup or the connection failed for [reason]: a new one after the policy's delay. */
     fun failed(reason: String) = retry(reason)
+
+    /** When the current setup is given up if it brings no data, on the link's clock. */
+    val setupDeadline: Long get() = setupDeadlineAt
+
+    /**
+     * Gives the current setup until [untilMs] to bring data, never less than it has: a second
+     * service lookup on the same connection ([ServiceRecheck], FBBD-272) gets its own window.
+     */
+    fun extendSetup(untilMs: Long) {
+        if (connectionOpen && untilMs > setupDeadlineAt) setupDeadlineAt = untilMs
+    }
 
     /** A value came from the device. */
     fun data() {

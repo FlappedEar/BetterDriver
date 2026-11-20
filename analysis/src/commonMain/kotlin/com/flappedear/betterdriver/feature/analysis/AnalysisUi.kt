@@ -281,6 +281,8 @@ private fun note(issue: LapReferenceIssue, userReason: String): String = when {
     issue == LapReferenceIssue.GpsGap -> "GPS gap"
     issue == LapReferenceIssue.InvalidGps -> "Bad GPS"
     issue == LapReferenceIssue.ImplausibleLap -> "Not a full lap"
+    issue == LapReferenceIssue.InLap -> "In lap"
+    issue == LapReferenceIssue.OutLap -> "Out lap"
     else -> ""
 }
 

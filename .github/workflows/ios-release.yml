@@ -149,8 +149,9 @@ jobs:
         env:
           BETTERDRIVER_CORE_BUILD: release
         run: ios/generate.sh
-      # FBBD-457: ios.yml's full suite (iPad and iPhone, every UI test) ends with an "iOS passed
-      # (tree X)" job. When it passed on a recent main commit or merged pull request head that
+      # FBBD-457: ios.yml's full suite (iPad and iPhone, every UI test) ends with an "iOS full suite
+      # passed (tree X)" job (review v1.34.1 F10: a pull request run's partial "iOS passed (tree X)"
+      # no longer counts). When it passed on a recent main commit or merged pull request head that
       # differs from this commit only outside ios.yml's path filter (docs, workflows, Android-only
       # code, a version-only gradle.properties bump), the gate runs only the smoke and first-run
       # tests on this release build instead of every UI test again (~35 min). Before, the tree had

@@ -27,6 +27,12 @@ private const val WatchdogMs = 1_000L
 private const val TicksPerMinute = 60
 private const val SilenceTimeoutMs = 3_000L
 
+/** The RaceBox link's setup times (direct, background) and retries (0.5 s doubling to 3 s), as on the iPhone. */
+private const val SetupTimeoutMs = 10_000L
+private const val BackgroundSetupTimeoutMs = 30_000L
+private const val FirstRetryMs = 500L
+private const val MaxRetryMs = 3_000L
+
 /** How long the MTU answer may take before the services are looked up without it (FBBD-272). */
 private const val MtuAnswerMs = 2_000L
 
@@ -54,7 +60,9 @@ private const val Tag = "Link"
  * profile's service or does not answer in 3 s is repeated once on the same connection
  * ([ServiceRecheck]) unless the connection gave nothing to work with (no services at all, or neither
  * the MTU nor the lookup answered), which starts a new connection at once; each setup step
- * is logged.
+ * is logged. The life cycle itself (retries, setup ladder, setup and silence timeouts, the "Link"
+ * lines) is the shared [NotifyLinkCore], as on the iPhone's RaceBoxLink (FBBD-358); this class
+ * does the GATT calls, the MTU, the service recheck, the fast link and the probe.
  * No bonding is needed. Every
  * GATT call runs on one private thread; [onData] is called with the characteristic and its bytes,
  * on Android's binder thread for notifications and on the link's thread for [read] results, and
@@ -76,22 +84,25 @@ class GattLink(
     private val appContext = context.applicationContext
     private val thread = HandlerThread(profile.threadName).apply { start() }
     private val handler = Handler(thread.looper)
-    private val policy = ReconnectPolicy()
-    private val ladder = SetupLadder()
     private val recheck = ServiceRecheck()
     private val lateMtu = LateMtu()
     private val setups = BleSetups.Shared
     private val _state = MutableStateFlow<LinkState>(LinkState.Idle)
     val state: StateFlow<LinkState> = _state.asStateFlow()
 
+    /**
+     * The link's life cycle, shared with the iPhone (FBBD-358), with the RaceBox numbers: no quiet
+     * wait, as a receiver in the car is always meant to be on. Touched only on [thread].
+     */
+    private val core = NotifyLinkCore(
+        address, Gatt(), SystemClock::elapsedRealtime, ::setState,
+        SilenceTimeoutMs, SetupTimeoutMs, BackgroundSetupTimeoutMs,
+        ReconnectPolicy(FirstRetryMs, MaxRetryMs), Int.MAX_VALUE,
+    )
+
     // Touched only on [thread], except the counters written by the binder thread.
     private var gatt: BluetoothGatt? = null
     private var running = false
-    private var setupStartedAt = 0L
-
-    /** When the watchdog gives up on a setup that brought no data; a second service lookup moves it. */
-    private var setupDeadlineAt = 0L
-    private var plan = ladder.plan()
 
     /** The MTU request is out and its answer, which starts the service lookup, has not come. */
     private var awaitingMtu = false
@@ -109,10 +120,8 @@ class GattLink(
     private var handshaking = false
     private var subscribed = false
 
-    @Volatile
-    private var lastDataAt = 0L
-
-    private val received = AtomicInteger()
+    /** Notifications handed over on the binder thread and not yet counted by [core] on [thread]. */
+    private val uncounted = AtomicInteger()
 
     /**
      * Each minute: notifications as Android handed them over, before any check, and those the
@@ -139,7 +148,7 @@ class GattLink(
         handler.post {
             if (running) return@post
             running = true
-            connect()
+            core.start()
             handler.postDelayed(::watchdog, WatchdogMs)
         }
     }
@@ -149,9 +158,9 @@ class GattLink(
         handler.post {
             running = false
             handler.removeCallbacksAndMessages(null)
+            core.stop()
             closeGatt()
             setups.ended(address)
-            setState(LinkState.Idle)
             thread.quitSafely()
         }
     }
@@ -219,55 +228,46 @@ class GattLink(
         DebugLog.i(Tag, "$address fast link asked for ($reason): high priority $answer, 2M PHY requested")
     }
 
-    private fun connect() {
-        if (!running) return
-        closeGatt()
-        setState(LinkState.Connecting)
-        setupStartedAt = SystemClock.elapsedRealtime()
-        lastDataAt = 0L
-        linkTiming = "not reported"
-        gattProbe?.clear()
-        plan = ladder.plan()
-        setupDeadlineAt = setupStartedAt + plan.setupTimeoutMs
-        recheck.newConnection()
-        lateMtu.newConnection(plan.askMtu)
-        fastLinkGate.newConnection()
-        setups.started(address)
-        if (ladder.failures > 0) DebugLog.i(Tag, "$address ${ladder.failures} setup(s) without data: $plan")
-        val failure = try {
-            val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
-            if (adapter == null || !adapter.isEnabled) {
-                "bluetooth off"
-            } else {
-                gatt = adapter.getRemoteDevice(address)
-                    .connectGatt(appContext, plan.autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
-                gatt?.let(connection::open)
-                if (gatt == null) "connectGatt returned null" else null
+    /** The GATT calls the core asks for, on [thread]. */
+    private inner class Gatt : NotifyLinkIo {
+        override fun open(plan: ConnectPlan): String? {
+            closeGatt()
+            linkTiming = "not reported"
+            gattProbe?.clear()
+            recheck.newConnection()
+            lateMtu.newConnection(plan.askMtu)
+            fastLinkGate.newConnection()
+            setups.started(address)
+            return try {
+                val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
+                if (adapter == null || !adapter.isEnabled) {
+                    "bluetooth off"
+                } else {
+                    gatt = adapter.getRemoteDevice(address)
+                        .connectGatt(appContext, plan.autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
+                    gatt?.let(connection::open)
+                    if (gatt == null) "connectGatt returned null" else null
+                }
+            } catch (e: SecurityException) {
+                "no permission: ${e.message}"
+            } catch (e: IllegalArgumentException) {
+                "bad address: ${e.message}"
             }
-        } catch (e: SecurityException) {
-            "no permission: ${e.message}"
-        } catch (e: IllegalArgumentException) {
-            "bad address: ${e.message}"
         }
-        if (failure != null) retry(failure)
-    }
 
-    private fun retry(reason: String) {
-        if (!running) return
-        val failed = gatt
-        if (failed != null && lastDataAt == 0L) {
-            ladder.failed()
+        override fun close(setupFailed: Boolean) {
+            val failed = gatt
             // Android may hold a stale copy of the device's services; the next connection finds them again.
-            if (!refreshCache(failed)) DebugLog.i(Tag, "$address service cache could not be cleared")
+            if (setupFailed && failed != null && !refreshCache(failed)) {
+                DebugLog.i(Tag, "$address service cache could not be cleared")
+            }
+            closeGatt()
         }
-        closeGatt()
-        val delay = policy.nextDelayMs()
-        setState(LinkState.Reconnecting(policy.attempts, delay, reason))
-        handler.removeCallbacks(reconnect)
-        handler.postDelayed(reconnect, delay)
-    }
 
-    private val reconnect = Runnable { connect() }
+        override fun later(delayMs: Long, action: () -> Unit) {
+            handler.postDelayed(action, delayMs)
+        }
+    }
 
     private fun logMinute() {
         val raw = notified.getAndSet(0)
@@ -280,29 +280,21 @@ class GattLink(
 
     private fun notification(g: BluetoothGatt, uuid: UUID, value: ByteArray) {
         notified.incrementAndGet()
-        if (!connection.deliver(g) { data(uuid, value) }) gateDropped.incrementAndGet()
+        if (!connection.deliver(g) { data(g, uuid, value) }) gateDropped.incrementAndGet()
     }
 
     /** Once a second: report the rate, and restart a link that went silent or never finished setting up. */
     private fun watchdog() {
         if (!running) return
-        val now = SystemClock.elapsedRealtime()
-        val count = received.getAndSet(0)
-        val last = lastDataAt
-        when {
-            gatt == null -> Unit
-            last != 0L && now - last > SilenceTimeoutMs -> retry("no data for ${now - last} ms")
-            last == 0L && now > setupDeadlineAt -> retry("no data after connecting")
-            last != 0L -> {
-                policy.reset()
-                ladder.streaming()
-                setups.ended(address)
-                setState(LinkState.Streaming(count))
-                if (++watchdogTicks % TicksPerMinute == 0) logMinute()
-                gatt?.let { g ->
-                    gattProbe?.tick(g, now)
-                    if (subscribed && lateMtu.ask(now)) askMtuAgain(g)
-                }
+        core.tick()
+        // Streaming after the tick only when data flows and the link was not just restarted.
+        if (core.state is LinkState.Streaming) {
+            val now = SystemClock.elapsedRealtime()
+            setups.ended(address)
+            if (++watchdogTicks % TicksPerMinute == 0) logMinute()
+            gatt?.let { g ->
+                gattProbe?.tick(g, now)
+                if (subscribed && lateMtu.ask(now)) askMtuAgain(g)
             }
         }
         handler.postDelayed(::watchdog, WatchdogMs)
@@ -353,8 +345,9 @@ class GattLink(
 
     /** Looks up the device's services, the step after the MTU exchange (or instead of it). */
     private fun discover(g: BluetoothGatt) {
+        core.reached(NotifyStep.SERVICES)
         if (!g.discoverServices()) {
-            retry("discoverServices failed")
+            core.failed("discoverServices failed")
             return
         }
         awaitingServices = true
@@ -368,7 +361,7 @@ class GattLink(
         if (g != null && awaitingServices) {
             DebugLog.i(Tag, "$address no answer to the service lookup in $DiscoveryAnswerMs ms")
             if (recheck.startOver(servicesFound = null, mtuUnanswered = mtuUnanswered)) {
-                retry("no answer to the MTU request or the service lookup")
+                core.failed("no answer to the MTU request or the service lookup")
             } else if (!lookAgainForService(g, foundAny = false)) {
                 DebugLog.i(Tag, "$address looked twice on this connection, waiting for the setup timeout")
             }
@@ -387,9 +380,9 @@ class GattLink(
             val found = g.services.joinToString { it.uuid.toString() }
             DebugLog.i(Tag, "$address services without ${profile.service}: [$found]")
         }
-        val deadline = recheck.recheck(SystemClock.elapsedRealtime(), setupDeadlineAt) ?: return false
+        val deadline = recheck.recheck(SystemClock.elapsedRealtime(), core.setupDeadline) ?: return false
         if (!refreshCache(g)) DebugLog.i(Tag, "$address service cache could not be cleared")
-        setupDeadlineAt = deadline
+        core.extendSetup(deadline)
         DebugLog.i(Tag, "$address finding services again in ${recheck.delayMs} ms on the same connection")
         handler.postDelayed(lookAgain, recheck.delayMs)
         return true
@@ -405,8 +398,6 @@ class GattLink(
         }
     }
 
-    private fun elapsed() = SystemClock.elapsedRealtime() - setupStartedAt
-
     private fun setState(s: LinkState) {
         if (_state.value == s) return
         _state.value = s
@@ -419,14 +410,16 @@ class GattLink(
      * probe (if any).
      */
     private fun subscribeNext(g: BluetoothGatt) {
+        core.reached(NotifyStep.NOTIFICATIONS)
         val ch = toSubscribe.removeFirstOrNull()
         if (ch == null) {
             val handshake = profile.handshake
             if (handshake != null) {
                 handshaking = true
-                readChallenge(g, profile.service, handshake)?.let(::retry)
+                readChallenge(g, profile.service, handshake)?.let(core::failed)
             } else {
                 subscribed = true
+                core.reached(NotifyStep.FIRST_VALUE)
                 val now = SystemClock.elapsedRealtime()
                 fastLink(g, now, "streaming")
                 gattProbe?.start(g, now)
@@ -440,13 +433,21 @@ class GattLink(
             !enableNotifications(g, cccd) -> "enabling notifications failed"
             else -> null
         }
-        if (failure != null) retry(failure)
+        if (failure != null) core.failed(failure)
     }
 
-    private fun data(uuid: UUID, value: ByteArray) {
-        lastDataAt = SystemClock.elapsedRealtime()
-        received.incrementAndGet()
+    /**
+     * A notification of [g], on the binder thread: given on at once, and counted by [core] on the
+     * link's thread, one post for all that arrive before it runs.
+     */
+    private fun data(g: BluetoothGatt, uuid: UUID, value: ByteArray) {
         onData(uuid, value)
+        if (uncounted.getAndIncrement() == 0) {
+            handler.post {
+                val n = uncounted.getAndSet(0)
+                if (g === gatt) repeat(n) { core.data() }
+            }
+        }
     }
 
     /** Callbacks arrive on a binder thread; anything that touches [gatt] is posted to [thread]. */
@@ -456,18 +457,19 @@ class GattLink(
                 if (g != gatt) return@post
                 when {
                     status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED -> {
-                        DebugLog.i(Tag, "$address connected in ${elapsed()} ms ($plan)")
+                        core.connected()
                         g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                         // The RaceBox data message is 88 bytes; a larger MTU avoids splitting it.
                         // Reassembly copes either way, so the MTU is skipped when it held setups up.
-                        if (plan.askMtu && g.requestMtu(RequestedMtu)) {
+                        if (core.plan.askMtu && g.requestMtu(RequestedMtu)) {
+                            core.reached(NotifyStep.MTU)
                             awaitingMtu = true
                             handler.postDelayed(mtuOverdue, MtuAnswerMs)
                         } else {
                             discover(g)
                         }
                     }
-                    else -> retry("connection state $newState, status $status")
+                    else -> core.failed("connection state $newState, status $status")
                 }
             }
         }
@@ -475,7 +477,7 @@ class GattLink(
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                DebugLog.i(Tag, "$address MTU $mtu, status $status, ${elapsed()} ms after connecting began")
+                DebugLog.i(Tag, "$address MTU $mtu, status $status, ${core.elapsed()} ms after connecting began")
                 if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 lateMtu.answered()
                 mtuUnanswered = false
@@ -491,7 +493,7 @@ class GattLink(
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                DebugLog.i(Tag, "$address services found, status $status, ${elapsed()} ms after connecting began")
+                DebugLog.i(Tag, "$address services found, status $status, ${core.elapsed()} ms after connecting began")
                 // A second answer, to a lookup asked again after the first went quiet, changes nothing.
                 if (!awaitingServices) return@post
                 awaitingServices = false
@@ -499,7 +501,7 @@ class GattLink(
                 handler.removeCallbacks(lookAgain)
                 val ok = status == BluetoothGatt.GATT_SUCCESS
                 if (ok && recheck.startOver(g.services.size, mtuUnanswered)) {
-                    retry("the service lookup found no services")
+                    core.failed("the service lookup found no services")
                     return@post
                 }
                 if (ok && g.getService(profile.service) == null && lookAgainForService(g)) return@post
@@ -510,7 +512,7 @@ class GattLink(
                 }
                 toSubscribe.clear()
                 toSubscribe.addAll(subs.characteristics)
-                if (subs.failure != null) retry(subs.failure) else subscribeNext(g)
+                if (subs.failure != null) core.failed(subs.failure) else subscribeNext(g)
             }
         }
 
@@ -518,7 +520,7 @@ class GattLink(
             handler.post {
                 when {
                     g != gatt -> Unit
-                    status != BluetoothGatt.GATT_SUCCESS -> retry("enable notifications status $status")
+                    status != BluetoothGatt.GATT_SUCCESS -> core.failed("enable notifications status $status")
                     else -> subscribeNext(g)
                 }
             }
@@ -534,12 +536,15 @@ class GattLink(
                 if (g != gatt) return@post
                 val handshake = profile.handshake?.takeIf { handshaking && ch.uuid == it.characteristic }
                 if (handshake != null) {
-                    answerChallenge(g, ch, handshake, value, status)?.let(::retry)
+                    answerChallenge(g, ch, handshake, value, status)?.let(core::failed)
                     return@post
                 }
                 val ok = status == BluetoothGatt.GATT_SUCCESS
                 // A read asked for with read(); never one of the probe's Device Information reads.
-                if (ok && ch.uuid in profile.notify) data(ch.uuid, value)
+                if (ok && ch.uuid in profile.notify) {
+                    onData(ch.uuid, value)
+                    core.data()
+                }
                 if (ok) gattProbe?.deviceInfo(ch.uuid, value)
                 gattProbe?.next(g, SystemClock.elapsedRealtime())
             }
@@ -560,11 +565,12 @@ class GattLink(
                 when {
                     g != gatt -> Unit
                     !handshaking || ch.uuid != profile.handshake?.characteristic -> gattProbe?.next(g, now)
-                    status != BluetoothGatt.GATT_SUCCESS -> retry("handshake write status $status")
+                    status != BluetoothGatt.GATT_SUCCESS -> core.failed("handshake write status $status")
                     else -> {
                         // Answered: the device starts streaming. Then the diagnostics reads, if any.
                         handshaking = false
                         subscribed = true
+                        core.reached(NotifyStep.FIRST_VALUE)
                         fastLink(g, now, "streaming")
                         gattProbe?.start(g, now)
                     }

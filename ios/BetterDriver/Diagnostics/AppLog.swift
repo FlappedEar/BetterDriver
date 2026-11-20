@@ -14,6 +14,9 @@ import os
 enum AppLog {
     static let shared = LogWriter(dir: AppFolders.base.appendingPathComponent("logs", isDirectory: true))
 
+    /// The system log subsystem the app's lines are mirrored under.
+    static let subsystem = "com.flappedear.betterdriver"
+
     static func d(_ tag: String, _ message: String) { shared.write("D", tag, message) }
     static func i(_ tag: String, _ message: String) { shared.write("I", tag, message) }
     static func w(_ tag: String, _ message: String) { shared.write("W", tag, message) }
@@ -101,7 +104,9 @@ final class LogWriter: @unchecked Sendable {
             date: Date(), uptimeMicros: LogLineFormat.uptimeMicros(), pid: pid, thread: LogLineFormat.threadName(),
             level: level, tag: tag, session: named ?? session, message: message
         )
-        if echo { Logger(subsystem: "com.flappedear.betterdriver", category: tag).log("\(message, privacy: .public)") }
+        // Private in the system log (review v1.34.1 F14, FBBD-483): lines carry positions and heart
+        // rate, which stay in the app's own log, where Clear log removes them; a debugger still sees them.
+        if echo { Logger(subsystem: AppLog.subsystem, category: tag).log("\(message, privacy: .private)") }
         queue.async { self.append(line + "\n") }
     }
 
@@ -137,15 +142,28 @@ final class LogWriter: @unchecked Sendable {
         }
     }
 
-    /// Deletes the log; the next line starts it again. Only on the user's say-so.
+    /// Deletes the log; the next line starts it again. Only on the user's say-so. The time of the
+    /// clear is kept, so a shared log's system log starts after it too (review v1.34.1 F14, FBBD-483).
     func clear() {
         queue.sync {
             try? handle?.close()
             handle = nil
             files().forEach { try? FileManager.default.removeItem(at: $0) }
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? Data(String(Date().timeIntervalSince1970).utf8).write(to: clearMark, options: .atomic)
         }
         write("I", "App", "log cleared")
     }
+
+    /// When the log was last cleared; nil if never.
+    var clearedAt: Date? {
+        guard let text = try? String(contentsOf: clearMark, encoding: .utf8),
+              let seconds = TimeInterval(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    // Not a .log file: never shared, never removed by a clear.
+    private var clearMark: URL { dir.appendingPathComponent("cleared-at") }
 
     private func append(_ text: String) {
         do {

@@ -1,3 +1,4 @@
+import OSLog
 import XCTest
 import BetterDriverCore
 @testable import BetterDriver
@@ -90,6 +91,53 @@ final class AppLogTests: XCTestCase {
         for name in ["device.txt", "oslog.txt", log.file.lastPathComponent] {
             XCTAssertNotNil(bytes.range(of: Data(name.utf8)), "no \(name) in the zip")
         }
+    }
+
+    /// Review v1.34.1 F14 (FBBD-483): a clear is remembered, so the next share starts after it.
+    func testAClearIsRemembered() {
+        let log = LogWriter(dir: dir, echo: false)
+        XCTAssertNil(log.clearedAt)
+        let before = Date()
+        log.clear()
+        let at = LogWriter(dir: dir, echo: false).clearedAt
+        XCTAssertNotNil(at)
+        XCTAssertGreaterThanOrEqual(at?.timeIntervalSince1970 ?? 0, before.timeIntervalSince1970 - 0.001)
+        XCTAssertFalse(log.files().contains { $0.lastPathComponent == "cleared-at" }, "the mark is never shared")
+    }
+
+    /// Review v1.34.1 F14 (FBBD-483): log a value, clear, share without a restart: the shared system log
+    /// has nothing from before the clear, and none of the app's own (private) lines.
+    func testTheSharedSystemLogStartsAtTheClear() throws {
+        let mark = UUID().uuidString
+        let other = Logger(subsystem: "com.flappedear.betterdriver.tests", category: "F14")
+        other.log("before \(mark, privacy: .public)")
+        Thread.sleep(forTimeInterval: 0.2)
+        let cleared = Date()
+        Thread.sleep(forTimeInterval: 0.2)
+        other.log("after \(mark, privacy: .public)")
+        Logger(subsystem: AppLog.subsystem, category: "F14").log("own \(mark, privacy: .public)")
+        var text = ""
+        for _ in 0..<20 where !text.contains("after \(mark)") {
+            text = LogShare.systemLog(since: cleared)
+            if !text.contains("after \(mark)") { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        XCTAssertTrue(text.contains("after \(mark)"), "the line after the clear is shared")
+        XCTAssertFalse(text.contains("before \(mark)"), "a line from before the clear was shared")
+        XCTAssertFalse(text.contains("own \(mark)"), "the app's own lines are in its log, not here")
+    }
+
+    /// Review v1.34.1 F15 (FBBD-483): the share keeps the newest lines in a fixed ring.
+    func testTheSystemLogKeepsOnlyTheNewestLines() {
+        var lines = NewestLogLines(capacity: 3)
+        XCTAssertEqual(lines.ordered, [])
+        lines.append("1")
+        lines.append("2")
+        XCTAssertEqual(lines.ordered, ["1", "2"])
+        for i in 3...10 { lines.append("\(i)") }
+        XCTAssertEqual(lines.ordered, ["8", "9", "10"])
+        var none = NewestLogLines(capacity: 0)
+        none.append("x")
+        XCTAssertEqual(none.ordered, [])
     }
 
     /// The load line (FBBD-281): the process's counters read, and two samples a minute apart make the

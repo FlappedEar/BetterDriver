@@ -101,7 +101,8 @@ internal class CpuLock(context: Context) {
  */
 internal class LiveClients(
     private val state: () -> Bundle,
-    private val onVideo: (Bundle) -> Unit = {},
+    /** A camera report, with the camera's messenger when it said who sent it. */
+    private val onVideo: (Bundle, Messenger?) -> Unit = { _, _ -> },
     private val onCoach: (Int, Bundle) -> Unit = { _, _ -> },
     private val onUi: (Bundle) -> Unit = {},
 ) {
@@ -120,7 +121,7 @@ internal class LiveClients(
         val client = msg.replyTo
         return when {
             msg.what == RecorderProtocol.MSG_VIDEO -> {
-                onVideo(msg.data)
+                onVideo(msg.data, msg.replyTo)
                 true
             }
             msg.what == RecorderProtocol.MSG_COACH_EVENT || msg.what == RecorderProtocol.MSG_COACH_STATUS -> {

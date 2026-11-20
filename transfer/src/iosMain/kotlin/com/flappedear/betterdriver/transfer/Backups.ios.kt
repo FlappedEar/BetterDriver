@@ -23,6 +23,13 @@ import platform.Foundation.timeIntervalSince1970
 class IosBackups(private val base: String) {
     private val staging = "$base/backup-staging"
     private val restorer = BackupRestorer(base, staging)
+    private val gate = UnfinishedRestore(restorer)
+
+    /**
+     * True while a restore that failed after its commit is not finished (review v1.34.1 F2): the app
+     * shows only the unfinished-restore screen, nothing reads or writes the data.
+     */
+    val blocked: Boolean get() = gate.blocked
 
     /** Sessions "Include sessions" takes and their bytes without video. */
     fun sessionsSize(): BackupSessionsSize = BackupContents.sessionsSize(base)
@@ -97,28 +104,38 @@ class IosBackups(private val base: String) {
 
     /**
      * Restores [backup], merged or replacing ([replace]). Refused while a session records, checked
-     * again just before anything changes.
+     * again just before anything changes. A failure after the commit is finished once more at once;
+     * if that fails too, [blocked] stays true until [finishOrClear] completes it.
      */
     @Throws(Exception::class)
+    @Suppress("TooGenericExceptionCaught") // Any failure is passed on after the finishing try.
     fun restore(backup: StagedBackup, replace: Boolean): RestoreResult {
         refuseWhileRecording()
-        return restorer.restore(
-            backup,
-            if (replace) RestoreMode.REPLACE else RestoreMode.MERGE,
-            beforeCommit = ::refuseWhileRecording,
-        )
+        try {
+            return restorer.restore(
+                backup,
+                if (replace) RestoreMode.REPLACE else RestoreMode.MERGE,
+                beforeCommit = ::refuseWhileRecording,
+            )
+        } catch (e: Throwable) {
+            if (restorer.pending) gate.finish()
+            throw e
+        }
     }
 
     /** Drops a checked backup that will not be restored. */
     fun discard(backup: StagedBackup) = restorer.discard(backup)
 
     /**
-     * At app start, before anything reads the data: finishes a restore the app was stopped in after
-     * its commit, else removes what an unfinished one left.
+     * At app start, before anything reads the data, and from the unfinished-restore screen's Try
+     * again: finishes a restore the app was stopped in after its commit (a few tries), else removes
+     * what an unfinished one left. Returns whether the data may be used; false leaves [blocked] true.
+     * [log] gets each failed try.
      */
-    @Throws(Exception::class)
-    fun finishOrClear() {
-        if (!restorer.finishPending()) restorer.clearStaging()
+    fun finishOrClear(log: (String) -> Unit = {}): Boolean {
+        val usable = gate.finish { attempt, e -> log("could not finish the restore (try $attempt): ${e.message}") }
+        if (usable) restorer.clearStaging()
+        return usable
     }
 
     private fun refuseWhileRecording() {

@@ -226,9 +226,13 @@ class RecorderTest {
         repeat(50) { rec.submit(set(it)) }
         val took = begun.elapsedNow().inWholeMilliseconds
         assertTrue(took < 200, "50 submits took $took ms with 50 ms writes")
-        assertTrue(rec.queuedForTest > 0, "the writer is still behind")
-        // The stop writes what the queue took, then ends.
+        // The stop writes what the queue took, then ends: over 2 s of writes were still to come. Not
+        // the queue's size (FBBD-465): a writer that woke after the last submit has taken all 50 into
+        // its batch and left the queue empty while it writes them (CI, 2026-11-20).
+        val stopping = TimeSource.Monotonic.markNow()
         assertTrue(rec.stop())
+        val stopTook = stopping.elapsedNow().inWholeMilliseconds
+        assertTrue(took + stopTook >= 2_000 && stopTook >= 1_500, "the writer was not behind: the stop took $stopTook ms")
         assertEquals((0 until 50).map(::set), store.read(rec.id).sampleSets)
         assertTrue(rec.writerText.startsWith("writer: max_wait_ms="), rec.writerText)
         assertTrue(rec.writerText.endsWith("dropped=0"), rec.writerText)

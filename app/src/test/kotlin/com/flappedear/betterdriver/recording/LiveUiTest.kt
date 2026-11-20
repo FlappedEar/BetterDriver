@@ -276,6 +276,31 @@ class LiveUiTest {
         assertEquals("142", stillOk.tiles.first()?.value)
     }
 
+    /** FBBD-470: a phone camera fault is said on the alert line, as on the iPhone (FBBD-468). */
+    @Test
+    fun aPhoneCameraFaultRaisesThePhoneVideoAlert() {
+        fun alert(camera: StatusText?) =
+            liveTrackState(RecorderState(connected = true, live = live, camera = camera), tiles, true).alert
+        val retrying = alert(StatusText("Restarting", ok = false))
+        assertEquals("Phone video stopped", retrying?.title)
+        assertEquals("Retrying, data still recording", retrying?.detail)
+        assertEquals(AlertLevel.Warning, retrying?.level)
+        assertEquals("Off this session, data still recording", alert(StatusText("Camera error", ok = false))?.detail)
+        assertEquals("Off this session, data still recording", alert(StatusText("Not supported", ok = false))?.detail)
+        // Recording, stepped down, or stopped on purpose: no fault alert.
+        assertNull(alert(StatusText("1080p · 60", ok = true)))
+        assertNull(alert(StatusText("720p · 30", ok = false)))
+        assertNull(alert(StatusText("Stopped: too hot", ok = false)))
+        assertNull(alert(null))
+        // GNSS loss outranks it, as on the iPhone.
+        val lost = RecorderState(
+            connected = true,
+            live = live.copy(lastFixAgeMicros = 1_100_000),
+            camera = StatusText("Restarting", ok = false),
+        )
+        assertEquals("GNSS signal lost", liveTrackState(lost, tiles, true).alert?.title)
+    }
+
     @Test
     fun sessionLines() {
         val s = SessionSummary(
