@@ -84,7 +84,7 @@ class LiveSessionTest {
     /** The shared core writes the recording's lines into the app's log as on Android (FBBD-356). */
     @Test
     fun theLogGetsTheSameRecordingLinesAsAndroid() {
-        val lines = LogLines()
+        val lines = SessionLogLines()
         IosLog.lines = lines::add
         try {
             val session = LiveSession.start(sessions, tracks, circuits, info.copy(devices = listOf("RaceBox Micro 1")), false)
@@ -108,7 +108,7 @@ class LiveSessionTest {
      */
     @Test
     fun theStopLogsTheQualityReportAndTheCardReadsIt() {
-        val lines = LogLines()
+        val lines = SessionLogLines()
         IosLog.lines = lines::add
         try {
             val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
@@ -216,7 +216,7 @@ class LiveSessionTest {
     /** FBBD-64: the banner's show and clear are session events, as on Android, so ui.banner_show can judge it. */
     @Test
     fun theGnssBannerIsLoggedAsOnAndroid() {
-        val lines = LogLines()
+        val lines = SessionLogLines()
         IosLog.lines = lines::add
         val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
         try {
@@ -256,7 +256,7 @@ class LiveSessionTest {
     /** A recording the recorder ends itself (storage full) logs its quality report too, as on Android. */
     @Test
     fun aStorageFullEndLogsTheQualityReport() {
-        val lines = LogLines()
+        val lines = SessionLogLines()
         IosLog.lines = lines::add
         try {
             // Any disk is below this stop level: the first sample ends the recording.
@@ -328,12 +328,13 @@ class LiveSessionTest {
 }
 
 /**
- * The app log's lines a test catches (FBBD-465). The shared core logs from its own threads (the
+ * The app log's lines with their level and session, as IosLog.lines hands them (FBBD-465); see LogLines
+ * for the tag and message only. The shared core logs from its own threads (the
  * quality report is made off the caller's), so a plain list read by the test while one is added
  * threw ConcurrentModificationException on a slow CI runner. Lines are only added: each read sees
  * the lines logged up to it.
  */
-private class LogLines : AbstractList<List<String?>>() {
+private class SessionLogLines : AbstractList<List<String?>>() {
     private val lock = NSLock()
     private val all = ArrayList<List<String?>>()
 
