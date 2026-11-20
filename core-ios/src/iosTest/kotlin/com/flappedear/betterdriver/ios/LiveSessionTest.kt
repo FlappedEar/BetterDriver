@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackLine
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLock
 import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUTF8StringEncoding
@@ -83,8 +84,8 @@ class LiveSessionTest {
     /** The shared core writes the recording's lines into the app's log as on Android (FBBD-356). */
     @Test
     fun theLogGetsTheSameRecordingLinesAsAndroid() {
-        val lines = mutableListOf<List<String?>>()
-        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        val lines = SessionLogLines()
+        IosLog.lines = lines::add
         try {
             val session = LiveSession.start(sessions, tracks, circuits, info.copy(devices = listOf("RaceBox Micro 1")), false)
             for (n in 0L..(25 * 3)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
@@ -107,8 +108,8 @@ class LiveSessionTest {
      */
     @Test
     fun theStopLogsTheQualityReportAndTheCardReadsIt() {
-        val lines = mutableListOf<List<String?>>()
-        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        val lines = SessionLogLines()
+        IosLog.lines = lines::add
         try {
             val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
             drive(session)
@@ -215,8 +216,8 @@ class LiveSessionTest {
     /** FBBD-64: the banner's show and clear are session events, as on Android, so ui.banner_show can judge it. */
     @Test
     fun theGnssBannerIsLoggedAsOnAndroid() {
-        val lines = mutableListOf<List<String?>>()
-        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        val lines = SessionLogLines()
+        IosLog.lines = lines::add
         val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
         try {
             val screen = session.screen()
@@ -255,8 +256,8 @@ class LiveSessionTest {
     /** A recording the recorder ends itself (storage full) logs its quality report too, as on Android. */
     @Test
     fun aStorageFullEndLogsTheQualityReport() {
-        val lines = mutableListOf<List<String?>>()
-        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        val lines = SessionLogLines()
+        IosLog.lines = lines::add
         try {
             // Any disk is below this stop level: the first sample ends the recording.
             val config = RecorderConfig(storageStopBytes = Long.MAX_VALUE)
@@ -323,5 +324,39 @@ class LiveSessionTest {
         for (n in 0L..(25 * 100)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
         assertEquals(0L, session.fixAgeMicros)
         session.stop()
+    }
+}
+
+/**
+ * The app log's lines with their level and session, as IosLog.lines hands them (FBBD-465); see LogLines
+ * for the tag and message only. The shared core logs from its own threads (the
+ * quality report is made off the caller's), so a plain list read by the test while one is added
+ * threw ConcurrentModificationException on a slow CI runner. Lines are only added: each read sees
+ * the lines logged up to it.
+ */
+private class SessionLogLines : AbstractList<List<String?>>() {
+    private val lock = NSLock()
+    private val all = ArrayList<List<String?>>()
+
+    fun add(level: String, tag: String, message: String, session: String?) {
+        lock.lock()
+        try {
+            all += listOf(level, tag, message, session)
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override val size: Int get() = locked { all.size }
+
+    override fun get(index: Int): List<String?> = locked { all[index] }
+
+    private fun <T> locked(block: () -> T): T {
+        lock.lock()
+        try {
+            return block()
+        } finally {
+            lock.unlock()
+        }
     }
 }

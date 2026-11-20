@@ -90,7 +90,8 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         )
         val root = File(staging, "import-" + UUID.randomUUID())
         val writer = ForeignSessionWriter(
-            JvmSessionFiles(SessionStore(root)),
+            // Named in the list's zone: the staged session keeps its id when it is added.
+            JvmSessionFiles(SessionStore(root, store.zone)),
             ImportOrigin(format.label, fileName),
             c.tracks,
             c.directory,

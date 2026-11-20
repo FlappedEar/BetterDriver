@@ -29,18 +29,27 @@ class GoProHttp(
 
     /**
      * Downloads [file] to [target] through a `.part` file that is renamed when complete, so a
-     * cut-off download never looks finished. [onProgress] gets bytes so far and the total.
+     * cut-off download never looks finished. [onProgress] gets bytes so far and the total. On any
+     * failure (HTTP error, a read or write that throws, a short file, a failed rename) the `.part`
+     * file is deleted and an existing complete [target] is left as it was (review v1.34.1 F18).
      */
     fun download(file: MediaFile, target: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
         val part = File(target.parentFile, target.name + ".part")
-        val total = get("/videos/DCIM/${file.path}").use { input ->
-            part.outputStream().use { out -> copy(input, out) { onProgress(it, file.size) }.also { out.fd.sync() } }
+        var published = false
+        try {
+            val total = get("/videos/DCIM/${file.path}").use { input ->
+                part.outputStream().use { out ->
+                    copy(input, out) { onProgress(it, file.size) }.also { out.fd.sync() }
+                }
+            }
+            if (file.size > 0 && total != file.size) {
+                throw IOException("${file.name}: got $total of ${file.size} bytes")
+            }
+            if (!part.renameTo(target)) throw IOException("could not rename ${part.name}")
+            published = true
+        } finally {
+            if (!published) part.delete()
         }
-        if (file.size > 0 && total != file.size) {
-            part.delete()
-            throw IOException("${file.name}: got $total of ${file.size} bytes")
-        }
-        if (!part.renameTo(target)) throw IOException("could not rename ${part.name}")
     }
 
     private fun copy(input: InputStream, out: OutputStream, onProgress: (Long) -> Unit): Long {

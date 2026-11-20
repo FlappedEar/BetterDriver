@@ -23,7 +23,8 @@ concurrency:
 
 jobs:
   # What changed, and the source tree this run checks. A change to documentation
-  # only (docs/ and Markdown files outside src/) skips the emulator jobs.
+  # (docs/ and Markdown files outside src/) and the iPhone/iPad app's own folder (ios/,
+  # which no Android module builds; ios.yml tests it) only skips the emulator jobs.
   changes:
     name: Changes
     runs-on: ubuntu-latest
@@ -46,10 +47,10 @@ jobs:
             && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             files=$(git diff --name-only "$BASE" HEAD)
             echo "$files"
-            if [ -n "$files" ] && ! grep -vE '^docs/|^([^/]+/)*[^/]+\.md$' <<<"$files" | grep -q . \
-              && ! grep -E '\.md$' <<<"$files" | grep -q '/src/'; then
+            if [ -n "$files" ] && ! grep -vE '^docs/|^ios/|^([^/]+/)*[^/]+\.md$' <<<"$files" | grep -q . \
+              && ! grep -E '\.md$' <<<"$files" | grep -v '^ios/' | grep -q '/src/'; then
               app=false
-              echo "::notice title=Docs only::Only documentation changed; the emulator jobs are skipped."
+              echo "::notice title=No Android change::Only documentation or the iOS app (ios/) changed; the emulator jobs are skipped."
             fi
           fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
@@ -67,6 +68,13 @@ jobs:
             fi
           done
           exit $missing
+      # Review v1.34.1 F10, F16, F17: the release gate counts only complete iOS passes, files the iOS
+      # app bundles from outside ios/ start iOS CI, and the smoke job's crash finder sees an app
+      # crash in a busy log.
+      - name: CI gate self-tests
+        run: |
+          python3 .github/scripts/ios-gates-test.py
+          python3 .github/scripts/logcat-problems-test.py
       # Every Android or iOS screen and platform log tag has a row in docs/parity.md, and a row where
       # one platform lacks the feature names its Jira issue (FBBD-361).
       - name: Feature parity matrix
@@ -364,7 +372,7 @@ jobs:
   # One result for the whole run, named after the source tree it checked. A
   # release of a commit with that same tree (a pull request squash-merged while
   # up to date with main) reuses this result instead of waiting for main's run
-  # (release.yml, ci-green). Skipped emulator jobs (docs only) count as passed.
+  # (release.yml, ci-green). Skipped emulator jobs (docs or iOS only) count as passed.
   passed:
     name: CI passed (tree ${{ needs.changes.outputs.tree }})
     needs: [changes, check, emulator, replay]
