@@ -46,6 +46,8 @@ final class PhoneVideoFinishing {
 
     private let lock = NSLock()
     private var pending: [String: Int] = [:]
+    /// Called once each when the session's last file is finished ([whenDone]).
+    private var waiters: [String: [() -> Void]] = [:]
 
     /// A file of session [sessionId] started finishing.
     func begin(sessionId: String) {
@@ -60,8 +62,10 @@ final class PhoneVideoFinishing {
         lock.lock()
         let left = max((pending[sessionId] ?? 1) - 1, 0)
         pending[sessionId] = left == 0 ? nil : left
+        let done = left == 0 ? waiters.removeValue(forKey: sessionId) ?? [] : []
         lock.unlock()
         guard left == 0 else { return false }
+        done.forEach { $0() }
         DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
         return true
     }
@@ -71,6 +75,39 @@ final class PhoneVideoFinishing {
         lock.lock()
         defer { lock.unlock() }
         return pending[sessionId] != nil
+    }
+
+    /// Runs [done] once no file of session [sessionId] is being finished: now if none is.
+    func whenDone(sessionId: String, _ done: @escaping () -> Void) {
+        lock.lock()
+        guard pending[sessionId] != nil else {
+            lock.unlock()
+            done()
+            return
+        }
+        waiters[sessionId, default: []].append(done)
+        lock.unlock()
+    }
+
+    /// Waits until every file of session [sessionId] is finished, at most [timeout] seconds; true when
+    /// they are (review v1.34.1 F8: Share copied a phone MP4 still without its index right after STOP).
+    func finished(sessionId: String, timeout: TimeInterval) async -> Bool {
+        if !busy(sessionId: sessionId) { return true }
+        return await withCheckedContinuation { (answer: CheckedContinuation<Bool, Never>) in
+            let once = NSLock()
+            var answered = false
+            let reply = { (value: Bool) in
+                once.lock()
+                let first = !answered
+                answered = true
+                once.unlock()
+                if first { answer.resume(returning: value) }
+            }
+            whenDone(sessionId: sessionId) { reply(true) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                reply(!self.busy(sessionId: sessionId))
+            }
+        }
     }
 }
 
