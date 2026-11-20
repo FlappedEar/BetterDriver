@@ -250,7 +250,9 @@ jobs:
           exit $status
       # A tar keeps the app's symlinks and executable bits, which an artifact's zip drops.
       - name: Pack the build
-        run: tar -cf build/products.tar -C build/dd/Build Products
+        run: |
+          tar -cf build/products.tar -C build/dd/Build Products
+          ls -l build/products.tar
       - uses: actions/upload-artifact@v4
         with:
           name: ios-build
@@ -294,8 +296,27 @@ jobs:
         with:
           name: ios-build
           path: build
+      # FBBD-465: twice in 15 runs the download came short ("Truncated tar archive", 2026-11-07 and
+      # 2026-11-15, GitHub's runners) and the job failed before any test. Downloaded again once.
       - name: Unpack the build
+        id: unpack
+        continue-on-error: true
         run: |
+          ls -l build/products.tar
+          mkdir -p build/dd/Build
+          tar -xf build/products.tar -C build/dd/Build
+      - name: Download the build again
+        if: steps.unpack.outcome == 'failure'
+        run: rm -rf build
+      - if: steps.unpack.outcome == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-build
+          path: build
+      - name: Unpack the build again
+        if: steps.unpack.outcome == 'failure'
+        run: |
+          ls -l build/products.tar
           mkdir -p build/dd/Build
           tar -xf build/products.tar -C build/dd/Build
       # The full log goes to the artifact; the step log keeps the errors and test results.
