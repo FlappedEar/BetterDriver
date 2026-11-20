@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.recorder.live.GPoint
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.recorder.video.PhoneVideoAlert
 import com.flappedear.betterdriver.setup.TrackPage
 import com.flappedear.betterdriver.setup.TrackScreens
 import java.time.Instant
@@ -104,9 +105,12 @@ private fun trackAlert(state: RecorderState): TrackAlert? {
         TrackAlert("Not recording", state.error ?: "Hold anywhere to go back", AlertLevel.Critical)
     }
     val storageLow = live.storageLowBytes
+    val videoFault = PhoneVideoAlert.detail(state.camera?.text)
     return when {
         live.gnss == GnssState.Lost -> TrackAlert("GNSS signal lost", "Recording continues", AlertLevel.Critical)
         storageLow != null -> TrackAlert("Storage low", "${storageLow / BytesPerMb} MB free", AlertLevel.Warning)
+        // The phone records no video because of a fault (FBBD-470, as the iPhone's FBBD-468).
+        videoFault != null -> TrackAlert(PhoneVideoAlert.TITLE, videoFault, AlertLevel.Warning)
         else -> null
     }
 }

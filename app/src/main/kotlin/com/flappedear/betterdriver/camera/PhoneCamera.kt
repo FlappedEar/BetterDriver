@@ -43,6 +43,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.recorder.video.PhoneFileRetry
+import com.flappedear.betterdriver.recorder.video.PhoneVideoAlert
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoSink
 import com.flappedear.betterdriver.recorder.video.VideoSource
@@ -79,8 +81,7 @@ private const val FrameLogMs = 60_000L
 
 /** How often an own-encoder recording reports progress; [syncDue] keeps it to about once a second. */
 private const val WideSyncMs = 250L
-private const val RetryDelayMs = 3_000L
-private const val MaxRestarts = 3
+private const val MillisPerSecond = 1_000.0
 private const val ForecastSeconds = 10
 
 /** Thermal readings go to the debug log at least this often, and at every status change (FBBD-146). */
@@ -107,7 +108,9 @@ internal const val MaxFileBytes = 4_000_000_000L
  *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
  * after an error ends the file and starts the next one, so a file always has one resolution and frame
- * rate. Video stops only at Android's thermal shutdown, which ends the file first (ThermalPolicy).
+ * rate. Video stops only at Android's thermal shutdown, which ends the file first (ThermalPolicy), or
+ * when no ladder step can start. A file that fails while recording never ends the session's video: the
+ * next file starts after [PhoneFileRetry]'s wait, the same rule as the iPhone (FBBD-442, FBBD-441).
  * Every fault ends in [VideoSink.stopped] and [VideoSink.status];
  * nothing here throws, and nothing here can reach the recorder process.
  *
@@ -148,7 +151,11 @@ class PhoneCamera(
     /** The own encoder failed 1080p or 4K this session: CameraX records them from then on. */
     private var ownRefused = false
     private var fileIndex = 0
-    private var restarts = 0
+    /** When the next file may start after failed ones (FBBD-442); seconds on [elapsedSeconds]. */
+    private val retry = PhoneFileRetry()
+
+    /** [elapsedSeconds] when the current file began, for [retry]'s steady-file rule. */
+    private var fileStartedAt = 0.0
     private var stopping = false
 
     /** Called once after a [stop] with nothing left to finish (audit A13). */
@@ -271,7 +278,7 @@ class PhoneCamera(
                 if (stopping) return@addListener
                 steps = supportedSteps(p)
                 if (steps.isEmpty()) {
-                    sink.status("Not supported", ok = false)
+                    sink.status(PhoneVideoAlert.STATUS_NOT_SUPPORTED, ok = false)
                     return@addListener
                 }
                 policy = ThermalPolicy()
@@ -295,7 +302,7 @@ class PhoneCamera(
                     begin(0)
                 }
             } catch (e: Exception) {
-                sink.status("Camera error", ok = false)
+                sink.status(PhoneVideoAlert.STATUS_ERROR, ok = false)
                 DebugLog.w(Tag, "camera provider failed", e)
             }
         }, executor)
@@ -374,6 +381,7 @@ class PhoneCamera(
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             fileStarted = false
+            fileStartedAt = elapsedSeconds()
             var lastSync: Long? = null
             recording = pending.start(executor) { e ->
                 when (e) {
@@ -399,7 +407,7 @@ class PhoneCamera(
             DebugLog.w(Tag, "could not start ${step.label}", e)
             policy.failed(stepIndex)
             boundStep = -1 // whatever is bound may be the fault: the next try binds afresh
-            if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
+            if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail(PhoneVideoAlert.STATUS_ERROR)
         }
     }
 
@@ -452,6 +460,7 @@ class PhoneCamera(
         val file = File(dir, VideoFiles.liveName(camera, fileIndex))
         endReason = "user"
         fileStarted = false
+        fileStartedAt = elapsedSeconds()
         DebugLog.i(Tag, "own encoder: ${target.label}, ${target.bitrate} bit/s, rotation ${target.orientation}")
         val listener = WideFiles(step, stepIndex)
         val w = WideRecorder(context, cameraIdOf(info), target, audio, realtimeFrames, listener, frames)
@@ -508,7 +517,7 @@ class PhoneCamera(
                 stopping -> Unit
                 // Stopped while still opening (thermal shutdown): the stop's reason, not a camera fault.
                 endReason != "user" -> fail(stoppedText(endReason))
-                else -> fail("Camera error")
+                else -> fail(PhoneVideoAlert.STATUS_ERROR)
             }
             stoppedIfIdle()
         }
@@ -525,7 +534,7 @@ class PhoneCamera(
                 return
             }
             policy.failed(stepIndex)
-            if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
+            if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail(PhoneVideoAlert.STATUS_ERROR)
         }
 
         /** About once a second, as CameraX's status events: media recorded so far and the newest frame. */
@@ -578,13 +587,15 @@ class PhoneCamera(
                 unbindOwn(provider, bound)
                 sink.status(stoppedText(endReason), ok = false)
             }
-            error != null && restarts < MaxRestarts -> {
-                restarts++
+            // Never gives up (FBBD-442): the next file after [retry]'s wait, as on the iPhone (FBBD-441).
+            error != null -> {
+                retry.failed(startedAt = fileStartedAt, now = elapsedSeconds())
+                DebugLog.i(Tag, "failed files ${retry.total}, next file in ${retry.wait.toInt()} s")
                 boundStep = -1 // after an error the camera is closed and opened again
-                sink.status("Restarting", ok = false)
-                main.postDelayed({ if (!stopping) begin(policy.current) }, RetryDelayMs)
+                sink.status(PhoneVideoAlert.STATUS_RESTARTING, ok = false)
+                main.postDelayed({ if (!stopping) begin(policy.current) }, (retry.wait * MillisPerSecond).toLong())
             }
-            else -> fail("Camera error")
+            else -> fail(PhoneVideoAlert.STATUS_ERROR)
         }
     }
 
@@ -595,6 +606,8 @@ class PhoneCamera(
         threadCpu.line(SystemClock.elapsedRealtime())?.let { DebugLog.i(Tag, it) }
         wide?.timingLine()?.let { DebugLog.i(Tag, it) }
     }
+
+    private fun elapsedSeconds() = SystemClock.elapsedRealtime() / MillisPerSecond
 
     private fun fail(text: String) {
         unbindOwn(provider, bound)

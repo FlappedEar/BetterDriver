@@ -10,6 +10,10 @@ import sys
 
 APP = "com.flappedear.betterdriver"
 CONTEXT_LINES = 4
+# How far past a report's first line its own lines are looked for. Other threads and processes log in
+# between (a busy compositor can put several lines between FATAL EXCEPTION and its Process: line), so
+# the report's lines are picked by pid/tid within this many records (review v1.34.1 F17).
+SEARCH_LINES = 400
 LINE_CHARS = 300
 
 
@@ -29,11 +33,32 @@ def thread(line):
 
 
 def follow(lines, i, count):
-    same = [line for line in lines[i + 1:i + 1 + count] if line.strip() and thread(line) == thread(lines[i])]
-    return [message(line) for line in same]
+    """The next [count] lines of the same pid/tid as lines[i], skipping other threads' lines."""
+    same = []
+    for line in lines[i + 1:i + 1 + SEARCH_LINES]:
+        if line.strip() and thread(line) == thread(lines[i]):
+            same.append(message(line))
+            if len(same) == count:
+                break
+    return same
+
+
+def started(lines):
+    """Process names by pid, from ActivityManager's "Start proc 1234:com.example/u0a1" lines."""
+    names = {}
+    for line in lines:
+        if m := re.search(r"Start proc (\d+):([^\s/]+)", line):
+            names[m.group(1)] = m.group(2)
+    return names
+
+
+def pid(line):
+    cols = line.split()
+    return cols[2] if len(cols) > 2 else None
 
 
 lines = open(sys.argv[1], errors="replace").read().splitlines()
+names = started(lines)
 app_problems = 0
 for i, line in enumerate(lines):
     text = message(line)
@@ -43,7 +68,8 @@ for i, line in enumerate(lines):
     if "FATAL EXCEPTION" in text:
         after = follow(lines, i, CONTEXT_LINES)
         named = next((m for m in after if m.startswith("Process: ")), "")
-        process = named.removeprefix("Process: ").split(",")[0]
+        # The Process: line names the crashed process; without it, the pid ActivityManager started.
+        process = named.removeprefix("Process: ").split(",")[0] or names.get(pid(line), "unknown")
         kind = "crashed"
         detail = [m for m in after if not m.startswith("Process: ")][:2]
     elif m := re.match(r"ANR in (\S+)", text):

@@ -26,8 +26,13 @@ import com.flappedear.betterdriver.analysis.geo.Vector2
 import com.flappedear.betterdriver.analysis.geo.geoMidpoint
 import com.flappedear.betterdriver.analysis.geo.isValidCoordinate
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
+import com.flappedear.betterdriver.timing.geo.GeoPoint
+import com.flappedear.betterdriver.timing.geo.LocalFrame
+import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.Gate
 import com.flappedear.betterdriver.timing.live.MinimumGnssGapSeconds
 import com.flappedear.betterdriver.timing.live.gnssGapThresholdSeconds
+import com.flappedear.betterdriver.timing.track.TrackLine
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -55,7 +60,9 @@ fun deriveSourceLapSession(
     }
     if (startGate == null) return LapSession(LapSessionStatus.NoStartGate)
     if (finishGate != null) return detectRuns(session, startGate, finishGate, options)
-    return detectLaps(session, startGate, options)
+    val pitEntry = session.timingGates.firstOrNull { it.type == TimingGateType.PitEntry }
+    val pitExit = session.timingGates.firstOrNull { it.type == TimingGateType.PitExit }
+    return detectLaps(session, startGate, options, pitEntry, pitExit)
 }
 
 private class GpsSample(val time: Double, val point: Vector2)
@@ -148,6 +155,8 @@ fun detectLaps(
     session: TelemetrySession,
     startGate: TimingGate,
     options: LapDetectionOptions = LapDetectionOptions(),
+    pitEntry: TimingGate? = null,
+    pitExit: TimingGate? = null,
 ): LapSession {
     val found = findGatePasses(session, startGate, options, lock = 0)
     found.failure?.let { return LapSession(it, startGate) }
@@ -164,8 +173,74 @@ fun detectLaps(
         val (issue, distance) = referenceIssueForLap(session, lap, origin)
         measured += lap.copy(referenceIssue = issue, distanceMeters = distance)
     }
-    return rankedSession(session, startGate, found, measured, options)
+    return rankedSession(session, startGate, found, pitLaps(session, measured, pitEntry, pitExit), options)
 }
+
+/**
+ * [laps] with the live timer's in and out laps marked (review v1.34.1 F3, FBBD-482), by LapTimer's
+ * rules on the same lines and the same crossing test ([Gate], forwards only): a lap that crosses the
+ * pit entry line is an in lap; otherwise one that crosses the pit exit line is an out lap; without a
+ * pit exit line, the lap after an in lap is an out lap (a pit lane that crosses the start/finish
+ * line). Before, review ranked by time and GPS alone, and on a pit lane that is a shortcut the in lap
+ * could be the best lap. A lap with a GPS issue keeps that issue. Without pit lines nothing changes.
+ */
+private fun pitLaps(
+    session: TelemetrySession,
+    laps: List<TimedLap>,
+    pitEntry: TimingGate?,
+    pitExit: TimingGate?,
+): List<TimedLap> {
+    if (pitEntry == null && pitExit == null) return laps
+    val entries = pitEntry?.let { forwardCrossings(session, it) }.orEmpty()
+    val exits = pitExit?.let { forwardCrossings(session, it) }.orEmpty()
+    fun crossedIn(times: List<Double>, lap: TimedLap) =
+        times.any { it > lap.startTelemetryTime && it <= lap.endTelemetryTime }
+    var previousIn = false
+    return laps.map { lap ->
+        val kind = when {
+            crossedIn(entries, lap) -> LapReferenceIssue.InLap
+            crossedIn(exits, lap) -> LapReferenceIssue.OutLap
+            previousIn && pitExit == null -> LapReferenceIssue.OutLap
+            else -> null
+        }
+        previousIn = kind == LapReferenceIssue.InLap
+        if (kind != null && lap.referenceIssue == LapReferenceIssue.None) lap.copy(referenceIssue = kind) else lap
+    }
+}
+
+/**
+ * The times the GPS path crosses [gate] forwards, as the live timer finds them: its crossing test
+ * ([Gate]), from each valid fix to the next, a gap in between included.
+ */
+private fun forwardCrossings(session: TelemetrySession, gate: TimingGate): List<Double> {
+    val latitude = session.channel(Aliases.LATITUDE) ?: return emptyList()
+    val longitude = session.channel(Aliases.LONGITUDE) ?: return emptyList()
+    val left = GeoPoint(gate.endpointA.latitudeDegrees, gate.endpointA.longitudeDegrees)
+    val frame = LocalFrame(left)
+    val line = Gate(TrackLine(left, GeoPoint(gate.endpointB.latitudeDegrees, gate.endpointB.longitudeDegrees)), frame)
+    val n = min(latitude.timestamps.size, longitude.timestamps.size)
+    val out = ArrayList<Double>()
+    var previous: Xy? = null
+    var previousMicros = 0L
+    for (i in 0 until n) {
+        val t = latitude.timestamps[i]
+        val lat = latitude.values[i]
+        val lon = longitude.values[i]
+        if (!t.isFinite() || t != longitude.timestamps[i] || !lat.isFinite() || !lon.isFinite()) continue
+        val p = frame.toXy(lat, lon)
+        // The live test takes microseconds; session seconds are scaled to them and back.
+        val micros = (t * MicrosPerSecond).toLong()
+        val before = previous
+        if (before != null) {
+            line.crossing(before, previousMicros, p, micros)?.let { out += it.tMicros / MicrosPerSecond }
+        }
+        previous = p
+        previousMicros = micros
+    }
+    return out
+}
+
+private const val MicrosPerSecond = 1_000_000.0
 
 /**
  * Runs of a point-to-point track (FBBD-155): each from a pass of [startGate] to the next pass of

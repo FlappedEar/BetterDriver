@@ -12,9 +12,9 @@ struct CameraStatus: Equatable {
     var warning: String? = nil
 
     /// The alert line's text while the camera retries after a fault.
-    static let retrying = "Retrying, data still recording"
+    static let retrying = PhoneVideoAlert.shared.RETRYING
     /// The alert line's text when the camera cannot record in this session.
-    static let off = "Off this session, data still recording"
+    static let off = PhoneVideoAlert.shared.OFF
 }
 
 /// Phone video with a session on the iPhone, as the Android phone camera (FBBD-21): the back wide
@@ -59,7 +59,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     /// The current file's frames: taken, dropped, late (BD-01).
     private var counts = PhoneFrameCounts()
     /// When the next file may start after failed ones (FBBD-441): never given up for the session.
-    private var retry = PhoneFileRetry()
+    private let retry = PhoneFileRetry()
     /// The current file's start and what it took, for the line logged when it fails (FBBD-441).
     private var fileStartedAt = 0.0
     private var lastVideoPts: CMTime = .invalid

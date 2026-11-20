@@ -106,7 +106,8 @@ internal object RaceChronoCsvReader {
         private val forward = index("longitudinal acc", "longitudinal acceleration")
         private val lateral = index("lateral acc", "lateral acceleration")
         private var speedFactor = 3.6
-        private var accelFactor = 1.0
+        private var forwardFactor = 1.0
+        private var lateralFactor = 1.0
         private val extraIdx = lower.indices.filter { i ->
             lower[i].isNotEmpty() && lower[i] !in Ignored && lower.indexOf(lower[i]) == i &&
                 i !in setOf(timestamp, lat, lon, speed, bearing, altitude, sats, forward, lateral)
@@ -125,8 +126,9 @@ internal object RaceChronoCsvReader {
                 "mph" -> 1.609344
                 else -> 3.6 // RaceChrono exports m/s
             }
-            val accelUnit = unit(forward).ifEmpty { unit(lateral) }.lowercase()
-            accelFactor = if (accelUnit.startsWith("m/s")) 1.0 / 9.80665 else 1.0
+            // Each axis in its own unit (review v1.34.1 F12: one factor from the first axis was used for both).
+            forwardFactor = gFactor(unit(forward))
+            lateralFactor = gFactor(unit(lateral))
             extras = extraIdx.mapIndexed { k, i -> ExtraColumn(extraNames[k], unit(i)) }
         }
 
@@ -159,8 +161,8 @@ internal object RaceChronoCsvReader {
                 headingDeg = v(bearing),
                 altM = v(altitude),
                 sats = v(sats),
-                accelForwardG = v(forward) * accelFactor,
-                accelLateralG = v(lateral) * accelFactor,
+                accelForwardG = v(forward) * forwardFactor,
+                accelLateralG = v(lateral) * lateralFactor,
                 extras = if (extraIdx.isEmpty()) {
                     ImportPoint.EmptyValues
                 } else {
