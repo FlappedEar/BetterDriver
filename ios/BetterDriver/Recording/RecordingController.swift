@@ -650,7 +650,7 @@ struct TrackScreenModel: Equatable {
             alert = Alert(title: "Storage low", detail: "\(low.int64Value / 1_000_000) MB free", critical: false)
         } else if let warning = camera?.warning {
             // The phone records no video because of a fault (FBBD-468, audit 7 Nov BD-T04).
-            alert = Alert(title: "Phone video stopped", detail: warning, critical: false)
+            alert = Alert(title: PhoneVideoAlert.shared.TITLE, detail: warning, critical: false)
         } else if let videoSpace {
             // Minutes of phone video left, long before the recorder's own warning (FBBD-467).
             alert = Alert(title: "Storage low", detail: videoSpace, critical: false)
