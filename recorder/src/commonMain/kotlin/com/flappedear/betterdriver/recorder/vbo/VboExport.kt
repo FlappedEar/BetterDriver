@@ -11,10 +11,13 @@ private const val MinutesPerDegree = 60.0
 private const val MicrosPerMilli = 1_000.0
 
 /**
- * How far before the session's start a recorded fix may be stamped and still get a row (FBBD-436): a
- * receiver's UTC and the phone's clock differ by well under a second; a cached iOS fix is seconds old.
+ * How much older than the session's other fixes a recorded fix may be stamped and still get a row
+ * (FBBD-436): a phone hands a fix over within about a second; a cached iOS fix is seconds old.
  */
-private const val BeforeStartMillis = 2_000L
+private const val StaleMillis = 2_000.0
+
+/** The start of a recording where a cached fix can arrive: its first 30 s of fixes (FBBD-436). */
+private const val StartWindowMicros = 30_000_000L
 
 /** OBD-II channels (core-ble ObdSource), interpolated between readings in a VBO (FBBD-303). */
 private const val ObdSource = "obd"
@@ -35,9 +38,9 @@ private const val MaxInterpolationGapMicros = 1_000_000L
  * The time column only goes forward (FBBD-436): a fix whose time is not after the row before it is
  * left out, such as the cached fix iOS Core Location hands over at the start (stamped seconds before
  * the fixes already written) or the same fix delivered twice. A recorded fix stamped more than
- * [BeforeStartMillis] before the session started is left out too: iOS can hand that cached fix over
- * first. Only when some fix is stamped after that point, so a phone clock set wrong never empties the
- * file. Circuit Tools and Overlays read the rows as a time series; [Written.fixes] counts only the
+ * [StaleMillis] older than the fixes around it at the start is left out too: iOS can hand that
+ * cached fix over first. Measured against the other fixes, not the phone's clock, so a phone clock
+ * set wrong leaves out nothing. Circuit Tools and Overlays read the rows as a time series; [Written.fixes] counts only the
  * fixes written, so a left-out fix is not reported as a lost sample, and [Written.repeated] says how
  * many were left out.
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
@@ -63,8 +66,8 @@ object VboExport {
 
     /**
      * What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers;
-     * [repeated] fixes were left out because their time was not after the row before, or was before
-     * the session started (FBBD-436).
+     * [repeated] fixes were left out because their time was not after the row before, or was stamped
+     * seconds before it was recorded (a cached fix, FBBD-436).
      */
     data class Written(val rows: Int, val fixes: Int, val repeated: Int = 0)
 
@@ -122,19 +125,38 @@ object VboExport {
                 roundHalfUp(raw).toDouble()
             }
         }
-        // An import's start is the first row's own time; only a recording has a start of its own.
-        val earliest = (session.info.startUtcMillis - BeforeStartMillis).toDouble()
-            .takeIf { start -> session.info.imported == null && times.any { it != null && it >= start } }
-            ?: Double.NEGATIVE_INFINITY
+        val stale = staleFixes(session, sets, times)
         val kept = HashSet<Int>()
         var last = Double.NEGATIVE_INFINITY
         times.forEachIndexed { i, time ->
-            if (time != null && time >= earliest && time > last) {
+            if (time != null && i !in stale && time > last) {
                 kept += i
                 last = time
             }
         }
         return kept
+    }
+
+    /**
+     * The cached fixes a recording starts with, as indices into [sets] (FBBD-436). A fix's offset is
+     * its stamped time less the session's clock when it was recorded (start plus elapsed). Over the
+     * first [StartWindowMicros] of fixes a receiver's clock and the phone's differ by about the same
+     * offset, so their median offset is that difference; a fix there more than [StaleMillis] below it
+     * was stamped well before it reached the recorder. A phone clock set wrong moves every offset alike
+     * and leaves out nothing; fixes after the window are never left out here. Imports keep every fix:
+     * their start is the first row's own time.
+     */
+    private fun staleFixes(session: SessionData, sets: List<SampleSet>, times: List<Double?>): Set<Int> {
+        if (session.info.imported != null) return emptySet()
+        val first = times.indexOfFirst { it != null }
+        if (first < 0) return emptySet()
+        val windowEnd = sets[first].tMicros + StartWindowMicros
+        val offsets = times.mapIndexedNotNull { i, time ->
+            time?.takeIf { sets[i].tMicros <= windowEnd }
+                ?.let { i to it - (session.info.startUtcMillis + sets[i].tMicros / MicrosPerMilli) }
+        }
+        val usual = offsets.map { it.second }.sorted()[offsets.size / 2]
+        return offsets.filter { it.second < usual - StaleMillis }.mapTo(HashSet()) { it.first }
     }
 
     private fun extraColumns(extra: List<ChannelDef>, derived: List<VboDerivedChannel>): List<VboColumn> {

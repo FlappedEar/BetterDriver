@@ -86,11 +86,19 @@ class VboForwardTimeTest {
     }
 
     @Test
-    fun `a phone clock set a minute ahead keeps every row`() {
-        // Every fix is stamped before the start the phone's clock gave: none is left out.
-        val sets = (0L until 10L).map { fix(it, it * 40_000) }
+    fun `a phone clock set a minute ahead keeps every row of a long recording`() {
+        // Every fix is stamped a minute before the phone's clock: an offset, not a cached fix.
+        val sets = (0L until 3_000L).map { fix(it, it * 40_000) }
         val (written, times) = export(sets, startUtcMillis = gnss.startUtcMillis + 60_000)
-        assertEquals(10, times.size)
-        assertEquals(VboExporter.Written(rows = 10, fixes = 10, repeated = 0), written)
+        assertEquals(3_000, times.size)
+        assertEquals(VboExporter.Written(rows = 3_000, fixes = 3_000, repeated = 0), written)
+    }
+
+    @Test
+    fun `a cached fix after a clock a minute ahead is still left out`() {
+        val sets = listOf(fix(-88, 0)) + (0L until 1_000L).map { fix(it, 10_000 + it * 40_000) }
+        val (written, times) = export(sets, startUtcMillis = gnss.startUtcMillis + 60_000)
+        assertEquals("080000.000", times.first())
+        assertEquals(VboExporter.Written(rows = 1_000, fixes = 1_000, repeated = 1), written)
     }
 }
