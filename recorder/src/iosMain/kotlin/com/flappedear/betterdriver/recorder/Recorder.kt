@@ -405,11 +405,7 @@ class Recording internal constructor(
      * derived from the channel's source when the session is read.
      */
     private fun remember(def: ChannelDef) {
-        val list = meta.channels.toMutableList()
-        val at = list.indexOfFirst { it.id == def.id }
-        if (at >= 0) list[at] = def else list += def
-        if (list == meta.channels) return
-        meta = meta.copy(channels = list)
+        meta = meta.copy(channels = mergeChannels(meta.channels, listOf(def)) ?: return)
         try {
             val bytes = writeProperties(metaEntries(id, meta))
             PosixFiles.writeAtomically(PosixFiles.join(dir, SessionFileNames.META), bytes)

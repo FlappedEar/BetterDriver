@@ -74,4 +74,20 @@ class WriterRulesTest {
         assertNull(drops.due(3))
         assertEquals(4L, drops.due(4))
     }
+
+    @Test
+    fun aRedefinedChannelReplacesItsEarlierDefinitionAndNewOnesGoLast() {
+        val speed = ChannelDef(1, "Speed", "km/h", "racebox")
+        val hr = ChannelDef(2, "Heart rate", "bpm", "hr")
+        val speedGps = speed.copy(source = "phone")
+        val lat = ChannelDef(3, "Lat", "deg", "racebox")
+        assertEquals(listOf(speedGps, hr, lat), mergeChannels(listOf(speed, hr), listOf(speedGps, lat)))
+    }
+
+    @Test
+    fun theSameDefinitionAgainChangesNothing() {
+        val speed = ChannelDef(1, "Speed", "km/h", "racebox")
+        assertNull(mergeChannels(listOf(speed), listOf(speed)))
+        assertNull(mergeChannels(listOf(speed), emptyList()))
+    }
 }

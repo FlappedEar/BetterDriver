@@ -126,13 +126,7 @@ internal class RecordingWriter(
      * provenance is then derived from the channel's source when the session is read.
      */
     private fun remember(defined: List<ChannelDef>) {
-        val channels = meta.channels.toMutableList()
-        for (def in defined) {
-            val at = channels.indexOfFirst { it.id == def.id }
-            if (at >= 0) channels[at] = def else channels += def
-        }
-        if (channels == meta.channels) return
-        meta = meta.copy(channels = channels)
+        meta = meta.copy(channels = mergeChannels(meta.channels, defined) ?: return)
         try {
             SessionFiles.writeAtomically(File(dir, SessionFiles.META), SessionFiles.metaToProps(dir.name, meta))
         } catch (_: java.io.IOException) {
