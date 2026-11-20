@@ -7,7 +7,8 @@ import Foundation
 /// this only ticks the clock.
 final class DemoTrackLink {
     private let feed: ScriptFeed
-    private var timer: Timer?
+    /// The 25 Hz clock while it runs; read by the tests.
+    private(set) var timer: Timer?
 
     /// Reads the chosen drive and saves its track, so the recording's timing finds it at the first fix.
     init(sink: SampleSink) throws {
@@ -36,4 +37,8 @@ final class DemoTrackLink {
         timer?.invalidate()
         timer = nil
     }
+
+    /// A link let go without stop() stops its clock too: the run loop holds the timer, not the link
+    /// (review v1.34.1 F19, FBBD-484).
+    deinit { timer?.invalidate() }
 }
