@@ -9,7 +9,7 @@ import android.os.RemoteException
  * more video for the session; until now the recorder kept the camera's last report ("1080p · 60",
  * green) and the track screen looked healthy. Each camera report names its sender ([reported]); the
  * watch links to that sender's death, and [gone] runs once on the main thread if it dies while still
- * watched. [forget] drops the watch when the recording that it belongs to starts or ends.
+ * watched. [forget] drops the watch when the recording ends.
  *
  * [T] is the sender's handle: the camera's binder in the app, any key in the tests. Main thread only.
  */
@@ -38,7 +38,7 @@ internal class CameraProcessWatch<T : Any>(
         }
     }
 
-    /** Stops watching: a recording started or ended. */
+    /** Stops watching: the recording ended. */
     fun forget() {
         unlink?.invoke()
         unlink = null

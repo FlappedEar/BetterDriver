@@ -321,7 +321,6 @@ class RecorderService : Service() {
                     // Already ended on its own (storage full): no wake lock or coach binding may outlive it.
                     if (active?.recording !== recording) return@post
                     cameraStatus = null
-                    cameraWatch.forget()
                     coachStatus = CoachStatus.None
                     coach?.bind()
                     cpu.acquire()
