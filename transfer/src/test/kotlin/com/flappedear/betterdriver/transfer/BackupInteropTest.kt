@@ -16,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.Properties
 import kotlin.random.Random
 import kotlin.test.Test
@@ -242,6 +243,32 @@ class BackupInteropTest {
         assertFalse(r.pending)
         r.clearStaging()
         assertFalse(File(iphone, "backup-staging").exists())
+    }
+
+    @Test
+    fun `a restore that fails after its commit blocks the data until it is finished (review F2)`() {
+        val bytes = androidBackup(device("pixel"), sessions = false)
+        val iphone = File(tmp, "iphone").apply { mkdirs() }
+        TrackStore(File(iphone, "tracks")).save(track("c"), nowUtcMillis = 3_000)
+        val r = sharedRestorer(iphone)
+        val gate = UnfinishedRestore(r)
+        val staged = sharedUnpack(iphone, bytes)
+        val oldDir = File(iphone, "backup-staging/restore/old")
+        // A file where the old copy goes: moving the live tracks aside fails after the commit.
+        assertFailsWith<IOException> {
+            r.restore(staged, RestoreMode.MERGE, beforeCommit = { oldDir.parentFile.mkdirs(); oldDir.writeText("x") })
+        }
+        assertTrue(r.pending)
+        assertTrue(gate.blocked, "nothing may read or write the data")
+        val failures = ArrayList<Int>()
+        assertFalse(gate.finish { attempt, _ -> failures += attempt }, "still failing: still blocked")
+        assertEquals(listOf(1, 2, 3), failures)
+        assertTrue(gate.blocked)
+        // The cause goes (space freed): Try again finishes it, with every track.
+        oldDir.delete()
+        assertTrue(gate.finish())
+        assertFalse(gate.blocked)
+        assertEquals(setOf("a", "b", "c"), TrackStore(File(iphone, "tracks")).all().map { it.id }.toSet())
     }
 
     @Test

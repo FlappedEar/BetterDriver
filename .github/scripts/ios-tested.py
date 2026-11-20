@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Did ios.yml's full suite already pass on an app identical to HEAD's? (FBBD-457)
 
-ios.yml's last job is named "iOS passed (tree X)". This looks for such a successful job on the
+ios.yml's "iOS full suite passed (tree X)" job marks a tree on which every test passed on both devices
+(review v1.34.1 F10; "iOS passed (tree X)" also marks partial pull request runs and does not count).
+This looks for such a successful job on the
 recent main commits and on the heads of the pull requests merged into them, newest first. A
 candidate counts when every file that differs between it and HEAD is outside ios.yml's path
 filter (the files that cannot change the iOS app or its tests), except a gradle.properties change
@@ -19,7 +21,7 @@ import sys
 import urllib.error
 import urllib.request
 
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY", "FlappedEar/BetterDriver")
 IOS_YML = ".github/workflows/ios.yml"
 
 
@@ -80,15 +82,27 @@ def relevant(commit, paths):
     return hits
 
 
-def passed_jobs(commit):
-    """(tested tree, job URL) of each successful "iOS passed (tree X)" job on the commit."""
-    data = gh(f"repos/{REPO}/commits/{commit}/check-runs?per_page=100")
+# Only a run that covered every test on both devices counts (review v1.34.1 F10): ios.yml's
+# "iOS full suite passed (tree X)" job. "iOS passed (tree X)" also marks pull request runs, which run
+# only part of the iPad's UI tests: on v1.34.1 the gate took such a mark while the rest of the
+# iPad's tests had failed on the release commit.
+COMPLETE = re.compile(r"^iOS full suite passed \(tree ([0-9a-f]{40})\)$")
+
+
+def complete_passes(check_runs):
+    """(tested tree, job URL) of each successful complete-suite mark among [check_runs]."""
     out = []
-    for c in (data or {}).get("check_runs", []):
-        m = re.match(r"^iOS passed \(tree ([0-9a-f]{40})\)$", c["name"])
-        if m and c["conclusion"] == "success":
-            out.append((m.group(1), c["html_url"]))
+    for c in check_runs:
+        m = COMPLETE.match(c.get("name", ""))
+        if m and c.get("conclusion") == "success":
+            out.append((m.group(1), c.get("html_url", "")))
     return out
+
+
+def passed_jobs(commit):
+    """(tested tree, job URL) of each successful "iOS full suite passed (tree X)" job on the commit."""
+    data = gh(f"repos/{REPO}/commits/{commit}/check-runs?per_page=100")
+    return complete_passes((data or {}).get("check_runs", []))
 
 
 def present(obj, kind):

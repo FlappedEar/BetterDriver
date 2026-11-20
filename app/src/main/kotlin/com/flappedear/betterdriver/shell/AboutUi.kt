@@ -99,6 +99,13 @@ fun aboutSections(): List<CreditSection> = listOf(
             Credit("Barlow", "Copyright 2017 The Barlow Project Authors", Ofl, "https://github.com/jpt/barlow"),
             Credit("Saira Semi Condensed", "Copyright 2016 The Saira Project Authors", Ofl, OflUrl),
             Credit("Inter", "Copyright 2016 The Inter Project Authors", Ofl, "https://github.com/rsms/inter"),
+            // The Tech HUD on the video with data (FBBD-347); review v1.34.1 F20 (FBBD-484).
+            Credit(
+                "Chakra Petch",
+                "Copyright 2018 The Chakra Petch Project Authors",
+                Ofl,
+                "https://github.com/m4rc1e/Chakra-Petch",
+            ),
         ),
     ),
     CreditSection(

@@ -76,8 +76,9 @@ internal fun CompareView(
     startFraction: Double? = null,
 ) {
     val context = LocalContext.current
-    val pa = remember { LapVideoPlayer(context, muted = false, lane = 0) }
-    val pb = remember { LapVideoPlayer(context, muted = true, lane = 1) }
+    val log = remember { LapReviewLog() }
+    val pa = remember { LapVideoPlayer(context, muted = false, lane = 0, stats = log.stats) }
+    val pb = remember { LapVideoPlayer(context, muted = true, lane = 1, stats = log.stats) }
     DisposableEffect(Unit) {
         onDispose {
             pa.release()
@@ -90,7 +91,7 @@ internal fun CompareView(
     val st = remember(c.a.key, c.b.key) { ReviewTransport(c, startFraction) }
     SideEffect { st.comparison = c }
     PauseWhenHidden { st.playing = false }
-    LaunchedEffect(st) { followFrames(st, pa, pb) }
+    LaunchedEffect(st) { log.until({ st.speed }) { followFrames(st, pa, pb, log) } }
     // Tagged so the emulator tests can scrub it (FBBD-24).
     val chart = Modifier.fillMaxWidth().height(ChartHeight).testTag(ReviewChartTag)
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
@@ -130,13 +131,14 @@ internal fun CompareView(
  * no finger, both players on their frames) it waits for the cursor, play or scrub to change, so
  * Compose can go idle and a paused review costs no frames ([frameLoopNeeded]).
  */
-private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer) {
+private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer, log: LapReviewLog) {
     var last = 0L
     while (true) {
         var t = 0L
         var seeking = false
         var shown = st.comparison
         withFrameNanos { now ->
+            val workFrom = System.nanoTime()
             val c = st.comparison
             shown = c
             st.tick(if (last == 0L) 0L else now - last)
@@ -148,6 +150,8 @@ private suspend fun followFrames(st: ReviewTransport, pa: LapVideoPlayer, pb: La
             val seekA = pa.follow(c.a.videoAt(c.aMicros(t)), c.a.video, st.speed, playA, st.scrubbing, now)
             val seekB = pb.follow(c.b.videoAt(c.bMicros(t)), c.b.video, st.speed, playB, st.scrubbing, now)
             seeking = seekA || seekB
+            // Playback stats for the app log (FBBD-455, as iOS FBBD-429): the frame loop's work while playing.
+            if (st.playing) log.frame(System.nanoTime() - workFrom, now) else log.stopped(now, st.speed)
         }
         if (!frameLoopNeeded(st.playing, st.scrubbing, seeking)) {
             // The first frame after the wait counts no time, as the very first frame does.

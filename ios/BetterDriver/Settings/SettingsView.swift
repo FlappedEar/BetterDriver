@@ -184,7 +184,12 @@ struct AppPage: View {
 }
 
 /// Settings › App › About and credits (FBBD-79), the Android page's credits that the iPhone app uses.
-private struct AboutPage: View {
+struct AboutPage: View {
+    /// The font families the page credits, for the test that every bundled font is in it.
+    static var creditedFonts: [String] {
+        sections.first { $0.title == "Fonts" }?.credits.map(\.name) ?? []
+    }
+
     private struct Credit: Hashable {
         let name: String, detail: String, license: String, url: String
     }
@@ -204,6 +209,11 @@ private struct AboutPage: View {
                    url: "https://github.com/jpt/barlow"),
             Credit(name: "Saira Semi Condensed", detail: "Copyright 2016 The Saira Project Authors", license: AboutPage.ofl,
                    url: "https://openfontlicense.org"),
+            // Both bundled from core-ui too (review v1.34.1 F20, FBBD-484), as Android credits them.
+            Credit(name: "Inter", detail: "Copyright 2016 The Inter Project Authors", license: AboutPage.ofl,
+                   url: "https://github.com/rsms/inter"),
+            Credit(name: "Chakra Petch", detail: "Copyright 2018 The Chakra Petch Project Authors", license: AboutPage.ofl,
+                   url: "https://github.com/m4rc1e/Chakra-Petch"),
         ]),
         Section(title: "Ported code", credits: [
             Credit(name: "FlappedEar Telemetry", detail: "The lap analysis and the coach logic are ported from it",

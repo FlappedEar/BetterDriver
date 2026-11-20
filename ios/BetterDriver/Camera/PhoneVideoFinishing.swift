@@ -111,38 +111,6 @@ final class PhoneVideoFinishing {
     }
 }
 
-/// When the phone camera may start its next file after a file failed on its own (FBBD-441). Until
-/// 1.30.0 the camera stopped for the rest of the session after 3 failed files, and Arek restarted the
-/// drive 4 times on 3 Nov to get video back. Now it never gives up: the first file after a failure
-/// starts at once, each further failure in a row waits twice as long (2, 4, 8 s, at most 30 s), and
-/// a file that records for [steadySeconds] ends the run of failures. Times are seconds on any clock.
-struct PhoneFileRetry: Equatable {
-    static let steadySeconds = 60.0
-    static let longestWait = 30.0
-
-    /// Failed files since the last steady one.
-    private(set) var inARow = 0
-    /// All failed files in the session, for the log.
-    private(set) var total = 0
-    private var notBefore = -Double.infinity
-
-    /// A file that started at [startedAt] failed at [now].
-    mutating func failed(startedAt: Double, now: Double) {
-        if now - startedAt >= Self.steadySeconds { inARow = 0 }
-        inARow += 1
-        total += 1
-        notBefore = now + wait
-    }
-
-    /// How long the next file waits after the latest failure.
-    var wait: Double {
-        inARow <= 1 ? 0 : min(pow(2, Double(inARow - 1)), Self.longestWait)
-    }
-
-    /// Whether a new file may start at [now].
-    func mayOpen(at now: Double) -> Bool { now >= notBefore }
-}
-
 /// How long one phone video file records before the next one starts (FBBD-468, audit 7 Nov BD-T02).
 /// The files are not fragmented (FBBD-441), so an MP4 gets its index only when it is finished: a
 /// killed app or a crash leaves the file it was writing unplayable. A new file every [seconds] bounds

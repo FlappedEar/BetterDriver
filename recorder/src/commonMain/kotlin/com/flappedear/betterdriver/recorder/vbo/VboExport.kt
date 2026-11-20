@@ -10,6 +10,15 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 private const val MinutesPerDegree = 60.0
 private const val MicrosPerMilli = 1_000.0
 
+/**
+ * How much older than the session's other fixes a recorded fix may be stamped and still get a row
+ * (FBBD-436): a phone hands a fix over within about a second; a cached iOS fix is seconds old.
+ */
+private const val StaleMillis = 2_000.0
+
+/** The start of a recording where a cached fix can arrive: its first 30 s of fixes (FBBD-436). */
+private const val StartWindowMicros = 30_000_000L
+
 /** OBD-II channels (core-ble ObdSource), interpolated between readings in a VBO (FBBD-303). */
 private const val ObdSource = "obd"
 
@@ -28,9 +37,12 @@ private const val MaxInterpolationGapMicros = 1_000_000L
  * If a fix has no GNSS UTC time, session start time plus elapsed time is used.
  * The time column only goes forward (FBBD-436): a fix whose time is not after the row before it is
  * left out, such as the cached fix iOS Core Location hands over at the start (stamped seconds before
- * the fixes already written) or the same fix delivered twice. Circuit Tools and Overlays read the
- * rows as a time series; [Written.fixes] counts only the fixes with a new time, so a left-out repeat
- * is not reported as a lost sample, and [Written.repeated] says how many were left out.
+ * the fixes already written) or the same fix delivered twice. A recorded fix stamped more than
+ * [StaleMillis] older than the fixes after it at the start is left out too: iOS can hand that
+ * cached fix over first. Measured against the other fixes, not the phone's clock, so a phone clock
+ * set wrong leaves out nothing. Circuit Tools and Overlays read the rows as a time series;
+ * [Written.fixes] counts only the fixes written, so a left-out fix is not reported as a lost sample,
+ * and [Written.repeated] says how many were left out.
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
  * The data then starts at the first video's start: Circuit Tools plays video file 1 from the first
  * data row and ignores its avisynctime offset (FBBD-51, checked by Arek with sync kit variant E).
@@ -54,7 +66,8 @@ object VboExport {
 
     /**
      * What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers;
-     * [repeated] fixes were left out because their time was not after the row before (FBBD-436).
+     * [repeated] fixes were left out because their time was not after the row before, or was stamped
+     * seconds before it was recorded (a cached fix, FBBD-436).
      */
     data class Written(val rows: Int, val fixes: Int, val repeated: Int = 0)
 
@@ -101,19 +114,24 @@ object VboExport {
      * is after the time of the one before it (see the class comment, FBBD-436).
      */
     private fun forwardFixes(session: SessionData, sets: List<SampleSet>, from: Long): Set<Int> {
-        val kept = HashSet<Int>()
-        var last = Double.NEGATIVE_INFINITY
-        sets.forEachIndexed { i, set ->
-            if (isFix(set) && set.tMicros >= from) {
-                // The row's time column: its GNSS UTC time, or session start plus elapsed time without one.
+        // The row's time column: its GNSS UTC time, or session start plus elapsed time without one.
+        // Compared as written, to the millisecond: two fixes within one ms would print the same time.
+        val times = sets.map { set ->
+            if (!isFix(set) || set.tMicros < from) {
+                null
+            } else {
                 val raw = set.values.lastOrNull { it.channelId == GnssChannels.UTC_MS.id }?.value
                     ?: (session.info.startUtcMillis + set.tMicros / MicrosPerMilli)
-                // Compared as written, to the millisecond: two fixes within one ms would print the same time.
-                val time = roundHalfUp(raw).toDouble()
-                if (time > last) {
-                    kept += i
-                    last = time
-                }
+                roundHalfUp(raw).toDouble()
+            }
+        }
+        val stale = staleFixes(session, sets, times)
+        val kept = HashSet<Int>()
+        var last = Double.NEGATIVE_INFINITY
+        times.forEachIndexed { i, time ->
+            if (time != null && i !in stale && time > last) {
+                kept += i
+                last = time
             }
         }
         return kept
@@ -256,4 +274,30 @@ private class Readings(private val t: LongArray, private val v: DoubleArray) {
             return Readings(t.toLongArray(), v.toDoubleArray())
         }
     }
+}
+
+/**
+ * The cached fixes a recording starts with, as indices into [sets] (FBBD-436). A fix's offset is
+ * its stamped time less the session's clock when it was recorded (start plus elapsed). A receiver's
+ * clock and the phone's run at the same rate, so fresh fixes keep about the same offset; a fix in the
+ * first [StartWindowMicros] whose offset is more than [StaleMillis] below that of a fix recorded after
+ * it in that window was stamped well before it reached the recorder. A phone clock set wrong moves
+ * every offset alike and leaves out nothing; fixes after the window are never left out here. Imports
+ * keep every fix: their start is the first row's own time.
+ */
+private fun staleFixes(session: SessionData, sets: List<SampleSet>, times: List<Double?>): Set<Int> {
+    val first = times.indexOfFirst { it != null }
+    if (session.info.imported != null || first < 0) return emptySet()
+    val windowEnd = sets[first].tMicros + StartWindowMicros
+    val offsets = times.mapIndexedNotNull { i, time ->
+        time?.takeIf { sets[i].tMicros <= windowEnd }
+            ?.let { i to it - (session.info.startUtcMillis + sets[i].tMicros / MicrosPerMilli) }
+    }
+    val stale = HashSet<Int>()
+    var laterMax = Double.NEGATIVE_INFINITY
+    for ((i, offset) in offsets.asReversed()) {
+        if (offset < laterMax - StaleMillis) stale += i
+        laterMax = maxOf(laterMax, offset)
+    }
+    return stale
 }

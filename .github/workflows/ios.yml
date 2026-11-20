@@ -30,6 +30,8 @@ on:
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"
+      # The demo sessions, bundled into the app (ios/project.yml; review v1.34.1 F16).
+      - "app/src/main/assets/demo/**"
       - "gradle/**"
       - "*.gradle.kts"
       - "gradle.properties"
@@ -58,6 +60,8 @@ on:
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"
+      # The demo sessions, bundled into the app (ios/project.yml; review v1.34.1 F16).
+      - "app/src/main/assets/demo/**"
       - "gradle/**"
       - "*.gradle.kts"
       - "gradle.properties"
@@ -108,6 +112,7 @@ jobs:
       reuse: ${{ steps.reuse.outputs.reuse }}
       tree: ${{ steps.pick.outputs.tree }}
       matrix: ${{ steps.parts.outputs.matrix }}
+      scope: ${{ steps.parts.outputs.scope }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -176,6 +181,7 @@ jobs:
           elif [ "${{ steps.reuse.outputs.reuse }}" = true ]; then scope=main-rest
           else scope=full; fi
           echo "Test scope: $scope"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "matrix=$(python3 .github/scripts/ios-test-parts.py matrix $scope)" >> "$GITHUB_OUTPUT"
 
   build:
@@ -244,7 +250,9 @@ jobs:
           exit $status
       # A tar keeps the app's symlinks and executable bits, which an artifact's zip drops.
       - name: Pack the build
-        run: tar -cf build/products.tar -C build/dd/Build Products
+        run: |
+          tar -cf build/products.tar -C build/dd/Build Products
+          ls -l build/products.tar
       - uses: actions/upload-artifact@v4
         with:
           name: ios-build
@@ -288,8 +296,27 @@ jobs:
         with:
           name: ios-build
           path: build
+      # FBBD-465: twice in 15 runs the download came short ("Truncated tar archive", 2026-11-07 and
+      # 2026-11-15, GitHub's runners) and the job failed before any test. Downloaded again once.
       - name: Unpack the build
+        id: unpack
+        continue-on-error: true
         run: |
+          ls -l build/products.tar
+          mkdir -p build/dd/Build
+          tar -xf build/products.tar -C build/dd/Build
+      - name: Download the build again
+        if: steps.unpack.outcome == 'failure'
+        run: rm -rf build
+      - if: steps.unpack.outcome == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-build
+          path: build
+      - name: Unpack the build again
+        if: steps.unpack.outcome == 'failure'
+        run: |
+          ls -l build/products.tar
           mkdir -p build/dd/Build
           tar -xf build/products.tar -C build/dd/Build
       # The full log goes to the artifact; the step log keeps the errors and test results.
@@ -374,3 +401,17 @@ jobs:
     steps:
       - name: Tree
         run: echo "iOS passed on tree ${{ needs.runner.outputs.tree }}"
+
+  # Review v1.34.1 F10: "iOS passed (tree X)" above also marks a pull request run, which tests only
+  # part of the iPad's UI tests. TestFlight (ios-tested.py) needs every test on both devices: this
+  # job marks a tree whose whole suite passed, either in one run (full) or as the rest of the iPad's
+  # tests after a pull request run passed the others on the same tree (main-rest). A failed or
+  # missing main-rest run leaves no mark, and the release gate then runs every UI test itself.
+  complete-tree:
+    name: iOS full suite passed (tree ${{ needs.runner.outputs.tree }})
+    needs: [runner, passed]
+    if: needs.passed.result == 'success' && needs.runner.outputs.scope != 'pr'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tree
+        run: echo "Every iOS test passed on tree ${{ needs.runner.outputs.tree }} (scope ${{ needs.runner.outputs.scope }})"
