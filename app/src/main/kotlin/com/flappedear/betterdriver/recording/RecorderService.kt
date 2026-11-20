@@ -294,7 +294,7 @@ class RecorderService : Service() {
                 } else {
                     CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
                 }
-                listOfNotNull(coach, recordingWeather(recording, weatherFetch)).forEach(recording.listeners::add)
+                listOfNotNull(coach, recordingWeather(recording, weatherFetch, gnss)).forEach(recording.listeners::add)
                 // Ends the recording here only when its writer has stopped, also for stops the recorder makes
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
