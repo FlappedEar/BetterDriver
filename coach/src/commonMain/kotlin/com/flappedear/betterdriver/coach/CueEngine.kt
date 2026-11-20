@@ -94,12 +94,26 @@ internal const val MetresStep = 5
 private const val KmhPerMps = 3.6
 private const val MicrosPerSecond = 1_000_000.0
 
-/** What one fix caused: cues to speak now and results of earlier cues. */
-data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
+/** What one fix caused: cues to speak now, results of earlier cues and corner cues held back ([skipped]). */
+data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>, val skipped: List<CueSkip> = emptyList()) {
     companion object {
         val None = CoachUpdate(emptyList(), emptyList())
     }
 }
+
+/**
+ * A corner cue the coach had advice for but did not say (FBBD-414): its evidence is Low, e.g. the
+ * time to gain is within the corner's usual pass-to-pass spread. Logged so a drive log shows why a
+ * focus corner stayed quiet.
+ */
+data class CueSkip(
+    val tMicros: Long,
+    val lap: Int,
+    val corner: Int,
+    val turn: Int?,
+    val cornerId: String?,
+    val doubts: List<CueDoubt>,
+)
 
 /**
  * Per-corner state of one session (FBBD-97): each corner's target (the fastest pass so far), its last
@@ -469,8 +483,9 @@ private class SpeechTiming(
  *   two laps at least (FBBD-177). A corner that first lap reached from a stop has no known braking
  *   zone until a lap has passed it, so nothing is said on the straight before it until then (FBBD-202).
  * - **Confidence** (FBBD-177). Each corner cue is graded from its evidence ([cueDoubts]): Low (a
- *   gap in the positions, a near stop) says nothing, Medium says it without its number ("brake a
- *   little later"), High with it.
+ *   gap in the positions, a near stop, a gain within the corner's usual spread, FBBD-414) says
+ *   nothing and is reported as [CueSkip], Medium says it without its number ("brake a little
+ *   later"), High with it.
  * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done;
  *   when the [earlier] reference has a session driven [sameDay] (back out after a break in the pits,
  *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
@@ -582,6 +597,9 @@ class CueEngine(
 
     private val praises = PraiseQueue()
 
+    /** Corner cues held back since the last update (FBBD-414). */
+    private val skips = mutableListOf<CueSkip>()
+
     /** The out-lap's plan cue (UI-174 A) is still to be said: until it is, or the first lap ends. */
     private var planPending = true
 
@@ -669,7 +687,12 @@ class CueEngine(
         }
         // A lap time said now is the last lap's.
         if (cue != null && cue.lap == laps.timer.lapNumber) saidOnLap++
-        return if (cue == null && results.isEmpty()) CoachUpdate.None else CoachUpdate(listOfNotNull(cue), results)
+        val skipped = skips.toList().also { skips.clear() }
+        return if (cue == null && results.isEmpty() && skipped.isEmpty()) {
+            CoachUpdate.None
+        } else {
+            CoachUpdate(listOfNotNull(cue), results, skipped)
+        }
     }
 
     private fun onLapDone(lap: Lap, now: Long, results: MutableList<CueResult>) {
@@ -945,8 +968,11 @@ class CueEngine(
         val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
-        val asked = cornerAdvice(last, target, corner, b.plannedGear(i), gearbox)
-            .takeIf { confidence.advises }.orEmpty()
+        val advice = cornerAdvice(last, target, corner, b.plannedGear(i), gearbox)
+        if (!confidence.advises && advice.isNotEmpty()) {
+            skips += CueSkip(now, lap, corner.number, corner.label, corner.cornerId, doubts)
+        }
+        val asked = advice.takeIf { confidence.advises }.orEmpty()
             .map { it.withPrecision(confidence.precise) }
         val also = asked.getOrNull(1)
         return asked.firstOrNull()?.let { advice ->

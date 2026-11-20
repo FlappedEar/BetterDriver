@@ -5,9 +5,11 @@ import com.flappedear.betterdriver.recorder.Confidence
 
 // How far a corner cue can be trusted (FBBD-177): no precise advice from weak evidence. A pass
 // whose positions stop for a while, or that nearly stops, is not something to coach from at all
-// (Low: no cue, and never a target). Positions far apart, a speed worked out from positions, a
-// difference no bigger than the usual pass-to-pass spread, too few passes to tell, or a corner not
-// matched to the track's corners leave the cue Medium: said without its number.
+// (Low: no cue, and never a target). A difference no bigger than the usual pass-to-pass spread is
+// Low too (FBBD-414): inside the lap-to-lap noise the evidence does not support a direction either,
+// so the corner gets no cue and the skip is logged. Positions far apart, a speed worked out from
+// positions, too few passes to tell, or a corner not matched to the track's corners leave the cue
+// Medium: said without its number.
 
 /** A pass with no position for longer than this (or [CueGapIntervals] of its usual interval) is Low. */
 const val CueGapMicros = 500_000L
@@ -48,7 +50,7 @@ object CueDoubts {
 
     /** The cap a logged [code] puts on a cue. */
     fun cap(code: String): Confidence =
-        if (code == GNSS_GAP || code == VERY_LOW_SPEED) Confidence.LOW else Confidence.MEDIUM
+        if (code == GNSS_GAP || code == VERY_LOW_SPEED || code == SPREAD) Confidence.LOW else Confidence.MEDIUM
 }
 
 private fun doubt(code: String, text: String = CueDoubts.text(code)) = CueDoubt(code, CueDoubts.cap(code), text)

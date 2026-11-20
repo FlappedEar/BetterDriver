@@ -36,6 +36,8 @@ private val CoachEventKinds =
         // continuous log show which laps it took as cool-down, as the replay checks read them.
         CoachEvents.QUIET,
         CoachEvents.RESUMED,
+        // A corner cue held back for weak evidence (FBBD-414): why a focus corner stayed quiet.
+        CoachEvents.SKIPPED,
     )
 private const val MaxCoachEventChars = 1_000
 
