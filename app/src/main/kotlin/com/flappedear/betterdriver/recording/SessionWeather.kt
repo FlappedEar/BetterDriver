@@ -15,16 +15,22 @@ import java.util.concurrent.Executor
 /**
  * The weather at the track while [recording] runs (FBBD-403), fetched on [fetch] at the first fix and
  * every 15 minutes into the session's folder, where the summary and the coach read it; the recording
- * never waits for it.
+ * never waits for it. None on a demo receiver ([gnss]): its positions are made up, so the weather at that
+ * place now is not the drive's, and a wet day there silenced the demo's corner cues (the emulator
+ * replay failed on 20 Nov 2026 with "track damp by the weather").
  */
-internal fun recordingWeather(recording: Recording, fetch: Executor) = SessionWeatherListener(
-    id = recording.id,
-    dir = recording.dir.path,
-    startUtcMillis = recording.info.startUtcMillis,
-    http = AndroidWeatherHttp,
-    background = { work -> fetch.execute { work() } },
-    nowUtcMillis = System::currentTimeMillis,
-)
+internal fun recordingWeather(recording: Recording, fetch: Executor, gnss: GnssRef) = if (gnss.demo) {
+    null
+} else {
+    SessionWeatherListener(
+        id = recording.id,
+        dir = recording.dir.path,
+        startUtcMillis = recording.info.startUtcMillis,
+        http = AndroidWeatherHttp,
+        background = { work -> fetch.execute { work() } },
+        nowUtcMillis = System::currentTimeMillis,
+    )
+}
 
 /**
  * The weather service over the phone's network (FBBD-403): one HTTPS GET, the body of a 200 answer,
