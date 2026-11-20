@@ -80,7 +80,7 @@ const val LeftAcceleration = "accel_left"
  * of exactly 0°, 0° (no fix) is no data. [startFinish] (the track's start/finish line) becomes
  * the start gate; without one no laps are found. [finish], a point-to-point track's finish line
  * (FBBD-155), becomes a finish gate, and the laps are then the runs from start to finish.
- * [pitEntry] and [pitExit], a circuit's pit lines, mark in and out laps (FBBD-482).
+ * [pit], a circuit's pit entry and exit lines, marks in and out laps (FBBD-482).
  * Only the recorded channels [keep] accepts are read: the VBO's G columns need the accelerometers
  * and GPS, not an hour of every other channel in memory as well (FBBD-232).
  */
@@ -89,8 +89,7 @@ fun telemetrySessionOf(
     data: SessionData,
     startFinish: TrackLine?,
     finish: TrackLine? = null,
-    pitEntry: TrackLine? = null,
-    pitExit: TrackLine? = null,
+    pit: PitLines = PitLines(),
     keep: (ChannelDef) -> Boolean = { true },
 ): TelemetrySession {
     val sets = data.sampleSets.sortedBy { it.tMicros }
@@ -133,8 +132,8 @@ fun telemetrySessionOf(
     val gates = listOfNotNull(
         startFinish?.let { gate(TimingGateType.Start, "Start/finish", it) },
         finish?.let { gate(TimingGateType.Finish, "Finish", it) },
-        pitEntry?.let { gate(TimingGateType.PitEntry, "Pit entry", it) },
-        pitExit?.let { gate(TimingGateType.PitExit, "Pit exit", it) },
+        pit.entry?.let { gate(TimingGateType.PitEntry, "Pit entry", it) },
+        pit.exit?.let { gate(TimingGateType.PitExit, "Pit exit", it) },
     )
     return TelemetrySession(channels, aliases, gates)
 }
@@ -175,9 +174,11 @@ fun telemetrySessionOf(data: SessionData, track: Track): TelemetrySession =
         data,
         track.startFinish,
         track.finish?.takeIf { track.pointToPoint },
-        pitEntry = track.pitEntry?.takeUnless { track.pointToPoint },
-        pitExit = track.pitExit?.takeUnless { track.pointToPoint },
+        if (track.pointToPoint) PitLines() else PitLines(track.pitEntry, track.pitExit),
     )
+
+/** A circuit's pit entry and exit lines, either optional (FBBD-482). */
+data class PitLines(val entry: TrackLine? = null, val exit: TrackLine? = null)
 
 /** A BetterDriver line as an analysis gate: endpoint A is its left end, so forwards is direction +1. */
 private fun gate(type: TimingGateType, name: String, line: TrackLine) = TimingGate(
