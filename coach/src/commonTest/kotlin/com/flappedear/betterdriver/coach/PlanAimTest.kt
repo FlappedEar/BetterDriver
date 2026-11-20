@@ -61,8 +61,12 @@ class PlanAimTest {
         assertTrue(plannedLap(laps, origin, PlannedTarget("c2", "s1", seconds, lapStartSeconds = start)) === third)
         // Without the session's clock, as before.
         assertNull(plannedLap(laps, null, PlannedTarget("c2", "s1", seconds, lapStartSeconds = start)))
-        // A start no lap of that time has: the time alone decides, as before.
+        // A start no lap of that time has: none, even where one lap alone has that time.
         assertNull(plannedLap(laps, origin, PlannedTarget("c2", "s1", seconds, lapStartSeconds = 9_999.0)))
+        val alone = laps.take(1)
+        val aloneSeconds = alone[0].lap.timeMicros / 1e6
+        assertTrue(plannedLap(alone, origin, PlannedTarget("c2", "s1", aloneSeconds)) === alone[0])
+        assertNull(plannedLap(alone, origin, PlannedTarget("c2", "s1", aloneSeconds, lapStartSeconds = 9_999.0)))
     }
 
     @Test

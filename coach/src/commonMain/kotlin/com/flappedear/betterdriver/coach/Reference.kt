@@ -89,7 +89,8 @@ fun CoachReference.aim(corner: Int): CornerPass? =
  * later than that lap did and is [brakeLaterSeconds] faster, so the coach asks for the step.
  * [gear] is the plan's gear at the slowest point (FBBD-326), asked for with the brake cue.
  * [lapStartSeconds]: when that lap started, seconds from the session's first sample (F5); null in a
- * plan saved before it, which is then found by its time alone.
+ * plan saved before it, which is then found by its time alone. [driven]: for a braking point beyond
+ * his best, the corner's target driven twice without the step (F4), which [drivenOnly] aims at.
  */
 class PlannedTarget(
     val cornerId: String,
@@ -99,6 +100,7 @@ class PlannedTarget(
     val brakeLaterSeconds: Double = 0.0,
     val gear: Int? = null,
     val lapStartSeconds: Double? = null,
+    val driven: PlannedTarget? = null,
 )
 
 /** The targets of a track's line plan, made from session [sessionId] (FBBD-306). */
@@ -186,17 +188,19 @@ private fun aims(
 /**
  * The lap of [laps] (one session's) that [p] plans from. The analysis and the coach number laps each
  * their own way, so it is the lap with the plan's time; where the plan has the lap's start and the
- * session its clock at the first sample ([originMicros]), the one that also started then (F5).
- * Otherwise two laps that close in time are no identity (FBBD-405): no lap, rather than a guess.
+ * session its clock at the first sample ([originMicros]), the one that also started then (F5), and
+ * none when no lap of that time did. Without a start, two laps that close in time are no identity
+ * (FBBD-405): no lap, rather than a guess.
  */
-internal fun plannedLap(laps: List<TracedLap>, originMicros: Long?, p: PlannedTarget): TracedLap? {
+fun plannedLap(laps: List<TracedLap>, originMicros: Long?, p: PlannedTarget): TracedLap? {
     val sameTime = laps.filter { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) <= SameLapSeconds }
     val at = p.lapStartSeconds?.let { start -> originMicros?.plus((start * MicrosPerSecond).roundToLong()) }
-    // A start that no lap of that time matches is no identity either: the time alone decides, as before.
-    val started = at?.let { t ->
-        sameTime.filter { abs(it.lap.startMicros - t) <= SameStartMicros }.minByOrNull { abs(it.lap.startMicros - t) }
+    // With a start, only a lap that started then is that lap: another of the same time is another lap.
+    return if (at == null) {
+        sameTime.singleOrNull()
+    } else {
+        sameTime.filter { abs(it.lap.startMicros - at) <= SameStartMicros }.minByOrNull { abs(it.lap.startMicros - at) }
     }
-    return started ?: sameTime.singleOrNull()
 }
 
 /** The analysis and the coach place a lap's start on the same line crossing, apart by at most this. */

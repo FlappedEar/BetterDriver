@@ -84,7 +84,20 @@ data class PlanCorner(
     val brakeRoom: PlanBrakeRoom? = null,
     /** A lower gear at the slowest point (FBBD-326); null without. */
     val gear: PlanGear? = null,
-)
+    /**
+     * The second fastest pass over every lap at the track: a time driven twice (FBBD-177). The [target]
+     * where that is ahead of the reference; where nothing is ahead the target shown is the reference's
+     * own pass, driven once, and the coach aims at this one instead (F4). Null in a plan saved before it,
+     * or with fewer than two passes.
+     */
+    val confirming: PlanPass? = null,
+) {
+    /**
+     * The pass driven twice the coach aims at (FBBD-177, F4): the [target] where it is ahead of the
+     * reference, else the [confirming] pass; in a plan saved before it, the target.
+     */
+    val drivenTarget: PlanPass get() = if (gainSeconds > 0.0) target else confirming ?: target
+}
 
 /**
  * [CornerGear] as kept (FBBD-326): be in [gear] at the slowest point, not [from]; [higherLaps] of
@@ -311,6 +324,7 @@ fun linePlan(
                         g.lowerPullG, g.higherPullG, g.seconds,
                     )
                 },
+                confirming = c.confirming?.let(::pass),
             )
         },
         gearbox = line.gearbox,

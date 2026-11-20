@@ -1,24 +1,44 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.PlanCorner
+import com.flappedear.betterdriver.analysis.line.PlanPass
 
 /**
  * The targets of [plan] in its corners with a CornerId, as the coach reference takes them, with the
  * braking points beyond his best (FBBD-312, UI-276 B: "Turn 9, brake 10 later") and the gear at
  * the slowest point with the car's gearbox (FBBD-326, UI-279 A: "Turn 7, brake at 80, second").
+ *
+ * The coach aims only at a time driven twice (FBBD-177). Where nothing is ahead of the reference the
+ * plan shows the reference's own pass, driven once: the coach aims at the corner's confirming pass
+ * instead (F4), but for a braking point beyond his best, which is a step from his best on purpose.
  */
 fun plannedTargets(plan: LinePlan) = PlannedTargets(
     plan.sessionId,
     plan.corners.mapNotNull { c ->
-        c.cornerId?.let {
-            PlannedTarget(
-                it, c.target.sessionId, c.target.lapSeconds,
-                c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0, c.gear?.gear,
-                c.target.lapStartSeconds,
-            )
+        c.cornerId?.let { id ->
+            val driven = target(id, c.drivenTarget, c)
+            val room = c.brakeRoom
+            if (room == null) {
+                driven
+            } else {
+                target(id, c.target, c, room.laterMeters, room.seconds, driven)
+            }
         }
     },
     plan.gearbox,
+)
+
+@Suppress("LongParameterList") // A target's lap, step and gear, as PlannedTarget takes them.
+private fun target(
+    id: String,
+    pass: PlanPass,
+    c: PlanCorner,
+    laterMeters: Int = 0,
+    laterSeconds: Double = 0.0,
+    driven: PlannedTarget? = null,
+) = PlannedTarget(
+    id, pass.sessionId, pass.lapSeconds, laterMeters, laterSeconds, c.gear?.gear, pass.lapStartSeconds, driven,
 )
 
 /**
@@ -29,7 +49,9 @@ fun plannedTargets(plan: LinePlan) = PlannedTargets(
 fun PlannedTargets.drivenOnly(): PlannedTargets = PlannedTargets(
     sessionId,
     targets.map {
-        PlannedTarget(it.cornerId, it.sessionId, it.lapSeconds, gear = it.gear, lapStartSeconds = it.lapStartSeconds)
+        it.driven ?: PlannedTarget(
+            it.cornerId, it.sessionId, it.lapSeconds, gear = it.gear, lapStartSeconds = it.lapStartSeconds,
+        )
     },
     gearbox,
 )

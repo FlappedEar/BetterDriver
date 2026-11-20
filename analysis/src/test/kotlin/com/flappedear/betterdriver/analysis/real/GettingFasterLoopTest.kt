@@ -313,7 +313,9 @@ class GettingFasterLoopTest {
                 val step = c.brakeRoom?.let { (it.seconds * 1e6).roundToLong() }?.takeIf { corner.braked } ?: 0L
                 target?.let { t -> source(map, laps, t.lap, t.timeMicros + step, corner.number) } ?: "none"
             }.distinct().singleOrNull()
-            Target(c.name, lapOf(laps, c.target.sessionId, c.target.lapSeconds), coach)
+            // The pass driven twice (F4), but for a braking point beyond his best, a step from the plan's own.
+            val aim = if (c.brakeRoom != null) c.target else c.drivenTarget
+            Target(c.name, lapOf(laps, aim.sessionId, aim.lapSeconds), coach)
         }
     }
 
