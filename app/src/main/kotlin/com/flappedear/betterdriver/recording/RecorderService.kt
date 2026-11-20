@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingEnd
+import com.flappedear.betterdriver.recorder.RecordingStopText
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveFixAge
@@ -122,11 +123,11 @@ private fun wantedSensors(wanted: SharedPreferences): List<SensorRef> =
 private fun notificationDetail(info: SessionInfo) =
     listOf(info.track, info.car).filter { it.isNotBlank() }.joinToString(" · ")
 
-/** Shown on the track screen when a recording ends without the driver stopping it. */
-private fun endedMessage(reason: String) = when (reason) {
-    "storage_full" -> "Storage full. The session is saved."
-    else -> "Recording stopped ($reason). The session is saved."
-}
+/**
+ * Shown on the track screen when a recording ends without a clean user stop: also a user stop whose
+ * final write failed ("error"), which is not saved, only recoverable (review v1.34.1 F9, RecordingStopText).
+ */
+private fun endedMessage(reason: String) = RecordingStopText.ended(reason) ?: "Recording stopped. The session is saved."
 
 /**
  * Hosts the recorder in its own process (android:process=":recorder"), as a foreground service, so

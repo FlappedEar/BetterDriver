@@ -394,11 +394,15 @@ final class RecordingController: ObservableObject {
         // stop in the session's events, as its start (audit 30 Oct BD-05).
         goPros?.stop()
         goPros = nil
-        _ = live.stop()
-        AppLog.i("Recording", "stop")
+        let clean = live.stop()
+        // Review v1.34.1 F9 (FBBD-478): a STOP whose end could not be written (or a recording the
+        // recorder had already ended itself) is not a normal stop: say so, never "saved".
+        let reason = clean ? "user" : (live.screen().stoppedReason ?? "error")
+        AppLog.i("Recording", clean ? "stop" : "stop: recording had ended (\(reason))")
         // How long records waited for the disk; a large wait or drops point at slow storage (FBBD-350 R2).
         AppLog.i("Recording", live.writerText)
         end()
+        if let text = RecordingStopText.shared.ended(reason: reason) { error = text }
     }
 
     private func end() {
@@ -484,7 +488,8 @@ final class RecordingController: ObservableObject {
             heartRate?.stop()
             tyres?.stop()
             end()
-            error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
+            // The same words as Android (shared RecordingStopText, FBBD-478).
+            error = RecordingStopText.shared.ended(reason: reason) ?? "Recording stopped"
             return
         }
         gnssSound(now.gnss)
