@@ -60,23 +60,22 @@ final class IPadLayoutTests: XCTestCase {
         let next = rows.element(boundBy: 1)
         let hittable = NSPredicate(format: "isHittable == true")
         expectation(for: hittable, evaluatedWith: add)
-        expectation(for: hittable, evaluatedWith: next)
         waitForExpectations(timeout: 15)
+        XCTAssertTrue(waitUntil(15) { self.onScreen(next) }, "the next session is not beside the session")
         let toggle = app.buttons["toggleSessionList"].firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 10), "no list button over the session")
         let besideX = toggle.frame.minX
         toggle.tap()
-        // Gone or covered: a hidden column's rows may leave the tree, where isHittable would fail.
-        for _ in 0..<30 where next.exists && next.isHittable {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        XCTAssertFalse(next.exists && next.isHittable, "the list is still beside the session")
+        // Gone, moved off the screen or covered. While the column slides away its rows are still in the
+        // tree with a frame outside the window, where asking isHittable fails the test ("Failed to
+        // determine hittability ... Activation point invalid", FBBD-406's iOS runs): onScreen reads the
+        // frame first and asks isHittable only of a row inside the window.
+        XCTAssertTrue(waitUntil(15) { !self.onScreen(next) }, "the list is still beside the session")
         XCTAssertTrue(gg.exists, "the session closed with the list")
         XCTAssertLessThan(toggle.frame.minX, besideX - 200, "the session did not take the list's width")
         keep("Session without the list, \(name)")
         toggle.tap()
-        expectation(for: hittable, evaluatedWith: next)
-        waitForExpectations(timeout: 15)
+        XCTAssertTrue(waitUntil(15) { self.onScreen(next) }, "the list did not come back")
         XCTAssertFalse(app.buttons["Drive"].exists, "a Drive tab on the iPad")
         // Android's row: time and track, then the laps and the rest from the shared core.
         let row = rows.element(boundBy: 0)
@@ -108,6 +107,27 @@ final class IPadLayoutTests: XCTestCase {
         if bottom.waitForExistence(timeout: 5) { bottom.tap(); return }
         let top = app.buttons["Sessions"].firstMatch
         if top.waitForExistence(timeout: 5) { top.tap() }
+    }
+
+    /// [element] is there to tap: in the tree, its centre inside the window, and hittable. isHittable is
+    /// asked last, as it fails the test instead of answering false for a frame outside the window.
+    private func onScreen(_ element: XCUIElement) -> Bool {
+        guard element.exists else { return false }
+        let frame = element.frame
+        guard !frame.isEmpty, app.windows.firstMatch.frame.contains(CGPoint(x: frame.midX, y: frame.midY)) else {
+            return false
+        }
+        return element.isHittable
+    }
+
+    /// Polls [condition] every half second until it holds or [seconds] pass.
+    private func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        return condition()
     }
 
     private func keep(_ name: String) {
