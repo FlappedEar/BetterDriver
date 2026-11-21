@@ -13,6 +13,12 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.36.0
+
+- Coach: a corner after a straight too short for any cue now gets its cue one straight earlier, in its shortest form, when the corner before it has nothing to say.
+- Coach: it coaches every track corner and aims at the same corners and target lap as the line plan on the **Map** tab.
+- iPad: **Share log** in **Settings › Diagnostics** is no longer covered by the navigation bar.
+
 ## 1.35.0
 
 - Phone video: a new file every 5 minutes, so a crash or a dead phone loses at most the last few minutes of video.
