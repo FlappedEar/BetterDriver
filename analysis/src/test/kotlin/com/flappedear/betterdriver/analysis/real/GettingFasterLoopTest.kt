@@ -84,13 +84,13 @@ class GettingFasterLoopTest {
     private val store by lazy { SessionStore(File(tmp, "sessions")) }
 
     /**
-     * Where the loop falls short on a day today, never to grow: focus corners the coach has no
-     * corner for ([uncoachable]), and focus corners where the next session lost time against the
-     * coach's target on two passes or more and heard nothing there ([silent]), and corners whose
-     * coach target is another lap than the line plan's ([otherTarget]: one target everywhere, FBBD-306),
+     * Where the loop falls short on a day today, never to grow: focus corners where the next session
+     * lost time against the coach's target on two passes or more and heard nothing there ([silent]),
      * and corners of the line plan's focus the coach said nothing about in the next session ([unspoken]).
+     * A focus corner the coach has no corner for, or a corner whose coach target is another lap than
+     * the line plan's, fails the build (FBBD-405: the coach has a corner in every track corner).
      */
-    private class Known(val uncoachable: Int, val silent: Int, val otherTarget: Int, val unspoken: Int)
+    private class Known(val silent: Int, val unspoken: Int)
 
     /** One analysed session, and what it hands the next. */
     private class Step(
@@ -394,21 +394,19 @@ class GettingFasterLoopTest {
             }
         }
         val all = turns.flatMap { it.corners }
-        val uncoachable = all.count { it.coachCorners.isEmpty() }
+        // Every focus corner has a coach corner (FBBD-405).
+        turns.forEach { t ->
+            t.corners.filter { it.coachCorners.isEmpty() }
+                .forEach { problems += "${t.from.label} -> ${t.to.label}: ${it.target.name} has no coach corner" }
+        }
         // Silent where the coach worked: the plan's focus when it had one (UI-174 A), else the session focus.
         val silent = turns.sumOf { t -> t.worked.count { it.silent } }
-        if (uncoachable > known.uncoachable) {
-            problems += "$uncoachable focus corners without a coach corner, was ${known.uncoachable}"
-        }
         if (silent > known.silent) problems += "$silent silent focus corners, was ${known.silent}"
         // 4. One target everywhere: the coach aims at the plan's lap in every corner.
         turns.flatMap { t -> t.targets.filter { it.plan == null }.map { "${t.from.label}: ${it.name}" } }
             .forEach { problems += "$it: the plan's target lap is none of the coach's laps" }
-        val otherTarget = turns.sumOf { t -> t.targets.count { !it.same } }
-        if (otherTarget > known.otherTarget) {
-            problems += "$otherTarget corners where the coach aims at another lap than the plan, " +
-                "was ${known.otherTarget}"
-        }
+        turns.flatMap { t -> t.targets.filter { it.plan != null && !it.same }.map { "${t.from.label}: ${it.name}" } }
+            .forEach { problems += "$it: the coach aims at another lap than the plan (FBBD-405)" }
         // 5. The coach works on the plan's focus.
         val unspoken = turns.sumOf { t -> t.proof?.corners.orEmpty().count { !it.coached } }
         if (unspoken > known.unspoken) problems += "$unspoken plan focus corners without a cue, was ${known.unspoken}"
@@ -427,7 +425,10 @@ class GettingFasterLoopTest {
             // Unspoken 10 -> 12 with braking points beyond his best (FBBD-312, UI-277 A): four of them join
             // the plan's focus where the driven targets left places; Corner 5 got cues in both its turns,
             // Corner 8 (14:37) and Corner 9 (16:06) none, and all four were faster in the next session.
-            Known(uncoachable = 1, silent = 6, otherTarget = 15, unspoken = 12),
+            // FBBD-405: a coach corner in every track corner. Corners 2, 10 and 12 (no speed minimum of their
+            // own on the fastest lap) are now measured and aimed where the plan does; silent 6 -> 4,
+            // unspoken 12 -> 11 (Corner 2 gets a cue in 11:29 -> 13:03).
+            Known(silent = 4, unspoken = 11),
         )
 
     @Test
@@ -436,7 +437,10 @@ class GettingFasterLoopTest {
             "Silesia Ring 27 Sep", RealCorpus.SILESIA_DAY, RealCorpus.silesiaTrack(),
             // Silent 2 -> 4 when silent became the plan's focus (UI-174 A): Turns 6, 11 and 1 follow straights
             // of 1.6 to 2.2 s, shorter than the shortest cue (2.8 s), so nothing is said there in time.
-            Known(uncoachable = 0, silent = 4, otherTarget = 6, unspoken = 5),
+            // Silent 4 -> 5 with a coach corner in every track corner (FBBD-405): Corner 11 now has its own,
+            // so Corner 12's window starts after Corner 11's apex (as every window after a corner does) and
+            // its 13:53 -> 14:54 passes lose on 3, not 1; the straight between them is too short for a cue (FBBD-404).
+            Known(silent = 5, unspoken = 5),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */
