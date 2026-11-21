@@ -117,7 +117,9 @@ final class AppLogTests: XCTestCase {
         other.log("after \(mark, privacy: .public)")
         Logger(subsystem: AppLog.subsystem, category: "F14").log("own \(mark, privacy: .public)")
         var text = ""
-        for _ in 0..<20 where !text.contains("after \(mark)") {
+        // The unified log can take seconds to hand a new line to OSLogStore on a busy simulator
+        // (PR #615's iPhone run: not there after 2 s), so up to 15 s.
+        for _ in 0..<150 where !text.contains("after \(mark)") {
             text = LogShare.systemLog(since: cleared)
             if !text.contains("after \(mark)") { Thread.sleep(forTimeInterval: 0.1) }
         }

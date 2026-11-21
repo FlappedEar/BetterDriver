@@ -246,11 +246,15 @@ final class FirstRunGate: ObservableObject {
     /// Settings › App › Run setup again.
     func runAgain() {
         defaults.set(false, forKey: Self.doneKey)
+        defaults.synchronize()
         showing = true
     }
 
     func done() {
         defaults.set(true, forKey: Self.doneKey)
+        // Written now, not later by the preferences daemon: an app closed right after Done (or a UI test
+        // that terminates it) otherwise opens on the checklist again.
+        defaults.synchronize()
         showing = false
     }
 
