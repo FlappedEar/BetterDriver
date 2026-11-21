@@ -181,6 +181,10 @@ extension ShellPage where Trailing == EmptyView {
 /// tab's buttons on its right. Not the system's large title: built with the iOS 26 SDK, TestFlight
 /// 1582 on iOS 27 left the top of every tab empty and drew "Sessions" over the first session card.
 /// The navigation bar is hidden on the tab itself; pages opened from it show theirs, with Back.
+/// On the iPad the bar stays (empty) on the tab too (FBBD-486): with it hidden there, a page opened
+/// from the tab was laid out as if the bar sat at the top, but the iPad's tab bar pushes it down by
+/// 72 points, so the opaque bar covered the page's first row (Settings › Diagnostics › Share log,
+/// bar at y 96-200.5 over the row at 146.5-191 on the iPad 13-inch simulator, iOS 26).
 struct TabTitle<Trailing: View>: ViewModifier {
     let title: String
     let trailing: Trailing
@@ -189,7 +193,16 @@ struct TabTitle<Trailing: View>: ViewModifier {
         content
             // Still the page's title: Back on the pages opened from it says where it goes.
             .navigationTitle(title)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(Device.isTablet ? .visible : .hidden, for: .navigationBar)
+            .toolbar {
+                // The iPad's kept bar shows no second, small title over the tab's own one.
+                if Device.isTablet {
+                    ToolbarItem(placement: .principal) {
+                        Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+                    }
+                }
+            }
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack(alignment: .center, spacing: 8) {
                     Text(title)
