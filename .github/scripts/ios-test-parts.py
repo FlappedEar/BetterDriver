@@ -34,8 +34,10 @@ PARTS = [
 ]
 LAST = len(PARTS) + 1
 
-# What only the iPad shows: run on the iPad in every pull request.
-IPAD_OWN = ["IPadLayoutTests", "ScreenLayoutTests", "ReviewScreensTests", "FirstRunTests"]
+# What only the iPad shows: run on the iPad in every pull request. ShareEntryPointsTests too: on the
+# iPad Share log was covered from #584 and only main's iPad rest ran it (FBBD-486), so for five days
+# no pull request saw it and the TestFlight gate fell back to every UI test.
+IPAD_OWN = ["IPadLayoutTests", "ScreenLayoutTests", "ReviewScreensTests", "FirstRunTests", "ShareEntryPointsTests"]
 
 
 def matrix(scope):
