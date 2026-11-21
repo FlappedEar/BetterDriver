@@ -102,3 +102,17 @@ class DropReport {
 
     fun due(dropped: Long): Long? = if (dropped == reported) null else dropped.also { reported = it }
 }
+
+/**
+ * The session's channels after [defined] arrive, each replacing an earlier definition of its id and
+ * new ones added at the end; null when nothing changed, so the metadata is not rewritten. Chunks do
+ * not store provenance, so the metadata keeps it for every channel (FBBD-174); both recorders use this.
+ */
+fun mergeChannels(channels: List<ChannelDef>, defined: List<ChannelDef>): List<ChannelDef>? {
+    val merged = channels.toMutableList()
+    for (def in defined) {
+        val at = merged.indexOfFirst { it.id == def.id }
+        if (at >= 0) merged[at] = def else merged += def
+    }
+    return merged.takeIf { it != channels }
+}
