@@ -428,7 +428,9 @@ class GettingFasterLoopTest {
             // FBBD-405: a coach corner in every track corner. Corners 2, 10 and 12 (no speed minimum of their
             // own on the fastest lap) are now measured and aimed where the plan does; silent 6 -> 4,
             // unspoken 12 -> 11 (Corner 2 gets a cue in 11:29 -> 13:03).
-            Known(silent = 4, unspoken = 11),
+            // FBBD-404: a cue for a corner after a too-short straight is said a straight early; silent 4 -> 3,
+            // unspoken 11 -> 10. The rest need a shorter cue form (FBBD-404, next) or have no brake/speed advice.
+            Known(silent = 3, unspoken = 10),
         )
 
     @Test
@@ -440,7 +442,10 @@ class GettingFasterLoopTest {
             // Silent 4 -> 5 with a coach corner in every track corner (FBBD-405): Corner 11 now has its own,
             // so Corner 12's window starts after Corner 11's apex (as every window after a corner does) and
             // its 13:53 -> 14:54 passes lose on 3, not 1; the straight between them is too short for a cue (FBBD-404).
-            Known(silent = 5, unspoken = 5),
+            // FBBD-404: a cue for a corner after a too-short straight is said a straight early; silent 5 -> 4,
+            // unspoken 5 -> 4. Turn 4 is nearly stopped in, so its cue is held back on purpose (very_low_speed);
+            // the rest need a shorter cue form (FBBD-404, next).
+            Known(silent = 4, unspoken = 4),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */
