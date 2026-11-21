@@ -63,9 +63,10 @@ data class CoachReference(
          * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
          * the apex (UI-170 B). 6: aims carry the plan's gear and the reference the gearbox (FBBD-326).
          * 7: a plan lap that two laps match in time gives no aim (FBBD-405). 8: the plan's lap is found
-         * by its start where the plan has it (F5). An older file is rebuilt from the sessions.
+         * by its start where the plan has it (F5). 9: a corner in every track corner (FBBD-405). An older
+         * file is rebuilt from the sessions.
          */
-        const val Version = 8
+        const val Version = 9
     }
 }
 
@@ -135,7 +136,8 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
     val (bestSession, best) = timed.minByOrNull { it.second.lap.timeMicros } ?: return null
     val found = findCorners(best.trace)
     // Named by the track's corners (FBBD-172); the coach names them again from the track it runs at.
-    val corners = lapFrame(track)?.let { identifyCorners(found, best.trace, it, track.identity) } ?: found
+    // Every track corner has one (FBBD-405), so the coach measures and aims where the line plan does.
+    val corners = lapFrame(track)?.let { withTrackCorners(found, best.trace, it, track.identity) } ?: found
     val map = CornerMap(best.trace, corners)
     val targets = bestPasses(timed.flatMap { (_, l) -> map.passes(l.trace, l.lap.number) }, ConfirmingPasses)
     val aims = plan?.let { aims(map, timed, origins, it) }.orEmpty()

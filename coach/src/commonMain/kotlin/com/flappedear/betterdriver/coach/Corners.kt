@@ -192,6 +192,55 @@ fun findCorners(trace: LapTrace): List<Corner> {
     return corners
 }
 
+/**
+ * The corner of [trace] in the stretch [fromMeters] to [toMeters] (a track corner [findCorners] does
+ * not list, FBBD-405: one taken flat out or on a slight lift, or one whose slowest point is another
+ * corner's): its apex is the slowest point in the stretch, its braking (or lift) point the last point
+ * at the peak speed from [approachFromMeters] to the apex. Null for a stretch shorter than one
+ * resampling step or a stop in it.
+ */
+@Suppress("ReturnCount") // Each stretch that has no corner in it.
+fun cornerIn(trace: LapTrace, fromMeters: Double, toMeters: Double, approachFromMeters: Double): Corner? {
+    val r = trace.resample()
+    if (r.size < 2) return null
+    val lo = (fromMeters / r.stepMeters).toInt().coerceIn(0, r.size - 1)
+    val hi = (toMeters / r.stepMeters).toInt().coerceIn(0, r.size - 1)
+    if (hi <= lo) return null
+    val smoothHalf = (SmoothMeters / r.stepMeters).toInt()
+    val v = smooth(r.speedsKmh, smoothHalf)
+    // Kept off the stretch's ends: slowest at its start (still slowing from the corner before), the
+    // apex would be placed in that corner.
+    val margin = minOf((InsideMeters / r.stepMeters).toInt(), (hi - lo) / InsideFractionDivisor)
+    val a = lo + margin
+    val b = hi - margin
+    val slowest = (a..b).minBy { v[it] }
+    var apex = slowest
+    for (k in maxOf(a, slowest - smoothHalf)..minOf(b, slowest + smoothHalf)) {
+        if (r.speedsKmh[k] < r.speedsKmh[apex]) apex = k
+    }
+    if (trace.slowestBetween(r.along(lo), r.along(hi)) < StopKmh) return null
+    val from = (approachFromMeters / r.stepMeters).toInt().coerceIn(0, apex)
+    var peak = from
+    for (k in from..apex) if (v[k] > v[peak]) peak = k
+    var brake = peak
+    for (k in peak..apex) if (v[k] >= v[peak] - PeakToleranceKmh) brake = k
+    return Corner(
+        number = 0,
+        brakeAt = r.along(brake),
+        apexAt = r.along(apex),
+        entryKmh = r.speedsKmh[brake],
+        minKmh = r.speedsKmh[apex],
+        turn = turnAt(r, brake, apex),
+        braked = braked(r, brake, apex),
+    )
+}
+
+/** A corner found in a stretch ([cornerIn]) has its apex at least this far inside it. */
+private const val InsideMeters = 6.0
+
+/** ... or a quarter of a short stretch. */
+private const val InsideFractionDivisor = 4
+
 /** Slowing [dropKmh] is a corner if the car [braked] for it, or lifted where the road turns (FBBD-307). */
 private fun isCorner(dropKmh: Double, braked: Boolean, turn: Turn) =
     dropKmh >= MinCornerDropKmh && (braked || turn != Turn.Straight)
