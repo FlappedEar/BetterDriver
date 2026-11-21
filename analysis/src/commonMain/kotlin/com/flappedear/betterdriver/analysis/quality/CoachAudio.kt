@@ -25,7 +25,6 @@ internal fun audioMetrics(
     total(played, "live", MaxLiveTotalMicros),
     total(played, "clip", MaxClipTotalMicros),
     overlap(played.map { it.second }, ends),
-    speechLength(played, ends),
     perStraight(played, samples),
     focus(played.map { it.second }),
     outDelayKnown(played.map { it.second }),
