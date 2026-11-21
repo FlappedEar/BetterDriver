@@ -100,6 +100,47 @@ class CornerIdentityTest {
     }
 
     @Test
+    fun `every track corner has a coach corner - one taken flat out too`() {
+        // A kink in the middle of the second straight: a track corner the car does not slow for, so the
+        // coach's own corner finder has no corner there (FBBD-405), while the line plan has one.
+        val kinked = run {
+            val path = (0 until (sim.length / 2).toInt()).map { sim.xy(it * 2.0) }
+            val bends = sim.apexes.map { it - sim.arc / 2 to it + sim.arc / 2 }
+            val shapes = bends.flatMapIndexed { k, (start, end) ->
+                val next = bends[(k + 1) % bends.size].first
+                val corner = SegmentShape(SegmentKind.Corner, start, end, corners = if (k == 0) 2 else 1)
+                if (k == 1) {
+                    val middle = (end + next) / 2
+                    listOf(
+                        corner,
+                        SegmentShape(SegmentKind.Straight, end, middle - 20),
+                        SegmentShape(SegmentKind.Corner, middle - 20, middle + 20),
+                        SegmentShape(SegmentKind.Straight, middle + 20, next),
+                    )
+                } else {
+                    listOf(corner, SegmentShape(SegmentKind.Straight, end, next))
+                }
+            }
+            TrackRevision.first(sim.frame, path, closed = true, shapes)
+        }
+        val at = track.copy(identity = kinked)
+        val laps = tracedLaps(at, sim.drive(List(3) { SimCircuit.Pace() }).fixes.asSequence())
+        val reference = assertNotNull(buildReference(at, listOf(SessionLaps("earlier", laps))))
+        val corners = identified(reference.map(), frame, kinked).corners
+        assertEquals(kinked.corners.map { it.id }, corners.map { it.cornerId })
+        assertEquals(listOf(1, 2, 3, 4, 5), corners.map { it.number })
+        assertEquals(listOf(1, 3, 4, 5, 6), corners.map { it.label })
+        val kink = corners[2]
+        val segment = assertNotNull(kinked.segment("c3"))
+        assertEquals(SegmentKind.Corner, segment.kind)
+        // Placed in its own track corner, behind the bend before it; it is measured on every lap.
+        assertTrue(kink.apexAt > corners[1].apexAt && kink.apexAt < corners[3].apexAt, "kink at ${kink.apexAt}")
+        assertEquals(3, laps.sumOf { l -> reference.map().passes(l.trace, l.lap.number).count { it.corner == 3 } })
+        // The other corners are the coach's own, as without the kink.
+        assertEquals(4, findCorners(laps.minBy { it.lap.timeMicros }.trace).size)
+    }
+
+    @Test
     fun `a braking corner off the track's centreline keeps the coach's own number`() {
         val far = reference().corners
         val moved = TrackRevision.first(
