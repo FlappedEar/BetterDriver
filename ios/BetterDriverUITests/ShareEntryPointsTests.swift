@@ -52,6 +52,8 @@ final class ShareEntryPointsTests: XCTestCase {
         diagnostics.tap()
         let shareLog = app.descendants(matching: .any).matching(identifier: "diagnostics.share").firstMatch
         XCTAssertTrue(shareLog.waitForExistence(timeout: 10), "no Share log")
+        // On the iPad the row was covered from #584 (FBBD-486): say what lies over it.
+        assertHittable(shareLog, "Share log")
         shareLog.tap()
         assertShareSheet("Share log")
     }
@@ -109,6 +111,53 @@ final class ShareEntryPointsTests: XCTestCase {
         }
         XCTAssertEqual(app.state, .runningForeground, "\(name): the app stopped")
         XCTAssertTrue(shown, "\(name): no share sheet")
+    }
+
+    /// The element can be tapped where a finger would: if not within 5 s, the failure names every
+    /// element at its centre and the screen's bars, so a row covered on one device says by what.
+    private func assertHittable(_ element: XCUIElement, _ name: String) {
+        let deadline = Date().addingTimeInterval(5)
+        while !element.isHittable && Date() < deadline { usleep(250_000) }
+        if element.isHittable {
+            print("HITTABLE \(device) \(name) at \(element.frame)")
+            return
+        }
+        keep("\(name) covered")
+        let frame = element.frame
+        let centre = CGPoint(x: frame.midX, y: frame.midY)
+        var lines: [String] = []
+        func walk(_ node: XCUIElementSnapshot, _ depth: Int) {
+            let bar = [.navigationBar, .tabBar, .toolbar].contains(node.elementType)
+            if node.frame.contains(centre) || bar {
+                lines.append("\(depth) \(Self.typeName(node.elementType)) id='\(node.identifier)' label='\(node.label)' \(node.frame)")
+            }
+            for child in node.children { walk(child, depth + 1) }
+        }
+        if let root = try? app.snapshot() {
+            lines.append("window \(root.frame)")
+            walk(root, 0)
+        }
+        XCTFail("\(device) \(name) not hittable at \(frame); at its centre and bars: " + lines.joined(separator: " | "))
+    }
+
+    private static func typeName(_ type: XCUIElement.ElementType) -> String {
+        switch type {
+        case .application: return "app"
+        case .window: return "window"
+        case .other: return "other"
+        case .button: return "button"
+        case .staticText: return "text"
+        case .scrollView: return "scrollView"
+        case .navigationBar: return "navigationBar"
+        case .tabBar: return "tabBar"
+        case .toolbar: return "toolbar"
+        case .image: return "image"
+        case .cell: return "cell"
+        case .collectionView: return "collectionView"
+        case .sheet: return "sheet"
+        case .alert: return "alert"
+        default: return "type\(type.rawValue)"
+        }
     }
 
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
