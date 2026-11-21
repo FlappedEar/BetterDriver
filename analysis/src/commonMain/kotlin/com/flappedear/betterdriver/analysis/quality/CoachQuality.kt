@@ -25,17 +25,12 @@ private const val KmhPerMps = 3.6
 private const val MinMarginKmh = 5.0
 
 /** A cue as the coach logged it: when it was triggered, its number, and metres to the braking zone. */
-@Suppress("LongParameterList") // The fields of one coach_cue line.
 internal class LoggedCue(
     val tMicros: Long,
     val seq: Int,
     val corner: String?,
     val zoneMeters: Double?,
     val kind: String? = null,
-    /** How long the coach expected the phrase to take (FBBD-406); null in cues logged before it. */
-    val sayMicros: Long? = null,
-    /** The language it was said in: "en" unless logged otherwise. */
-    val lang: String = "en",
 )
 
 /**
@@ -107,10 +102,7 @@ private fun loggedCue(e: RecorderEvent): LoggedCue? {
     val f = fields(e.text.substringBefore(" text="))
     val seq = f["seq"]?.toIntOrNull() ?: return null
     // The corner number said (FBBD-172); cues logged before it have only the coach's own.
-    return LoggedCue(
-        e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"],
-        f["say_ms"]?.toLongOrNull()?.let { it * MicrosPerMilli }, f["lang"] ?: "en",
-    )
+    return LoggedCue(e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"])
 }
 
 internal fun voiced(e: RecorderEvent): Voiced? {

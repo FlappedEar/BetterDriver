@@ -422,10 +422,9 @@ private class SpeechTiming(
      * said faster or slower ([Speech.rate], FBBD-406) it takes that much less or more time. Both languages
      * use the same time per word: no measurement says Polish is slower yet (FBBD-406, unvalidated).
      */
-    fun needMicros(text: String) = latencyMicros + audioDelayMillis * MicrosPerMilli + sayMicros(text)
-
-    /** How long saying [text] takes at the set rate, without the latency and the output's delay. */
-    fun sayMicros(text: String) = (phrases.durationMicros(text) / settings.speech.rate).toLong()
+    fun needMicros(text: String) =
+        latencyMicros + audioDelayMillis * MicrosPerMilli +
+            (phrases.durationMicros(text) / settings.speech.rate).toLong()
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
@@ -458,7 +457,7 @@ private class SpeechTiming(
     fun said(cue: Cue): Cue {
         speakingUntil = cue.tMicros + needMicros(cue.text)
         topSinceSaid = kmh
-        return cue.copy(language = settings.language, sayMicros = sayMicros(cue.text))
+        return cue.copy(language = settings.language)
     }
 
     /** [cue] was never played, so nothing is being said. */
