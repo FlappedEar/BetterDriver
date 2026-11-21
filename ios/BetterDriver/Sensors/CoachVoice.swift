@@ -142,7 +142,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         current[ObjectIdentifier(utterance)] = speech
         playing += 1
         lock.unlock()
-        try? AVAudioSession.sharedInstance().setActive(true)
+        if (try? AVAudioSession.sharedInstance().setActive(true)) != nil { use.activated() }
         // A new phrase replaces one still being said, as on Android (QUEUE_FLUSH). A cut clip's engine
         // is paused, so the audio can go back to the other apps when the live phrase ends.
         if cutClip() { pauseEngine() }
@@ -169,7 +169,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         }
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         cutClip()
-        try? AVAudioSession.sharedInstance().setActive(true)
+        if (try? AVAudioSession.sharedInstance().setActive(true)) != nil { use.activated() }
         engineLock.lock()
         defer { engineLock.unlock() }
         if engine.attachedNodes.contains(player) == false { engine.attach(player) }
