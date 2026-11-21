@@ -585,6 +585,12 @@ class CueEngine(
     private class Plan(val corner: Int, val lap: Int, val cue: Cue?, val said: Boolean = false)
 
     private var plan: Plan? = null
+
+    /**
+     * A cue for the corner after the next one, said on this straight because the straight before its
+     * own corner is too short for any form of it (FBBD-404); null when there is none on this lap.
+     */
+    private var ahead: Plan? = null
     private val openCues = mutableMapOf<Int, Cue>()
 
     /** A lap time to say; [alone]: nothing else was said on its lap, so it goes before a corner cue. */
@@ -718,6 +724,7 @@ class CueEngine(
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
         meters.forEach { it.start(lap.endMicros, laps.speedKmh) }
         plan = null
+        ahead = null
         openCues.clear()
         saidOnLap = 0
     }
@@ -816,6 +823,7 @@ class CueEngine(
         val corner = cue.corner ?: return
         if (openCues[corner]?.seq == cue.seq) openCues.remove(corner)
         plan?.takeIf { it.corner == corner && it.lap == cue.lap }?.let { plan = Plan(corner, it.lap, null) }
+        ahead?.takeIf { it.corner == corner && it.lap == cue.lap }?.let { ahead = Plan(corner, it.lap, null) }
         book?.cuedOnLap?.let { if (it[corner - 1] == cue.lap) it[corner - 1] = NeverCued }
     }
 
@@ -841,10 +849,14 @@ class CueEngine(
         val previous = b.map.corners.getOrNull(next.number - 2)
         if (previous != null && along < b.zoneEnd(previous) + ClearOfCornerMeters) return null
         val p = plan?.takeIf { it.corner == next.number && it.lap == lap }
+            ?: ahead?.takeIf { it.corner == next.number && it.lap == lap && it.said }?.also { plan = it }
             ?: Plan(next.number, lap, cornerCue(b, next, now)).also { plan = it }
         val zoneStart = b.zoneStart(next)
         val time = speech.timeTo(b.map.path, along, zoneStart)
-        val cue = p.cue
+        // Nothing to say about the next corner: the one after it, when its own straight is too short (FBBD-404).
+        // Only on a straight nothing was said on yet: one cue per straight (FBBD-27).
+        val early = if (p.cue == null && !p.said && speech.leftStraight) aheadOf(b, next, lap, now) else null
+        val cue = p.cue ?: early?.cue
         // Praise first, when it and this straight's corner cue both fit (UI-94 A: else the cue wins).
         // A praise found only after the straight's cue or lap time was said (the cue starts early, FBBD-47)
         // waits for no other straight: one cue per straight (FBBD-27), and the cue won.
@@ -855,7 +867,32 @@ class CueEngine(
         val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
         val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
         if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
-        return if (cue != null) speakCorner(cue, now, time, zoneStart - along) else speakLapTime(now, time)
+        return when {
+            p.cue != null -> speakCorner(p.cue, now, time, zoneStart - along)
+            cue != null -> speakCorner(cue, now, time, zoneStart - along) { ahead = it }
+            else -> speakLapTime(now, time)
+        }
+    }
+
+    /**
+     * The cue for the corner after [next], to say on [next]'s straight (FBBD-404), or null: when the
+     * straight from [next] to it is too short for even its shortest form, nothing would be said there.
+     * Worked out once per lap, in its shortest form; a corner with nothing to say, or whose cue fits its own
+     * straight, is left to that straight.
+     */
+    @Suppress("ReturnCount") // Each early return is a reason for no cue ahead.
+    private fun aheadOf(b: CornerBook, next: Corner, lap: Int, now: Long): Plan? {
+        val after = b.map.corners.getOrNull(next.number) ?: return null
+        ahead?.takeIf { it.corner == after.number && it.lap == lap }?.let { return it.takeIf { p -> p.cue != null } }
+        // Probed quietly: a corner held back here is logged once, on its own straight.
+        val cue = cornerCue(b, after, now, log = false)
+        val from = b.zoneEnd(next) + ClearOfCornerMeters
+        val own = (b.map.path.timeAt(b.zoneStart(after)) - b.map.path.timeAt(from)).toLong()
+        // Its shortest form: heard a corner early, it should be over soon and say little more than the target.
+        val shortest = cue?.let { c -> (listOf(c) + shorter(c)).minBy { speech.needMicros(it.text) } }
+        val tooShort = shortest != null && own < speech.needMicros(shortest.text) + MarginMicros
+        ahead = Plan(after.number, lap, shortest.takeIf { tooShort })
+        return ahead?.takeIf { it.cue != null }
     }
 
 
@@ -864,7 +901,13 @@ class CueEngine(
      * longer fits but its target alone does ([PhraseBook.shortCorner]), that is said instead. [zoneMeters]
      * is the distance to the braking zone, logged with the cue.
      */
-    private fun speakCorner(full: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
+    private fun speakCorner(
+        full: Cue,
+        now: Long,
+        timeToZone: Long?,
+        zoneMeters: Double,
+        keep: (Plan) -> Unit = { plan = it },
+    ): Cue? {
         var planned = full
         var need = speech.needMicros(planned.text) + MarginMicros
         // Too long for what is left of the straight: the target alone, if that fits (FBBD-242); a cue
@@ -873,14 +916,14 @@ class CueEngine(
             shorter(planned).firstOrNull { timeToZone >= speech.needMicros(it.text) + MarginMicros }?.let {
                 planned = it
                 need = speech.needMicros(it.text) + MarginMicros
-                plan = Plan(it.corner!!, it.lap, it)
+                keep(Plan(it.corner!!, it.lap, it))
             }
         }
         val late = timeToZone != null && timeToZone < need
-        if (late) plan = Plan(planned.corner!!, planned.lap, null)
+        if (late) keep(Plan(planned.corner!!, planned.lap, null))
         val ready = timeToZone != null && !late && timeToZone <= need + LeadMicros
         if (!ready || !speech.free(now)) return null
-        plan = Plan(planned.corner!!, planned.lap, null, said = true)
+        keep(Plan(planned.corner!!, planned.lap, null, said = true))
         pendingLap = null // One cue per straight.
         val cue = speech.said(planned.copy(seq = ++seq, tMicros = now, zoneMeters = zoneMeters))
         openCues[planned.corner] = cue
@@ -956,7 +999,7 @@ class CueEngine(
     }
 
     /** The corner cue for [corner] on this straight, or null if there is nothing to say. */
-    private fun cornerCue(b: CornerBook, corner: Corner, now: Long): Cue? {
+    private fun cornerCue(b: CornerBook, corner: Corner, now: Long, log: Boolean = true): Cue? {
         val i = corner.number - 1
         val lap = laps.timer.lapNumber
         // The last lap's pass, or when the last lap was cooled down there, the lap before's at race pace.
@@ -969,7 +1012,7 @@ class CueEngine(
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
         val advice = cornerAdvice(last, target, corner, b.plannedGear(i), gearbox)
-        if (!confidence.advises && advice.isNotEmpty()) {
+        if (log && !confidence.advises && advice.isNotEmpty()) {
             skips += CueSkip(now, lap, corner.number, corner.label, corner.cornerId, doubts)
         }
         val asked = advice.takeIf { confidence.advises }.orEmpty()

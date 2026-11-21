@@ -427,7 +427,10 @@ class GettingFasterLoopTest {
             // Unspoken 10 -> 12 with braking points beyond his best (FBBD-312, UI-277 A): four of them join
             // the plan's focus where the driven targets left places; Corner 5 got cues in both its turns,
             // Corner 8 (14:37) and Corner 9 (16:06) none, and all four were faster in the next session.
-            Known(uncoachable = 1, silent = 6, otherTarget = 15, unspoken = 12),
+            // Silent 6 -> 4, unspoken 12 -> 11 with cues said a straight early (FBBD-404). Left: Corner 7 (10:00) and
+            // Corner 11 (16:06) lose with no brake or speed advice; Corner 1 and Corner 9 (16:06) have a straight
+            // early only 40 ms short of their shortest form ("Turn 9, brake at 45", 3.2 s): a shorter form is next.
+            Known(uncoachable = 1, silent = 4, otherTarget = 15, unspoken = 11),
         )
 
     @Test
@@ -436,7 +439,10 @@ class GettingFasterLoopTest {
             "Silesia Ring 27 Sep", RealCorpus.SILESIA_DAY, RealCorpus.silesiaTrack(),
             // Silent 2 -> 4 when silent became the plan's focus (UI-174 A): Turns 6, 11 and 1 follow straights
             // of 1.6 to 2.2 s, shorter than the shortest cue (2.8 s), so nothing is said there in time.
-            Known(uncoachable = 0, silent = 4, otherTarget = 6, unspoken = 5),
+            // Silent 4 -> 2, unspoken 5 -> 3 with cues said a straight early (FBBD-404). Left: Turn 11 follows two
+            // short straights (2.9 s and 2.2 s) and its cue has no form under 3.2 s; Turn 4 is nearly stopped in, so
+            // its cue is held back on purpose (very_low_speed).
+            Known(uncoachable = 0, silent = 2, otherTarget = 6, unspoken = 3),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */
