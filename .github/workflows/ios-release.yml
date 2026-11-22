@@ -23,9 +23,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner labels as JSON: "macos-26" (GitHub) or ["self-hosted","bd-mac"] (the Mac minis; the App Store Connect key and the signing certificates are then used on them)'
+        description: 'Runner labels as JSON: "xcode-27" (GitHub) or ["self-hosted","bd-mac"] (the Mac minis; the App Store Connect key and the signing certificates are then used on them)'
         required: false
-        default: '"macos-26"'
+        default: '"xcode-27"'
       upload:
         description: 'Upload to TestFlight (false: sign and archive only, to check signing on a runner; it still queues with the uploads)'
         type: boolean
@@ -66,8 +66,11 @@ jobs:
     name: TestFlight
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     # macos-15 jobs sat queued and were cancelled after 15 min on 4 Nov 2026 (runs 41851537284,
-    # 41857456524); macos-26 also carries Xcode 26. A dispatch can pick the Mac minis instead.
-    runs-on: ${{ fromJSON(inputs.runner || '"macos-26"') }}
+    # 41857456524). GitHub's images are named by Xcode major since Xcode 27 (changelog 2026-10-15):
+    # xcode-27 = macOS 27 with Xcode 27.x. macos-26 carries Xcode 26 only, and TestFlight 1617
+    # (1.36.0, built there with the iOS 26.5 SDK) got ITMS-90725: from April 2027 App Store Connect
+    # takes only iOS 27 SDK builds (FBBD-487). A dispatch can pick the Mac minis instead.
+    runs-on: ${{ fromJSON(inputs.runner || '"xcode-27"') }}
     # The smoke gate runs every UI test on one iPhone before the archive when iOS CI has not
     # passed on the released tree; the review tests of PR #411 (some allowed 600 s) push it past
     # an hour on a slow runner.
@@ -117,18 +120,22 @@ jobs:
           # main, so main's builds (386 on 2026-10-28) sorted below it in TestFlight. The 1000
           # puts main's builds above every earlier upload; dispatch from main only.
           echo "build=$(( $(git rev-list --count HEAD) + 1000 ))" >> "$GITHUB_OUTPUT"
-      # App Store Connect takes only builds made with the iOS 26 SDK or later (Xcode 26+).
-      - name: Xcode 26
+      # From April 2027 App Store Connect takes only builds made with the iOS 27 SDK or later
+      # (Xcode 27+, ITMS-90725 on TestFlight 1617). The step fails rather than upload an older SDK.
+      - name: Xcode 27
         run: |
           ls -d /Applications/Xcode*.app
-          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          xcode=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | grep -v -i -E 'beta|release_candidate' | sort -V | tail -n 1 || true)
           if [ -n "$xcode" ]; then
             sudo xcode-select -s "$xcode/Contents/Developer"
           else
-            # A self-hosted Mac mini keeps its one selected Xcode (FBBD-434); it must be 26 or later.
+            # A self-hosted Mac mini keeps its one selected Xcode (FBBD-434); it must be 27 or later.
             major=$(xcodebuild -version | sed -n 's/^Xcode \([0-9]*\).*/\1/p')
-            [ "${major:-0}" -ge 26 ] || { echo "::error::No Xcode 26 or later on this runner"; exit 1; }
+            [ "${major:-0}" -ge 27 ] || { echo "::error::No Xcode 27 or later on this runner"; exit 1; }
           fi
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          [ "${sdk%%.*}" -ge 27 ] || { echo "::error::iOS SDK $sdk: App Store Connect wants iOS 27 or later (ITMS-90725)"; exit 1; }
       - name: Tools
         run: |
           xcodebuild -version

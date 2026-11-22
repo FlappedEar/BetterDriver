@@ -21,7 +21,8 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
   `BD <runner name> <iPad|iPhone> <runtime>`), made once and reused by later jobs, so two runner
   instances on one Mac never drive the same simulator and no job pays for a first boot. Each job
   removes the app and its data first, and shuts down the runner's other simulator.
-* `ios-release.yml` (TestFlight) runs on GitHub's `macos-26` by default, so the signing key and
+* `ios-release.yml` (TestFlight) runs on GitHub's `xcode-27` image (macOS 27, Xcode 27; App
+  Store Connect wants the iOS 27 SDK from April 2027, ITMS-90725, FBBD-487) by default, so the signing key and
   App Store Connect secrets do not reach the Mac. When GitHub's macOS runners take no jobs (both
   1.33.0 TestFlight runs were cancelled after 15 min queued on 4 Nov 2026), a dispatch from main
   with `runner` = `["self-hosted","bd-mac"]` builds and uploads on a Mac mini: the key is then
@@ -54,8 +55,8 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 ### A. As Arek (admin)
 
 ```sh
-xcodebuild -version                 # Xcode 26.x expected; else install Xcode 26 from the App Store
-xcrun simctl list runtimes          # an iOS 26.x runtime expected; else: xcodebuild -downloadPlatform iOS
+xcodebuild -version                 # Xcode 27.x expected (TestFlight needs it); else install Xcode 27 from the App Store
+xcrun simctl list runtimes          # an iOS 27.x runtime expected; else: xcodebuild -downloadPlatform iOS
 sudo xcodebuild -license accept
 sudo xcodebuild -runFirstLaunch
 brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
