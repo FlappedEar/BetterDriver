@@ -180,9 +180,14 @@ jobs:
           set -o pipefail
           mkdir -p build
           sim=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
+          import json, re, sys
           runtimes = json.load(sys.stdin)["devices"]
-          ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
+          # Only plain runtime ids (...SimRuntime.iOS-27-2): the xcode-27 image also lists a key
+          # with "iPhone19" after the version, which broke int() (FBBD-487).
+          version = lambda k: [int(p) for p in re.fullmatch(r".*\.iOS-(\d+(?:-\d+)*)", k).group(1).split("-")]
+          ios = sorted((k for k in runtimes if re.fullmatch(r".*\.iOS-\d+(?:-\d+)*", k)
+                        and any(d["name"].startswith("iPhone") for d in runtimes[k])), key=version)
+          print(f"Runtimes: {sorted(runtimes)}; using {ios[-1]}", file=sys.stderr)
           print(next(d["udid"] for d in runtimes[ios[-1]] if d["name"].startswith("iPhone")))
           ')
           # A pull request only checks the workflow and the release archive: smoke, first-run and

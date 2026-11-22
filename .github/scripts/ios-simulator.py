@@ -13,6 +13,7 @@ simulators (so each runner has one booted), boots this one, and removes the app 
 the keychain, so every job still starts as a first install.
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -27,7 +28,13 @@ def devices():
 
 
 runtimes = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]
-ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
+# Only plain runtime ids (...SimRuntime.iOS-27-2) that hold this kind of device: GitHub's xcode-27
+# image also lists a key with "iPhone19" after the version, which broke int() (FBBD-487).
+ios = sorted(
+    (k for k in runtimes
+     if re.fullmatch(r".*\.iOS-\d+(?:-\d+)*", k)
+     and any(d["name"].startswith(kind) and not d["name"].startswith("BD ") for d in runtimes[k])),
+    key=lambda k: [int(p) for p in re.fullmatch(r".*\.iOS-(\d+(?:-\d+)*)", k).group(1).split("-")])
 device = next(d for d in runtimes[ios[-1]] if d["name"].startswith(kind) and not d["name"].startswith("BD "))
 
 if private:
