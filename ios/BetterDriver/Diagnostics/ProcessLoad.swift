@@ -8,6 +8,8 @@ import Foundation
 /// frees by reference counting), so gc, gc_ms and alloc_mb stay 0; heap_mb is the memory iOS counts
 /// against the app (its footprint) out of what it may use. Outside a recording it logs nothing.
 ///
+/// Each load line is followed by the audio line (AudioMinute, FBBD-305).
+///
 /// One background thread, awake once a second for a locked read of the log's session.
 enum ProcessLoad {
     private static let lock = NSLock()
@@ -48,6 +50,8 @@ enum ProcessLoad {
     private static func write(_ log: LogWriter, _ session: String, from: LoadSample, to: LoadSample, minMs: Int64) {
         guard let line = LoadLine.companion.between(from: from, to: to), line.wallMillis >= minMs else { return }
         log.write("I", LoadLine.companion.TAG, line.text(), session: session)
+        // The audio state with each minute (FBBD-305): RaceBox loss against a held headset session.
+        log.write("I", AudioMinute.tag, AudioMinute.now(), session: session)
     }
 
     /// The process's counters now.

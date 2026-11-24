@@ -249,6 +249,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 options: [.defaultToSpeaker, .allowBluetoothA2DP, .duckOthers]
             )
             try audio.setActive(true)
+            AudioSessionUse.shared.activated()
             return true
         } catch {
             AppLog.w(tag, "no sound: audio session not set up: \(error.localizedDescription)")

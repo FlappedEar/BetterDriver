@@ -12,6 +12,9 @@ final class AudioSessionUse {
 
     private let lock = NSLock()
     private var microphones = 0
+    /// Whether the app last made the session active (true) or gave it back (false), for the minute line
+    /// (FBBD-305): iOS has no call that says whether this app's session is active.
+    private var active = false
     /// What the recording's microphone has taken so far, for the log after each phrase; set by the camera.
     private var report: (() -> String)?
     private let deactivate: () throws -> Void
@@ -26,6 +29,20 @@ final class AudioSessionUse {
         lock.lock()
         defer { lock.unlock() }
         return microphones > 0
+    }
+
+    /// The app made the session active (a coach phrase, the camera's microphone).
+    func activated() {
+        lock.lock()
+        active = true
+        lock.unlock()
+    }
+
+    /// Whether the app's session is active now, as far as the app made it so.
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return active
     }
 
     /// A recording's microphone started taking sound through the session.
@@ -54,6 +71,7 @@ final class AudioSessionUse {
         guard microphones == 0 else { return false }
         do {
             try deactivate()
+            active = false
             return true
         } catch {
             AppLog.w(Self.tag, "session not given back: \(error.localizedDescription)")
