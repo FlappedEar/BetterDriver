@@ -100,7 +100,9 @@ class DemoTrackReplayTest {
     @Test
     fun `corner cues start within the first 6 minutes and keep coming`() {
         val corners = session(15).events.filter { it.kind == CoachEvents.CUE && "kind=Corner" in it.text }
-        assertTrue(corners.size >= 6, "${corners.size} corner cues in 15 min")
+        // The demo driver's mistakes are one-offs, a corner on one lap (DemoCircuit): since FBBD-410 a
+        // one-off asks for nothing the laps around it do not need, so 5 of the 8 cues before it remain.
+        assertTrue(corners.size >= 5, "${corners.size} corner cues in 15 min")
         val first = corners.first().tMicros / 1_000_000
         assertTrue(first < 6 * 60, "first corner cue at $first s")
     }

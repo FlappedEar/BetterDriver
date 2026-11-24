@@ -52,6 +52,10 @@ data class ReplayCue(
     val beforeLap: Int?,
     /** For a corner cue, how far its evidence could be trusted: HIGH, MEDIUM or LOW (FBBD-177). */
     val confidence: String? = null,
+    /** For a corner cue, the coach's number of its corner. */
+    val corner: Int? = null,
+    /** For a corner cue of two (UI-170 B), its second advice field. */
+    val also: String? = null,
 )
 
 /**
@@ -73,6 +77,8 @@ fun replayCues(events: List<RecorderEvent>): List<ReplayCue> = events.ofKind(Cue
         f["praised"]?.substringBefore(',')?.toIntOrNull(),
         f["before"]?.substringBefore(',')?.toIntOrNull(),
         f["conf"],
+        f["corner"]?.toIntOrNull(),
+        f["also"],
     )
 }
 
@@ -135,6 +141,7 @@ fun coachReplayChecks(events: List<RecorderEvent>, language: String, minCoachedL
         praise(cues, cooling),
         language(cues, language),
         confidence(cues),
+        flips(cues),
     )
 }
 
@@ -260,5 +267,57 @@ private fun confidence(cues: List<ReplayCue>): QualityMetric {
         id, label, wrong.size.toDouble(), "cues", wrong.isEmpty(), Basis.MEASURED, criterion,
         "${corner.size} corner cue(s) ($counts)" + (if (wrong.isEmpty()) "" else ", wrong: ") +
             wrong.take(MaxShown).joinToString { "\"${it.text}\" (${it.confidence})" },
+    )
+}
+
+/**
+ * Which way an advice field asks, per thing it moves: the brake point (later +, earlier -), the apex
+ * speed (+), the line (tighter +, wider -), the throttle (earlier +, later -) and the wheel (more +,
+ * less -). Empty for advice with no direction (the gear, smoother hands, the rear stepping out).
+ */
+private fun directions(advice: String?): List<Pair<String, Int>> {
+    val parts = advice?.split(':') ?: return emptyList()
+    val number = parts.getOrNull(1)?.toIntOrNull()
+    fun signed(axis: String) = number?.takeIf { it != 0 }?.let { listOf(axis to if (it > 0) 1 else -1) }.orEmpty()
+    return when (parts[0]) {
+        "brake_later" -> listOf("brake" to 1)
+        "brake_earlier" -> listOf("brake" to -1)
+        "carry" -> listOf("speed" to 1)
+        "line" -> signed("line")
+        "throttle" -> signed("throttle")
+        "steer_more" -> listOf("steer" to 1)
+        "steer_less" -> listOf("steer" to -1)
+        else -> emptyList()
+    }
+}
+
+/**
+ * FBBD-410: the corner cues in [cues] that ask the opposite of their corner's previous cue on the same
+ * thing ("brake later" after "brake earlier", "wider" after "tighter"): advice that flips lap to lap
+ * comes from the noise of single passes, not from what the driver does.
+ */
+fun cueFlips(cues: List<ReplayCue>): List<ReplayCue> {
+    val last = mutableMapOf<Pair<Int, String>, Int>()
+    return cues.filter { it.kind == "Corner" && it.corner != null }.filter { cue ->
+        val corner = cue.corner!!
+        val asks = directions(cue.advice) + directions(cue.also)
+        val reversed = asks.any { (axis, sign) -> last[corner to axis]?.let { it != sign } == true }
+        asks.forEach { (axis, sign) -> last[corner to axis] = sign }
+        reversed
+    }
+}
+
+/** [cueFlips], logged, not judged: the replays count it (FBBD-410). */
+private fun flips(cues: List<ReplayCue>): QualityMetric {
+    val id = "coach.flips"
+    val label = "Corner cues that reverse the last one"
+    val corner = cues.filter { it.kind == "Corner" && it.corner != null }
+    if (corner.isEmpty()) return notMeasured(id, label, null, "no corner cue with its corner")
+    val flipped = cueFlips(cues)
+    return info(
+        id, label, flipped.size.toDouble(), "cues", Basis.MEASURED,
+        "${flipped.size} of ${corner.size} corner cues ask the opposite of their corner's previous cue on the " +
+            "same thing" + (if (flipped.isEmpty()) "" else ", e.g. ") +
+            flipped.take(MaxShown).joinToString { "\"${it.text}\" (lap ${it.lap})" },
     )
 }

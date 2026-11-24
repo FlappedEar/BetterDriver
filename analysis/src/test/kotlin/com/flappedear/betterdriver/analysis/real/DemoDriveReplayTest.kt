@@ -162,7 +162,7 @@ class DemoDriveReplayTest {
         report(d, language, events, metrics)
         // The built-in loop drops the stops in the pit lane (FBBD-237), so no lap ends there: laps 6 and 13
         // leave it at 16 and 49 km/h, which DemoReplayCoachTest checks are coached.
-        for (m in metrics.filter { it.id != "coach.pit_out" }) {
+        for (m in metrics.filter { it.id != "coach.pit_out" && it.verdict != Verdict.INFO }) {
             assertEquals(Verdict.PASS, m.verdict, "${m.label}: ${m.how}")
         }
         // FBBD-47: the coach starts a corner cue a second sooner than before (lead 2.5 s, was 1.5 s), so the
