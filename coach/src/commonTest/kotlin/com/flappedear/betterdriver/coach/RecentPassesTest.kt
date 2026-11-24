@@ -24,7 +24,7 @@ class RecentPassesTest {
     )
 
     @Test
-    fun `the usual pass is the median of each value, so one pass unlike the others moves none`() {
+    fun `the usual pass is the median of each value so one pass unlike the others moves none`() {
         val a = target.copy(lap = 2, brakeAt = 100.0, minKmh = 75.0, timeMicros = 5_200_000L, pickupAt = 180.0)
         val b = target.copy(lap = 3, brakeAt = 102.0, minKmh = 76.0, timeMicros = 5_250_000L, pickupAt = 182.0)
         // Braked 15 m early once.
@@ -79,7 +79,7 @@ class RecentPassesTest {
     }
 
     @Test
-    fun `the same ask is the same change the same way, whatever its number`() {
+    fun `the same ask is the same change the same way whatever its number`() {
         assertTrue(sameAsk(Advice.BrakeLater(10), Advice.BrakeLater(20, at = 90)))
         assertTrue(!sameAsk(Advice.BrakeLater(10), Advice.BrakeEarlier(10)))
         assertTrue(sameAsk(Advice.Line(2, turn = Turn.Left), Advice.Line(5, turn = Turn.Left)))
