@@ -49,6 +49,16 @@ object CoachEvents {
      */
     const val PLAN = "coach_plan"
 
+    /**
+     * The coach works on the exercise picked after an earlier session (FBBD-418), in place of [PLAN]
+     * and [FOCUS]; text from [exerciseText]. The after-session result (FBBD-419) reads it.
+     */
+    const val EXERCISE = "coach_exercise"
+
+    fun exerciseText(sessionId: String, exercise: ExerciseProposal) =
+        "source=$sessionId exercise=${exercise.id} kind=${exercise.kind} corner=" +
+            (exercise.cornerId ?: exercise.segmentId)
+
     fun planText(sessionId: String, cornerIds: List<String>, gainSeconds: Double) =
         "source=$sessionId corners=${cornerIds.joinToString(",")} gain_s=" +
             fixed(gainSeconds, 2)
@@ -292,6 +302,7 @@ object CoachEvents {
             is Advice.Throttle -> Triple("throttle", a.earlierMeters, a.afterApex?.let { "$After$it" })
             is Advice.Steer -> steerText(a.what)
             is Advice.Gear -> Triple("gear", a.gear, null)
+            is Advice.BrakeToThrottle -> Triple(BrakeToThrottleCode, null, null)
         }
         return listOfNotNull(kind, number?.toString(), Vague.takeUnless { a.precise }, target).joinToString(":")
     }
@@ -326,11 +337,13 @@ object CoachEvents {
             "oversteer" -> Advice.Steer(SteerAdvice.Oversteer, precise)
             "straighten" -> Advice.Steer(SteerAdvice.OpenEarlier(requireNotNull(number)), precise)
             "gear" -> Advice.Gear(requireNotNull(number), precise)
+            BrakeToThrottleCode -> Advice.BrakeToThrottle(precise)
             else -> throw IllegalArgumentException("unknown advice $s")
         }
     }
 
     private const val Vague = "vague"
+    private const val BrakeToThrottleCode = "brake_to_throttle"
     private const val At = "at="
     private const val Goal = "goal="
     private const val After = "after="

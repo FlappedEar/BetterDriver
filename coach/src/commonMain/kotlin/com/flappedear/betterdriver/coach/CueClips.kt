@@ -115,6 +115,8 @@ object CueClips {
             *(1..SampleGears).map {
                 book.corner(corner, Advice.BrakeLater(SampleNumber, at = SampleNumber), Advice.Gear(it))
             }.toTypedArray(),
+            // The learning coach's exercise (FBBD-418).
+            book.corner(corner, Advice.BrakeToThrottle()),
             // The out-lap plan (UI-174 A), of one corner and of several.
             book.plan(listOf(1)),
             book.plan((1..SamplePlanCorners).toList()),

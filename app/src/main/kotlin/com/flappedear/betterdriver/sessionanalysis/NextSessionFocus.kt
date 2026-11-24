@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.sessionanalysis
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.learning.brakeToThrottleGaps
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.coach.Verbosity
@@ -31,7 +32,10 @@ internal fun keepSessionFocus(
 ) {
     // Read from the session before or during a restore ([epoch] taken before it was read), the
     // record is not written: the restored data wins (FBBD-156).
-    val record = focusRecord(trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners)
+    // With the brake-to-throttle gaps (FBBD-417), the record proposes the next session's exercises (FBBD-418).
+    val record = focusRecord(
+        trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners, brakeToThrottleGaps(analysis),
+    )
     try {
         var wrote = false
         AppDataGate.writeIfCurrent(epoch) { wrote = store.save(record) }

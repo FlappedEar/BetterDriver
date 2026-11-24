@@ -102,9 +102,16 @@ data class SessionFocusRecord(
     val sessionStartUtcMillis: Long,
     val algorithm: String = "",
     val targets: List<FocusTarget> = emptyList(),
+    /** The exercises proposed after the session (FBBD-418), at most [MaxExercises]; none in older records. */
+    val exercises: List<ExerciseProposal> = emptyList(),
+    /** The driver's pick among [exercises], or skip; null until answered. */
+    val exercisePick: ExercisePick? = null,
 ) {
     /** The targets as coach picks, the primary first. */
     fun picks(): List<CornerPick> = targets.sortedBy { !it.primary }.mapNotNull { it.pick(sessionId) }
+
+    /** The exercise picked (FBBD-418); null when none was picked, or the pick was to skip. */
+    val exercise: ExerciseProposal? get() = exercisePick?.id?.let { id -> exercises.firstOrNull { it.id == id } }
 
     companion object {
         const val Format = "betterdriver-session-focus"
@@ -119,6 +126,7 @@ data class SessionFocusRecord(
  * renamed into place; a file that cannot be read counts as none. Shared by the Android app and the
  * iOS app (FBBD-359).
  */
+@Suppress("TooManyFunctions") // Read, keep and delete; the exercise pick (FBBD-418).
 class SessionFocusStore(private val dir: String) {
     // Defaults written too, so every file says its format and version and a newer one is never misread.
     private val json = Json {
@@ -146,6 +154,32 @@ class SessionFocusStore(private val dir: String) {
     fun latest(trackId: String, exclude: String? = null, kept: (String) -> Boolean = { true }): SessionFocusRecord? =
         history(trackId).lastOrNull { r -> r.sessionId != exclude && r.targets.isNotEmpty() && kept(r.sessionId) }
 
+    /**
+     * The record whose exercise the next session at [trackId] works on (FBBD-418): that of the latest
+     * session with proposals, not [exclude] and still [kept], when an exercise was picked there. A
+     * skip, or proposals not answered, leave no exercise: an older pick is not brought back.
+     */
+    fun latestExercise(
+        trackId: String,
+        exclude: String? = null,
+        kept: (String) -> Boolean = { true },
+    ): SessionFocusRecord? =
+        history(trackId).lastOrNull { r -> r.sessionId != exclude && r.exercises.isNotEmpty() && kept(r.sessionId) }
+            ?.takeIf { it.exercise != null }
+
+    /**
+     * Keeps the driver's answer to session [sessionId]'s proposals at [trackId] (FBBD-418): exercise
+     * [id], or a skip when null, at [atUtcMillis]. Returns the record as saved; null when there is no
+     * record. Throws [IllegalArgumentException] for an id that is not one of its proposals.
+     */
+    fun pickExercise(trackId: String, sessionId: String, id: String?, atUtcMillis: Long): SessionFocusRecord? {
+        val r = get(trackId, sessionId) ?: return null
+        require(id == null || r.exercises.any { it.id == id }) { "no exercise $id in $sessionId" }
+        val picked = r.copy(exercisePick = ExercisePick(id, atUtcMillis))
+        writeAtomically(fileFor(trackId, sessionId), json.encodeToString(SessionFocusRecord.serializer(), picked))
+        return picked
+    }
+
     /** Deletes session [sessionId]'s record at every track, with the session; returns whether none is left. */
     fun deleteSession(sessionId: String): Boolean {
         val name = checkedSessionId(sessionId) + Suffix
@@ -161,6 +195,10 @@ class SessionFocusStore(private val dir: String) {
      */
     fun save(record: SessionFocusRecord): Boolean {
         val f = fileFor(record.trackId, record.sessionId)
+        // Analysed again, a session keeps the exercise answered and its proposals as they were then (FBBD-418).
+        val old = read(f)?.takeIf { it.exercisePick != null && record.exercisePick == null }
+        @Suppress("NAME_SHADOWING")
+        val record = old?.let { record.copy(exercises = it.exercises, exercisePick = it.exercisePick) } ?: record
         // One record per session: analysed again at another track, it leaves the old track (FBBD-20).
         val name = checkedSessionId(record.sessionId) + Suffix
         val elsewhere = trackDirs().filter { it != CoreFiles.join(dir, record.trackId) }

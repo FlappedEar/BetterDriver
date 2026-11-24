@@ -29,6 +29,9 @@ const val MaxCarryKmh = 10.0
 /** Corners with cues at [Verbosity.Focus]. */
 const val FocusCorners = 3
 
+/** How much sooner the throttle must come after the brake for the exercise to count as better (FBBD-418). */
+const val ExercisePickupMeters = 10
+
 /** Time from deciding to speak to the start of the sound, before any audio delay setting. */
 const val DefaultLatencyMicros = 300_000L
 
@@ -229,6 +232,7 @@ private class CornerBook(
      * against their targets over the last few passes.
      */
     fun focus(): Set<Int> {
+        if (chosen.only) return chosen.primary.take(1).toSet()
         val loss = losses.map { it.takeIf { l -> l.isNotEmpty() }?.average() }
         val byLoss = chosen.picked.sortedByDescending { loss[it - 1] ?: Double.NEGATIVE_INFINITY }
         val first = (chosen.primary + byLoss + chosen.secondary).distinct().take(FocusCorners)
@@ -359,7 +363,13 @@ private fun praiseFor(
  * The corners of a [CornerMap] the coach works on first, by number: those of the session focus
  * (FBBD-20), [primary] and then [secondary] in order, and those the driver [picked] (FBBD-148).
  */
-private class Chosen(val primary: List<Int>, val picked: Set<Int>, val secondary: List<Int>)
+private class Chosen(
+    val primary: List<Int>,
+    val picked: Set<Int>,
+    val secondary: List<Int>,
+    /** An exercise is picked (FBBD-418): the [primary] corner is the only one coached. */
+    val only: Boolean = false,
+)
 
 /**
  * The first timed lap of a session without an earlier reference sets the corners, [identify]d on the
@@ -536,6 +546,10 @@ private class SpeechTiming(
  *   primary takes the first focus place, the picks the next, then the secondary ones; cue timing is
  *   unchanged: one cue per straight, for the corner that follows it. [focusSeconds] is the line
  *   plan's time to find in each focus corner, by CornerId (FBBD-306).
+ * - **Exercise** ([exercise], FBBD-418): with an exercise picked after the last session, [focus] is
+ *   its corner alone and no other corner is cued, at any verbosity. A brake-to-throttle exercise is
+ *   said as itself ("Turn 9, brake to throttle") once that corner was driven at pace, with no target
+ *   pass; a focus exercise gets the corner's usual advice.
  * - **Plan** (UI-174 A): on the out-lap the coach says once which corners it works on ([speakPlan]).
  *
  * Pure and single-threaded.
@@ -550,6 +564,7 @@ class CueEngine(
     sameDay: Boolean = false,
     private val focus: List<CornerPick> = emptyList(),
     private val focusSeconds: Map<String, Double> = emptyMap(),
+    private val exercise: ExerciseProposal? = null,
 ) {
     private val laps = LapCollector(track)
     private val phrases = PhraseBook.of(settings.language)
@@ -572,6 +587,7 @@ class CueEngine(
             primary = focus.take(1).flatMap(::numbers),
             picked = pickedCorners(m, laps.frame, picks, identity),
             secondary = focus.drop(1).flatMap(::numbers),
+            only = exercise != null,
         )
     }
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
@@ -885,7 +901,10 @@ class CueEngine(
         if (!speech.leftStraight) praises.clear()
         // The time of a lap the coach said nothing else on goes first (FBBD-244: no silent laps); the
         // corner cue follows when it still fits, else waits for the next lap.
-        if (pendingLap?.alone == true) speakLapTime(now, time)?.let { return it }
+        // With an exercise (FBBD-418) its cue is the only one: a lap time never keeps it off the
+        // straight after the line, which every lap would otherwise give to the time.
+        val exerciseFirst = exercise != null && cue != null
+        if (pendingLap?.alone == true && !exerciseFirst) speakLapTime(now, time)?.let { return it }
         val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
         val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
         if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
@@ -1021,6 +1040,7 @@ class CueEngine(
     }
 
     /** The corner cue for [corner] on this straight, or null if there is nothing to say. */
+    @Suppress("ReturnCount") // The exercise's cue, or a reason for none, or the cue.
     private fun cornerCue(b: CornerBook, corner: Corner, now: Long, log: Boolean = true): Cue? {
         val i = corner.number - 1
         val lap = laps.timer.lapNumber
@@ -1028,6 +1048,7 @@ class CueEngine(
         val recent = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
         val last = b.lastAtPace[i]?.takeIf { recent != null && (it === recent || it.lap == lap - 2) }
         val target = b.confirmed(i)?.takeIf { it !== last }
+        exercise?.advice?.let { return exerciseCue(b, corner, now, lap, last, it) }
         if (last == null || target == null || !mayCue(b, corner, lap)) return null
         // What he usually does here lately, not the last pass alone (FBBD-410).
         val usual = b.usual(i, last, target)
@@ -1051,11 +1072,35 @@ class CueEngine(
         }
     }
 
+    /**
+     * The exercise's cue (FBBD-418) at its corner, the only one coached: said with no number and no
+     * target pass, once the corner was driven at pace last lap on a usable pass ([unusable]). Whether
+     * it helped is the next pass's pickup against [last]'s.
+     */
+    @Suppress("LongParameterList")
+    private fun exerciseCue(
+        b: CornerBook,
+        corner: Corner,
+        now: Long,
+        lap: Int,
+        last: CornerPass?,
+        advice: Advice,
+    ): Cue? {
+        // A pass with a GNSS gap or a near-stop (passDoubts) is no baseline for the next one.
+        if (last == null || last.unusable() || !mayCue(b, corner, lap)) return null
+        return Cue(
+            0, now, lap, CueKind.Corner, phrases.corner(corner, advice), corner.number, advice, last,
+            turn = corner.label, cornerId = corner.cornerId,
+        )
+    }
+
     private fun mayCue(b: CornerBook, corner: Corner, lap: Int): Boolean {
         val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         // The driver gets a lap to try the last cue.
         val rested = b.cuedOnLap[corner.number - 1] != lap - 1
-        return learned && rested && (settings.verbosity == Verbosity.Full || corner.number in b.focus())
+        // With an exercise picked (FBBD-418) only its corner is coached, at any verbosity.
+        val full = settings.verbosity == Verbosity.Full && !b.chosen.only
+        return learned && rested && (full || corner.number in b.focus())
     }
 }
 
@@ -1125,6 +1170,8 @@ fun improved(advice: Advice?, before: CornerPass, after: CornerPass, gearbox: Ge
             after.steering?.let { improvedSteering(advice.what, b, it) }
         } ?: false
         is Advice.Gear -> improvedGear(advice.gear, after, gearbox)
+        // Back on the throttle sooner after the brake (FBBD-418): the pickup moved earlier.
+        is Advice.BrakeToThrottle -> improvedPickup(ExercisePickupMeters, before, after)
         null -> after.timeMicros < before.timeMicros
     }
 

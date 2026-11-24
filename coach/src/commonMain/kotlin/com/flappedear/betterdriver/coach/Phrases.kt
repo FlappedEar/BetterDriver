@@ -160,6 +160,8 @@ object Phrases : PhraseBook {
             is SteerAdvice.OpenEarlier -> if (a.precise) "straighten ${w.meters} earlier" else "straighten earlier"
         }
         is Advice.Gear -> gearWord(a.gear)
+        // The learning coach's exercise (FBBD-418).
+        is Advice.BrakeToThrottle -> "brake to throttle"
     }
 
     /** The gear by its name (UI-279 A): "Turn 7, brake at 80, second". */
@@ -239,6 +241,8 @@ object Phrases : PhraseBook {
         is Advice.CarrySpeed -> "Apex ${kotlin.math.abs(by).roundToInt()} km/h " + if (by >= 0) "faster" else "slower"
         is Advice.Steer -> "Straightened ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "earlier" else "later"
         is Advice.Gear -> "In ${gearWord(a.gear)}"
+        is Advice.BrakeToThrottle ->
+            "Throttle ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "earlier" else "later"
     }
 
     override fun plan(turns: List<Int>): String = when (turns.size) {

@@ -198,7 +198,7 @@ class ReviewLibrary(base: String) {
         val start = reviewed.startUtcMillis
         if (track == null || plan == null || start == null) return
         val corners = if (coaches(track)) coachCandidates(reviewed.flaggableCorners, id) else emptyMap()
-        val record = focusRecord(track.id, id, start, plan, corners)
+        val record = focusRecord(track.id, id, start, plan, corners, reviewed.gaps)
         try {
             if (focus.save(record)) {
                 logInfo("SessionFocus", "session focus of $id: ${record.targets.joinToString { it.name }}")

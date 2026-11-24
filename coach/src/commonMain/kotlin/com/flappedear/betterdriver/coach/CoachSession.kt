@@ -51,11 +51,13 @@ class CoachSession(
     sameDay: Boolean = false,
     focus: List<CornerPick> = emptyList(),
     focusSeconds: Map<String, Double> = emptyMap(),
+    exercise: ExerciseProposal? = null,
 ) {
     private val engine = track?.takeIf { coaches(it) && settings.verbosity != Verbosity.Off }
         ?.let {
             CueEngine(
                 it, settings, reference, picks = picks, sameDay = sameDay, focus = focus, focusSeconds = focusSeconds,
+                exercise = exercise,
             )
         }
 
@@ -198,7 +200,7 @@ class CoachLines(private val phrases: PhraseBook) {
  */
 fun movedBy(a: Advice, before: CornerPass, after: CornerPass): Double? = when (a) {
     is Advice.Line -> tighterBy(before, after, a.turn)
-    is Advice.Throttle -> before.pickupAt?.let { b -> after.pickupAt?.let { b - it } }
+    is Advice.Throttle, is Advice.BrakeToThrottle -> before.pickupAt?.let { b -> after.pickupAt?.let { b - it } }
     is Advice.BrakeLater, is Advice.BrakeEarlier -> after.brakeAt - before.brakeAt
     is Advice.CarrySpeed -> after.minKmh - before.minKmh
     // Metres earlier off full lock (FBBD-321); the other hands advice has no distance.
