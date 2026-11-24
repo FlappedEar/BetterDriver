@@ -2,12 +2,15 @@ package com.flappedear.betterdriver.sessionanalysis
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
-import com.flappedear.betterdriver.analysis.learning.brakeToThrottleGaps
+import com.flappedear.betterdriver.analysis.coaching.CoachedExercise
+import com.flappedear.betterdriver.analysis.learning.sessionLearning
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.focusRecord
+import com.flappedear.betterdriver.coach.keepExerciseOutcome
+import com.flappedear.betterdriver.coach.resultLine
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
@@ -29,17 +32,25 @@ internal fun keepSessionFocus(
     startUtcMillis: Long,
     analysis: SessionAnalysis,
     corners: Map<String, CornerPick>,
+    exercise: CoachedExercise? = null,
 ) {
     // Read from the session before or during a restore ([epoch] taken before it was read), the
     // record is not written: the restored data wins (FBBD-156).
-    // With the brake-to-throttle gaps (FBBD-417), the record proposes the next session's exercises (FBBD-418).
-    val record = focusRecord(
-        trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners, brakeToThrottleGaps(analysis),
-    )
+    // With the brake-to-throttle gaps (FBBD-417), the record proposes the next session's exercises (FBBD-418),
+    // leaving out a gap explained after an earlier exercise at the track (FBBD-419).
+    val learning = sessionLearning(analysis)
     try {
-        var wrote = false
-        AppDataGate.writeIfCurrent(epoch) { wrote = store.save(record) }
-        if (wrote) DebugLog.i(Tag, "session focus of $sessionId: ${record.targets.joinToString { it.name }}")
+        AppDataGate.writeIfCurrent(epoch) {
+            val record = focusRecord(
+                trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners, learning,
+                store.history(trackId),
+            )
+            if (store.save(record)) {
+                DebugLog.i(Tag, "session focus of $sessionId: ${record.targets.joinToString { it.name }}")
+            }
+            // What came of the exercise worked on in this session, kept with the session it was picked after.
+            keepExerciseOutcome(store, trackId, sessionId, exercise, learning)?.let { DebugLog.i(Tag, it.resultLine()) }
+        }
     } catch (e: IOException) {
         DebugLog.w(Tag, "session focus of $sessionId not saved", e)
     }

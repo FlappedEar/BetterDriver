@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.analysis.learning.BrakeToThrottleGaps
 import com.flappedear.betterdriver.analysis.learning.GapObservation
+import com.flappedear.betterdriver.analysis.learning.SessionLearning
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -73,7 +74,7 @@ class LearningExerciseTest {
             sessionStartUtcMillis = start,
             algorithm = "test",
             targets = targets,
-            exercises = exerciseProposals(session, gaps, targets, corners),
+            exercises = exerciseProposals(session, SessionLearning(gaps), targets, corners),
         )
     }
 
@@ -125,7 +126,7 @@ class LearningExerciseTest {
     @Test
     fun `a gap at a corner the coach cannot place is not proposed, nor a focus without its line`() {
         val noLine = target("s1", 1, FocusTarget.Primary).copy(lats = emptyList(), lons = emptyList())
-        val proposals = exerciseProposals("s1", gaps, listOf(noLine), mapOf("c1" to pick("s1", 0)))
+        val proposals = exerciseProposals("s1", SessionLearning(gaps), listOf(noLine), mapOf("c1" to pick("s1", 0)))
         assertEquals(listOf("s1/brakeToThrottle/c1"), proposals.map { it.id })
         assertTrue(exerciseProposals("s1", null, emptyList(), emptyMap()).isEmpty())
     }

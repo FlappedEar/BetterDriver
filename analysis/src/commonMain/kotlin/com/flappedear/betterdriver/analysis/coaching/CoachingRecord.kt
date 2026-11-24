@@ -177,6 +177,23 @@ data class CoachedSession(
     val focusFrom: String? = null,
     val cues: Map<String, Int> = emptyMap(),
     val planCorners: List<String> = emptyList(),
+    /** The exercise the coach worked on (FBBD-418), when one was picked. */
+    val exercise: CoachedExercise? = null,
+)
+
+/**
+ * The exercise picked after session [sourceSessionId] that the coach worked on (FBBD-418), as its
+ * events say: exercise [exerciseId] at [corner] (the CornerId, else the analysis's segment id).
+ * [playedLaps] are the laps with an exercise cue heard to its end; [missedLaps] those whose cue was
+ * said but not heard (late, no voice, cut off; FBBD-416). The result (FBBD-419) counts passes only
+ * from the first played lap on.
+ */
+data class CoachedExercise(
+    val sourceSessionId: String,
+    val exerciseId: String,
+    val corner: String,
+    val playedLaps: List<Int> = emptyList(),
+    val missedLaps: List<Int> = emptyList(),
 )
 
 /**

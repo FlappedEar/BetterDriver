@@ -124,8 +124,8 @@ class CoachSession(
         }
         for (cue in u.cues) {
             val problem = when {
-                nowMicros - cue.tMicros > MaxCueAgeMicros -> "late seq=${cue.seq} text=${cue.text}"
-                !say(cue.text) -> "no voice ${CoachEvents.cueText(cue)}"
+                nowMicros - cue.tMicros > MaxCueAgeMicros -> CoachEvents.lateText(cue)
+                !say(cue.text) -> CoachEvents.noVoiceText(cue)
                 else -> null
             }
             if (problem == null) {

@@ -13,8 +13,8 @@ import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
-import com.flappedear.betterdriver.analysis.learning.BrakeToThrottleGaps
-import com.flappedear.betterdriver.analysis.learning.brakeToThrottleGaps
+import com.flappedear.betterdriver.analysis.learning.SessionLearning
+import com.flappedear.betterdriver.analysis.learning.sessionLearning
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
@@ -192,8 +192,11 @@ class ReviewedSession internal constructor(
     /** What the session recommends working on next (FBBD-20), as Android keeps it; null without laps. */
     val focusPlan: NextSessionPlan? get() = analysis?.let { nextSessionPlan(it) }
 
-    /** The brake-to-throttle gap at each corner (FBBD-417), for the exercises proposed after it (FBBD-418). */
-    val gaps: BrakeToThrottleGaps? get() = analysis?.let { brakeToThrottleGaps(it) }
+    /**
+     * The brake-to-throttle gap and the time of each corner's section (FBBD-417, FBBD-419), for the
+     * exercises proposed after it (FBBD-418) and the result of the one worked on in it.
+     */
+    val learning: SessionLearning? get() = analysis?.let { sessionLearning(it) }
 
     /** When the session started, UTC; null when it was not read. */
     val startUtcMillis: Long? get() = data?.info?.startUtcMillis

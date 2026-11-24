@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.analysis.coaching.CoachedExercise
 import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Confidence
@@ -133,7 +134,48 @@ object CoachEvents {
      * the session whose focus it worked on, its corner cues and the line plan's corners.
      */
     fun coachedSession(events: List<RecorderEvent>) =
-        CoachedSession(focusSource(events), cuesByCorner(events), planCorners(events))
+        CoachedSession(focusSource(events), cuesByCorner(events), planCorners(events), exerciseWorked(events))
+
+    /**
+     * The exercise the coach worked on in a session with [events] (FBBD-418): the last [EXERCISE]
+     * event's, with the laps its corner cues were heard on and those they were not (FBBD-416). Null
+     * when the coach worked on none.
+     */
+    @Suppress("ReturnCount") // An event without its source or exercise is none.
+    fun exerciseWorked(events: List<RecorderEvent>): CoachedExercise? {
+        val last = events.filter { it.kind == EXERCISE }.maxByOrNull { it.tMicros } ?: return null
+        val f = split(last.text).first
+        val source = f["source"]?.takeIf { it.isNotBlank() } ?: return null
+        val id = f["exercise"]?.takeIf { it.isNotBlank() } ?: return null
+        val corner = f["corner"].orEmpty()
+        // Only the exercise's corner is cued in an exercise session; each cue said, then maybe not heard.
+        // A cue cut off was logged as said first; one late or refused by the voice only as a problem.
+        val lapOf = HashMap<Int, Int>()
+        val missed = HashSet<Int>()
+        val refused = mutableListOf<Int>()
+        for (e in events.filter { it.tMicros >= last.tMicros }.sortedBy { it.tMicros }) {
+            when (e.kind) {
+                CUE -> parseCue(e.tMicros, e.text)?.takeIf { it.kind == CueKind.Corner }?.let { lapOf[it.seq] = it.lap }
+                PROBLEM -> CueReview.unsaidSeq(e.text)?.let { seq -> missed += seq; unsaidLap(e)?.let(refused::add) }
+            }
+        }
+        val played = lapOf.filterKeys { it !in missed }.values.distinct().sorted()
+        val notHeard = (lapOf.filterKeys { it in missed }.values + refused).distinct().sorted()
+        return CoachedExercise(source, id, corner, played, notHeard)
+    }
+
+    /** The lap of a "no voice …" problem (the whole cue) or a "late … lap=…" one; null when not logged. */
+    private fun unsaidLap(e: RecorderEvent): Int? = when {
+        e.text.startsWith(NoVoicePrefix) -> parseCue(e.tMicros, e.text.removePrefix(NoVoicePrefix))?.lap
+        e.text.startsWith(LatePrefix) -> split(e.text).first["lap"]?.toIntOrNull()
+        else -> null
+    }
+
+    /** A [PROBLEM] text: cue [cue] was not said, as it was too late for its straight (FBBD-416). */
+    fun lateText(cue: Cue) = "${LatePrefix}seq=${cue.seq} lap=${cue.lap} text=${cue.text}"
+
+    /** A [PROBLEM] text: the voice refused cue [cue]. */
+    fun noVoiceText(cue: Cue) = NoVoicePrefix + cueText(cue)
 
     /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */
     fun cuesByCorner(events: List<RecorderEvent>): Map<String, Int> = events.asSequence()
@@ -343,6 +385,8 @@ object CoachEvents {
     }
 
     private const val Vague = "vague"
+    private const val LatePrefix = "late "
+    private const val NoVoicePrefix = "no voice "
     private const val BrakeToThrottleCode = "brake_to_throttle"
     private const val At = "at="
     private const val Goal = "goal="
