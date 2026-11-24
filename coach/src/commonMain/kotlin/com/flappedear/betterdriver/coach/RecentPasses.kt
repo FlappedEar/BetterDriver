@@ -82,6 +82,8 @@ fun stillNeeds(
         is Advice.Throttle -> pickupChange(last, target)?.let { it.sign == ask.earlierMeters.sign } == true
         is Advice.Steer -> steerChange(last, target, corner).any { it::class == ask.what::class }
         is Advice.Gear -> gearChange(last, plannedGear, gearbox) != null
+        // The exercise (FBBD-418) is asked for on its own, never from a pass's advice: always still needed.
+        is Advice.BrakeToThrottle -> true
     }
 }
 
