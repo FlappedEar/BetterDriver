@@ -1050,8 +1050,8 @@ class CueEngine(
 
     /**
      * The exercise's cue (FBBD-418) at its corner, the only one coached: said with no number and no
-     * target pass, once the corner was driven at pace last lap. Whether it helped is the next pass's
-     * pickup against [last]'s.
+     * target pass, once the corner was driven at pace last lap on a usable pass ([unusable]). Whether
+     * it helped is the next pass's pickup against [last]'s.
      */
     @Suppress("LongParameterList")
     private fun exerciseCue(
@@ -1062,7 +1062,8 @@ class CueEngine(
         last: CornerPass?,
         advice: Advice,
     ): Cue? {
-        if (last == null || !mayCue(b, corner, lap)) return null
+        // A pass with a GNSS gap or a near-stop (passDoubts) is no baseline for the next one.
+        if (last == null || last.unusable() || !mayCue(b, corner, lap)) return null
         return Cue(
             0, now, lap, CueKind.Corner, phrases.corner(corner, advice), corner.number, advice, last,
             turn = corner.label, cornerId = corner.cornerId,
