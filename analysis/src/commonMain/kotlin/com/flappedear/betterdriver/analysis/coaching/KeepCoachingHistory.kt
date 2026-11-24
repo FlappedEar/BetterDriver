@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.analysis.coaching
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
+import com.flappedear.betterdriver.analysis.learning.brakeToThrottleGaps
+import com.flappedear.betterdriver.analysis.learning.logLines
 import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.line.ProofAsk
@@ -45,7 +47,11 @@ fun keepCoachingHistory(
         var wrote = false
         // Never for a track deleted meanwhile: a track made again under its id must not inherit it.
         write { if (trackKept()) wrote = store.save(record) }
-        if (wrote) logLine(CoreLog.LevelInfo, Tag, "coaching history of $sessionId kept")
+        if (wrote) {
+            logLine(CoreLog.LevelInfo, Tag, "coaching history of $sessionId kept")
+            // The learning coach's brake-to-throttle gaps (FBBD-417), once per kept record, or why it is off.
+            brakeToThrottleGaps(analysis).logLines().forEach { logLine(CoreLog.LevelInfo, GapTag, "$sessionId $it") }
+        }
     } catch (e: IOException) {
         logLine(CoreLog.LevelWarn, Tag, "coaching history of $sessionId not kept", e)
     } catch (e: IllegalArgumentException) {
@@ -91,3 +97,6 @@ fun lastFocusProof(
 fun originOf(info: SessionInfo): String? = info.imported?.let { "${it.format} ${it.fileName}".trim() }
 
 private const val Tag = "CoachingHistory"
+
+/** The learning coach's lines in the drive's log (FBBD-417). */
+private const val GapTag = "LearningCoach"
