@@ -142,6 +142,8 @@ private class CornerBook(
     val lastPass = arrayOfNulls<CornerPass>(n)
     /** Each corner's last pass at race pace: not one driven after lifting off to cool down ([InLap]). */
     val lastAtPace = arrayOfNulls<CornerPass>(n)
+    /** Each corner's latest [RecentPasses] passes at race pace strong enough to coach from, oldest first (FBBD-410). */
+    private val recent = Array(n) { ArrayDeque<CornerPass>() }
     /** Each corner's recent losses against its target, oldest first. */
     val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
@@ -182,6 +184,10 @@ private class CornerBook(
         lastPass[i] = pass
         if (cruising) return
         lastAtPace[i] = pass
+        if (!pass.unusable()) {
+            recent[i].addLast(pass)
+            while (recent[i].size > RecentPasses) recent[i].removeFirst()
+        }
         targets[i]?.takeUnless { pass.unusable() }?.let { t ->
             losses[i].addLast(pass.timeMicros - t.timeMicros)
             while (losses[i].size > LossHistory) losses[i].removeFirst()
@@ -203,6 +209,18 @@ private class CornerBook(
     }
 
     val picked: Set<Int> get() = chosen.picked
+
+    /**
+     * What a cue at corner [i] towards [target] measures from (FBBD-410): the usual pass ([typicalPass])
+     * of its latest passes at race pace up to [last] that lost time against the target, none more than
+     * [RecentPasses] laps before [last]. Passes as fast as the target are left out: the target's own
+     * passes would make the usual pass the target itself. A [last] too weak to coach from stays itself.
+     */
+    fun usual(i: Int, last: CornerPass, target: CornerPass): CornerPass {
+        if (last.unusable() || recent[i].lastOrNull() !== last) return last
+        val since = last.lap - RecentPasses
+        return typicalPass(recent[i].filter { it === last || (it.lap >= since && it.timeMicros > target.timeMicros) })
+    }
 
     /**
      * The corners with cues at [Verbosity.Focus], at most [FocusCorners]: the session focus's primary
@@ -493,7 +511,10 @@ private class SpeechTiming(
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
  *   there (the lap before's, when the last lap passed it cooling down) and may give one cue: brake
  *   later, brake earlier, or carry more speed; where to be at the apex and where to go back on
- *   throttle (FBBD-307); at most two of them in one cue ([cornerAdvice], UI-170 B). It is timed to end,
+ *   throttle (FBBD-307); at most two of them in one cue ([cornerAdvice], UI-170 B). What it asks for
+ *   comes from the corner's usual pass of its last few losing passes ([typicalPass], FBBD-410), and only
+ *   where the last pass still needs it too ([recentAdvice]): a one-off on the last lap asks for nothing,
+ *   and the cue's result is judged against that usual pass. It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
@@ -1008,11 +1029,14 @@ class CueEngine(
         val last = b.lastAtPace[i]?.takeIf { recent != null && (it === recent || it.lap == lap - 2) }
         val target = b.confirmed(i)?.takeIf { it !== last }
         if (last == null || target == null || !mayCue(b, corner, lap)) return null
+        // What he usually does here lately, not the last pass alone (FBBD-410).
+        val usual = b.usual(i, last, target)
         val unidentified = identity != null && corner.cornerId == null
+        // How far to trust it stays the last pass's: its loss against the corner's recent spread (FBBD-414).
         val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
-        val advice = cornerAdvice(last, target, corner, b.plannedGear(i), gearbox)
+        val advice = recentAdvice(usual, last, target, corner, b.plannedGear(i), gearbox)
         if (log && !confidence.advises && advice.isNotEmpty()) {
             skips += CueSkip(now, lap, corner.number, corner.label, corner.cornerId, doubts)
         }
@@ -1021,7 +1045,7 @@ class CueEngine(
         val also = asked.getOrNull(1)
         return asked.firstOrNull()?.let { advice ->
             Cue(
-                0, now, lap, CueKind.Corner, phrases.corner(corner, advice, also), corner.number, advice, last, target,
+                0, now, lap, CueKind.Corner, phrases.corner(corner, advice, also), corner.number, advice, usual, target,
                 turn = corner.label, cornerId = corner.cornerId, confidence = confidence, doubts = doubts, also = also,
             )
         }
@@ -1047,8 +1071,7 @@ fun advise(pass: CornerPass, target: CornerPass, corner: Corner? = null): Advice
     val speed = pass.minKmh - target.minKmh
     // A planned step beyond his best (FBBD-312) is asked for until half of it is driven, even when
     // shorter than the tolerance.
-    val later = target.plannedBrakeLaterMeters.takeIf { it > 0 }?.let { min(BrakeToleranceMeters, it / 2.0) }
-        ?: BrakeToleranceMeters
+    val later = brakeLaterTolerance(target)
     return when {
         brake <= -later -> {
             val metres = maxOf(MetresStep, (min(-brake, MaxBrakeLaterMeters) / MetresStep).roundToInt() * MetresStep)
@@ -1065,6 +1088,14 @@ fun advise(pass: CornerPass, target: CornerPass, corner: Corner? = null): Advice
         else -> null
     }
 }
+
+/**
+ * How much earlier than [target] a pass may brake before it is asked to brake later: [BrakeToleranceMeters],
+ * or half a planned step beyond his best (FBBD-312) when that is shorter.
+ */
+internal fun brakeLaterTolerance(target: CornerPass): Double =
+    target.plannedBrakeLaterMeters.takeIf { it > 0 }?.let { min(BrakeToleranceMeters, it / 2.0) }
+        ?: BrakeToleranceMeters
 
 /**
  * Where a brake point [brakeAt] along the reference path is counted to (FBBD-242, UI-89 A): the

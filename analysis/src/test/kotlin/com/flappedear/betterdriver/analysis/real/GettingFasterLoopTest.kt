@@ -24,6 +24,8 @@ import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.line.lineProof
 import com.flappedear.betterdriver.analysis.line.linePlan
+import com.flappedear.betterdriver.analysis.quality.cueFlips
+import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.segmentLine
 import com.flappedear.betterdriver.coach.CoachEvents
@@ -146,6 +148,8 @@ class GettingFasterLoopTest {
         val targets: List<Target>,
         /** The line plan's focus corners when the coach worked on them (UI-174 A), by CornerId. */
         val planned: Map<String, Coached>?,
+        /** Corner cues that asked the opposite of their corner's previous cue on the same thing (FBBD-410). */
+        val flips: Int,
     ) {
         /** The corners the coach worked on: the plan's focus when it had one, else the session focus. */
         val worked: List<Coached> get() = planned?.values?.toList() ?: corners.map { it.coached }
@@ -257,6 +261,7 @@ class GettingFasterLoopTest {
                 },
                 cues, proof, targets(at, reference, steps.subList(0, k), from.linePlan),
                 planned?.cornerIds?.associateWith { measure.at(it) },
+                cueFlips(replayCues(events)).size,
             )
         }
         return steps to turns
@@ -410,6 +415,10 @@ class GettingFasterLoopTest {
         // 5. The coach works on the plan's focus.
         val unspoken = turns.sumOf { t -> t.proof?.corners.orEmpty().count { !it.coached } }
         if (unspoken > known.unspoken) problems += "$unspoken plan focus corners without a cue, was ${known.unspoken}"
+        // 6. Advice that holds (FBBD-410): no corner cue asks the opposite of the corner's last one.
+        turns.filter { it.flips > 0 }.forEach {
+            problems += "${it.from.label} -> ${it.to.label}: ${it.flips} cues reverse their corner's last one"
+        }
         if (all.none { it.attempt?.verdict == FocusVerdict.Improved }) {
             problems += "no focus corner got faster all day"
         }
@@ -499,11 +508,24 @@ class GettingFasterLoopTest {
                     "${t.targets.size - other} of ${t.targets.size} |",
             )
         }
+        flips(out, turns)
         val text = out.toString()
         println(text)
         File("build/reports/replay-drive").apply { mkdirs() }
             .resolve("loop-${name.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-")}.md")
             .writeText(text)
+    }
+
+    /** How many corner cues of each turn asked the opposite of their corner's previous cue (FBBD-410). */
+    private fun flips(out: StringBuilder, turns: List<Turn>) {
+        out.appendLine()
+        out.appendLine("| Turn | Corner cues | Cues that reverse the corner's last one (FBBD-410) |")
+        out.appendLine("| --- | --- | --- |")
+        for (t in turns) {
+            out.appendLine(
+                "| ${t.from.label} → ${t.to.label} | ${t.cues.count { it.kind == CueKind.Corner }} | ${t.flips} |",
+            )
+        }
     }
 
     private fun fmt(v: Double?) = v?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"
