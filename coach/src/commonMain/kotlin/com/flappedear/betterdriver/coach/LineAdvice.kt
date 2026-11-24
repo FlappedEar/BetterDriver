@@ -136,24 +136,28 @@ const val MaxAdvicePerCue = 2
  * time against [target] is kept: before the apex the entry and the apex, after it the exit, or the
  * apex and the first of the exit. Without the time to the apex on both passes, the first two.
  * The gear ([gearChange], FBBD-326) goes with the entry, as "Turn 7, brake at 80, second" (UI-279 A).
+ * Only advice that passes [keep] is a candidate (FBBD-410: what the last pass still needs), so advice
+ * left out never crowds out advice that stays.
  */
-@Suppress("CyclomaticComplexMethod") // Each kind of advice with its place in the corner.
+@Suppress("CyclomaticComplexMethod", "LongParameterList") // Each kind of advice with its place in the corner.
+// The passes, the corner, the gear and which advice to keep.
 fun cornerAdvice(
     pass: CornerPass,
     target: CornerPass,
     corner: Corner,
     plannedGear: Int? = null,
     gearbox: Gearbox? = null,
+    keep: (Advice) -> Boolean = { true },
 ): List<Advice> {
     val steer = steerChange(pass, target, corner)
     val slid = SteerAdvice.Less in steer
     val smoother = Advice.Steer(SteerAdvice.Smoother).takeIf { SteerAdvice.Smoother in steer }
-    val entry = if (slid) Advice.Steer(SteerAdvice.Less) else advise(pass, target, corner)
+    val entry = (if (slid) Advice.Steer(SteerAdvice.Less) else advise(pass, target, corner))?.takeIf(keep)
     val apex = when {
         slid -> smoother
         SteerAdvice.More in steer -> Advice.Steer(SteerAdvice.More)
         else -> lineChange(pass, target, corner)?.let { Advice.Line(it, turn = corner.turn) } ?: smoother
-    }
+    }?.takeIf(keep)
     val exit = if (SteerAdvice.Oversteer in steer) {
         listOf(Advice.Steer(SteerAdvice.Oversteer))
     } else {
@@ -161,8 +165,8 @@ fun cornerAdvice(
             steer.firstOrNull { it is SteerAdvice.OpenEarlier }?.let { Advice.Steer(it) },
             pickupChange(pass, target)?.let { Advice.Throttle(it, afterApex = pickupAfterApex(target)) },
         )
-    }
-    val gear = gearChange(pass, plannedGear, gearbox)?.let { Advice.Gear(it) }
+    }.filter(keep)
+    val gear = gearChange(pass, plannedGear, gearbox)?.let { Advice.Gear(it) }?.takeIf(keep)
     val all = listOfNotNull(entry, gear, apex) + exit
     val a = pass.apexMicros
     val b = target.apexMicros

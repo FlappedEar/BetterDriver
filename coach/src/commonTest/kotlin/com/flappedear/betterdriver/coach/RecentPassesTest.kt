@@ -68,6 +68,17 @@ class RecentPassesTest {
     }
 
     @Test
+    fun `a change already made leaves room for one still needed`() {
+        val t = target.copy(apexOffsetMeters = 0.0, pickupAt = 170.0)
+        // Usually: braked 15 m early, 3 m wide of the line, on the throttle 10 m late.
+        val usual = t.copy(lap = 3, brakeAt = 85.0, apexOffsetMeters = 3.0, pickupAt = 180.0, timeMicros = 5_400_000L)
+        assertEquals(2, cornerAdvice(usual, t, corner).size)
+        // On the last lap he fixed the braking and the line; the throttle is still late.
+        val last = t.copy(lap = 4, pickupAt = 180.0, timeMicros = 5_200_000L)
+        assertEquals(listOf(Advice.Throttle::class), recentAdvice(usual, last, t, corner).map { it::class })
+    }
+
+    @Test
     fun `the same ask is the same change the same way, whatever its number`() {
         assertTrue(sameAsk(Advice.BrakeLater(10), Advice.BrakeLater(20, at = 90)))
         assertTrue(!sameAsk(Advice.BrakeLater(10), Advice.BrakeEarlier(10)))

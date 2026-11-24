@@ -100,7 +100,9 @@ fun recentAdvice(
     plannedGear: Int? = null,
     gearbox: Gearbox? = null,
 ): List<Advice> {
-    val asks = cornerAdvice(usual, target, corner, plannedGear, gearbox)
-    if (usual === last) return asks
-    return asks.filter { stillNeeds(it, last, target, corner, plannedGear, gearbox) }
+    if (usual === last) return cornerAdvice(usual, target, corner, plannedGear, gearbox)
+    // Filtered before the two-per-cue limit, so a change already made leaves room for one still needed.
+    return cornerAdvice(usual, target, corner, plannedGear, gearbox) {
+        stillNeeds(it, last, target, corner, plannedGear, gearbox)
+    }
 }
