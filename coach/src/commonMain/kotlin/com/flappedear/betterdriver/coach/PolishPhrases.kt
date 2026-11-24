@@ -50,6 +50,8 @@ object PolishPhrases : PhraseBook {
         }
         // Round 56 (FBBD-326): UI-279 A "Siódemka, hamuj na 80, dwójka".
         is Advice.Gear -> gearWord(a.gear)
+        // Ćwiczenie trenera (FBBD-418).
+        is Advice.BrakeToThrottle -> "z hamulca na gaz"
     }
 
     private fun gearWord(gear: Int): String =
@@ -112,6 +114,7 @@ object PolishPhrases : PhraseBook {
         is Advice.CarrySpeed -> "Apeks ${abs(by).roundToInt()} km/h " + if (by >= 0) "szybciej" else "wolniej"
         is Advice.Steer -> "Prostowanie ${abs(by).roundToInt()} m " + if (by >= 0) "wcześniej" else "później"
         is Advice.Gear -> "Na " + GearOn.getOrElse(a.gear - 1) { "biegu ${a.gear}" }
+        is Advice.BrakeToThrottle -> "Gaz ${abs(by).roundToInt()} m " + if (by >= 0) "wcześniej" else "później"
     }
 
     /** "Dzisiaj, Dziewiątka, Jedynka, Czwórka" (UI-174 A). */

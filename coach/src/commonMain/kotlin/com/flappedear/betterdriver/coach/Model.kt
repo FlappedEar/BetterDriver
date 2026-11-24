@@ -219,6 +219,12 @@ sealed interface Advice {
     /** Said with its numbers (High confidence). */
     val precise: Boolean
 
+    /**
+     * The learning coach's exercise (FBBD-418): from the brake straight to the throttle, no time off
+     * both pedals between them. Has no number: "Turn 9, brake to throttle".
+     */
+    data class BrakeToThrottle(override val precise: Boolean = true) : Advice
+
     /** Braked earlier than the reference: brake [meters] later (a multiple of 5), at [at] m before the corner. */
     data class BrakeLater(val meters: Int, override val precise: Boolean = true, val at: Int? = null) : Advice
 
@@ -277,6 +283,7 @@ sealed interface Advice {
         is Throttle -> copy(precise = precise)
         is Steer -> copy(precise = precise)
         is Gear -> copy(precise = precise)
+        is BrakeToThrottle -> copy(precise = precise)
     }
 
     /**
@@ -286,7 +293,7 @@ sealed interface Advice {
     fun brakeAnchor(before: CornerPass): Double? = when (this) {
         is BrakeLater -> at?.let { before.brakeAt + meters + it }
         is BrakeEarlier -> at?.let { at -> meters?.let { before.brakeAt - it + at } }
-        is CarrySpeed, is Line, is Throttle, is Steer, is Gear -> null
+        is CarrySpeed, is Line, is Throttle, is Steer, is Gear, is BrakeToThrottle -> null
     }
 }
 

@@ -99,7 +99,7 @@ class CueSoundStart(
  * voice's callbacks there, after the fix that asked for the cue has numbered it. A call that throws
  * is handed to [failed]; it never reaches the recording (FBBD-69).
  */
-@Suppress("LongParameterList") // What one coached recording needs, one parameter each.
+@Suppress("LongParameterList", "TooManyFunctions") // What one coached recording needs, one parameter each; its steps.
 class CoachRun(
     private val sessionId: String,
     /** The coach settings, with the audio delay as set: the fallback for an output never measured. */
@@ -171,25 +171,33 @@ class CoachRun(
         val picks = coached?.let(stores::picks).orEmpty()
         // The corners with the most time to find in the track's line plan (FBBD-306, UI-174 A), else what
         // the last analysed session at the track recommends working on (FBBD-20), primary first.
-        val plan = coached?.let { stores.focus(it, line, sameDay) }
-        val focus = coached?.takeIf { plan == null }?.let(stores::sessionFocus)
-        val focusPicks = plan?.picks ?: focus?.picks().orEmpty()
+        // An exercise picked after the last session (FBBD-418) comes before both, its corner alone.
+        val exercise = coached?.let(stores::exercise)
+        val plan = coached?.takeIf { exercise == null }?.let { stores.focus(it, line, sameDay) }
+        val focus = coached?.takeIf { plan == null && exercise == null }?.let(stores::sessionFocus)
+        val focusPicks = exercise?.let { listOf(it.pick) } ?: plan?.picks ?: focus?.picks().orEmpty()
         // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
         val c = CoachSession(
             settings.copy(audioDelayMillis = timing.millis), track, reference, picks, sameDay, focusPicks,
-            plan?.seconds.orEmpty(),
+            plan?.seconds.orEmpty(), exercise?.proposal,
         )
         coach = c
         if (on) logStart(track, reference, focusPicks.size)
-        // Which recommendation this session works on, for the coaching history (FBBD-180).
-        if (plan != null) {
+        reportWork(exercise, plan, focus?.takeIf { focusPicks.isNotEmpty() })
+        updateStatus(c.status)
+    }
+
+    /** Which recommendation this session works on, for the coaching history (FBBD-180) and FBBD-419. */
+    private fun reportWork(exercise: PickedExercise?, plan: PlanFocus?, focus: SessionFocusRecord?) {
+        if (exercise != null) {
+            report(now(), CoachEvents.EXERCISE, CoachEvents.exerciseText(exercise.sessionId, exercise.proposal))
+        } else if (plan != null) {
             val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
             report(now(), CoachEvents.PLAN, text)
-        } else if (focus != null && focusPicks.isNotEmpty()) {
+        } else if (focus != null) {
             val corners = focus.targets.sortedBy { !it.primary }.mapNotNull { it.cornerId }
             report(now(), CoachEvents.FOCUS, CoachEvents.focusText(focus.sessionId, corners))
         }
-        updateStatus(c.status)
     }
 
     /**
@@ -369,6 +377,16 @@ private class CoachStores(private val folders: CoachFolders, private val session
         }
     }?.also { r -> logInfo(Tag, "session focus from ${r.sessionId}: ${r.targets.joinToString { it.name }}") }
 
+    /**
+     * The record of the last analysed session at [track] whose picked exercise (FBBD-418) this session
+     * works on; never this session's, nor a deleted session's.
+     */
+    fun exercise(track: Track): PickedExercise? = readOrNull("exercise", track) {
+        SessionFocusStore(folders.focus).latestExercise(track.id, exclude = sessionId) {
+            CoreFiles.isDirectory(CoreFiles.join(folders.sessions, it))
+        }?.let { r -> r.exercise?.let { e -> e.pick(r.sessionId)?.let { PickedExercise(r.sessionId, e, it) } } }
+    }?.also { e -> logInfo(Tag, "exercise from ${e.sessionId}: ${e.proposal.id}") }
+
     /** What [read] gives; a store that cannot be read counts as empty, never the reason the coach does not start. */
     private fun <T> readOrNull(what: String, track: Track, read: () -> T?): T? = try {
         read()
@@ -381,3 +399,6 @@ private class CoachStores(private val folders: CoachFolders, private val session
         const val Tag = "CoachService"
     }
 }
+
+/** The exercise picked after session [sessionId] (FBBD-418): its [proposal] and its corner as a coach [pick]. */
+class PickedExercise(val sessionId: String, val proposal: ExerciseProposal, val pick: CornerPick)

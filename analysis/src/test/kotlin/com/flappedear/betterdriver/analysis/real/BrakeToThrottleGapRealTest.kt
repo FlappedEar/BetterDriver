@@ -3,6 +3,11 @@
 package com.flappedear.betterdriver.analysis.real
 
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.segments.flaggableCorners
+import com.flappedear.betterdriver.coach.ExerciseBrakeToThrottle
+import com.flappedear.betterdriver.coach.coachCandidates
+import com.flappedear.betterdriver.coach.focusRecord
 import com.flappedear.betterdriver.analysis.learning.BrakeToThrottleGaps
 import com.flappedear.betterdriver.analysis.learning.GapComparisonTooFewCorners
 import com.flappedear.betterdriver.analysis.learning.brakeToThrottleGaps
@@ -58,6 +63,26 @@ class BrakeToThrottleGapRealTest {
         val late = all.single { it.first == "08-29-1720" }.second
         assertEquals(GapComparisonTooFewCorners, late.comparisonReason)
         assertTrue(late.observations.isEmpty())
+    }
+
+    @Test
+    fun `after the first Jastrzab session the brake-to-throttle exercise at Corner 9 is proposed first`() {
+        val track = RealCorpus.jastrzabTrack()
+        val store = SessionStore(File(tmp, "sessions"))
+        val id = RealCorpus.import(store, File(tmp, "staging"), RealCorpus.JASTRZAB_DAY.first(), listOf(track)).id
+        val analysis = analyzeSession(telemetrySessionOf(store.read(id), track))
+        val corners = coachCandidates(flaggableCorners(analysis), id)
+        val record = focusRecord(track.id, id, 0L, nextSessionPlan(analysis), corners, brakeToThrottleGaps(analysis))
+        println(record.exercises.joinToString("\n") { "${it.id} | ${it.seen} | ${it.practise} | ${it.better}" })
+        assertTrue(record.exercises.size in 1..3)
+        val first = record.exercises.first()
+        assertEquals(ExerciseBrakeToThrottle, first.kind)
+        assertEquals("Corner 9", first.where)
+        assertTrue(first.lats.isNotEmpty())
+        assertTrue(first.baseline.medianSeconds!! in 1.0..2.5)
+        assertTrue(first.baseline.targetSeconds!! < first.baseline.medianSeconds!!)
+        // Each corner proposed once.
+        assertEquals(record.exercises.size, record.exercises.map { it.segmentId }.toSet().size)
     }
 
     @Test

@@ -95,6 +95,7 @@ class LineCuesTest {
             is Advice.Throttle -> "throttle"
             is Advice.Steer -> "steer"
             is Advice.Gear -> "gear"
+            is Advice.BrakeToThrottle -> "brake_to_throttle"
         }
     }
 
