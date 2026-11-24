@@ -304,7 +304,9 @@ internal fun SessionAnalysisRoute(
         coaching = inBackground(Dispatchers.Default) {
             val store = sessionFocusStore(context)
             val at = loaded.startUtcMillis
-            keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
+            keepSessionFocus(
+                store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates, loaded.coached.exercise,
+            )
             val history = coachingHistoryStore(context)
             val tracks = TrackStore(tracksDir(context))
             keepCoachingHistory(
@@ -494,6 +496,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         CoachEvents.focusSource(data.events),
         CoachEvents.cuesByCorner(data.events),
         CoachEvents.planCorners(data.events),
+        CoachEvents.exerciseWorked(data.events),
     )
     val whole = WholeSession(acceleration, gForces, car, drive)
     val loaded = Loaded(

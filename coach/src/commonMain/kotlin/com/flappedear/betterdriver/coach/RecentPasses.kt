@@ -39,7 +39,7 @@ fun typicalPass(passes: List<CornerPass>): CornerPass {
 }
 
 /** The middle of [values], or the mean of the two middle ones. */
-private fun median(values: List<Double>): Double {
+internal fun median(values: List<Double>): Double {
     val sorted = values.sorted()
     val mid = sorted.size / 2
     return if (sorted.size % 2 == 1) sorted[mid] else (sorted[mid - 1] + sorted[mid]) / 2.0

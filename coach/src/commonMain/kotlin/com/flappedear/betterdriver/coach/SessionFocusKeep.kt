@@ -2,7 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.analysis.focus.NextSessionFocusAlgorithm
 import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
-import com.flappedear.betterdriver.analysis.learning.BrakeToThrottleGaps
+import com.flappedear.betterdriver.analysis.learning.SessionLearning
 import com.flappedear.betterdriver.analysis.segments.FlaggableCorner
 
 /**
@@ -19,7 +19,8 @@ fun coachCandidates(corners: List<FlaggableCorner>, sessionId: String): Map<Stri
  * each focus under its CornerId when the analysis's corners are the track's, with its line from
  * [corners] (the coach picks of the analysis's corners, by segment id) so the coach can place it.
  * The same on Android and iOS (FBBD-424): the iPhone's coach works on it as Android's does.
- * With the session's brake-to-throttle [gaps] (FBBD-417), it also proposes up to three exercises (FBBD-418).
+ * With the session's [learning] (FBBD-417), it also proposes up to three exercises (FBBD-418); a gap
+ * the driver explained after an exercise in an [earlier] record at the track is not proposed (FBBD-419).
  */
 @Suppress("LongParameterList") // The session, what it recommends and the corners to place it.
 fun focusRecord(
@@ -28,7 +29,8 @@ fun focusRecord(
     startUtcMillis: Long,
     plan: NextSessionPlan,
     corners: Map<String, CornerPick>,
-    gaps: BrakeToThrottleGaps? = null,
+    learning: SessionLearning? = null,
+    earlier: List<SessionFocusRecord> = emptyList(),
 ): SessionFocusRecord = focusTargets(sessionId, plan, corners).let { targets ->
     SessionFocusRecord(
         trackId = trackId,
@@ -36,7 +38,9 @@ fun focusRecord(
         sessionStartUtcMillis = startUtcMillis,
         algorithm = NextSessionFocusAlgorithm,
         targets = targets,
-        exercises = exerciseProposals(sessionId, gaps, targets, corners, plan.identityRevision),
+        exercises = exerciseProposals(
+            sessionId, learning, targets, corners, plan.identityRevision, earlier.filter { it.sessionId != sessionId },
+        ),
     )
 }
 

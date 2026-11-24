@@ -37,6 +37,9 @@ import com.flappedear.betterdriver.coach.card
 import com.flappedear.betterdriver.coach.coachCandidates
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.focusRecord
+import com.flappedear.betterdriver.coach.CoachEvents
+import com.flappedear.betterdriver.coach.resultLine
+import com.flappedear.betterdriver.coach.keepExerciseOutcome
 import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.coach.rememberCueCounts
 import com.flappedear.betterdriver.feature.analysis.CoachingCardUi
@@ -198,11 +201,17 @@ class ReviewLibrary(base: String) {
         val start = reviewed.startUtcMillis
         if (track == null || plan == null || start == null) return
         val corners = if (coaches(track)) coachCandidates(reviewed.flaggableCorners, id) else emptyMap()
-        val record = focusRecord(track.id, id, start, plan, corners, reviewed.gaps)
+        val learning = reviewed.learning
         try {
+            // A gap explained after an earlier exercise at the track is not proposed again (FBBD-419).
+            val record = focusRecord(track.id, id, start, plan, corners, learning, focus.history(track.id))
             if (focus.save(record)) {
                 logInfo("SessionFocus", "session focus of $id: ${record.targets.joinToString { it.name }}")
             }
+            // What came of the exercise worked on in this session, kept with the session it was picked after.
+            val worked = CoachEvents.exerciseWorked(reviewed.events)
+            learning?.let { keepExerciseOutcome(focus, track.id, id, worked, it) }
+                ?.let { logInfo("SessionFocus", it.resultLine()) }
         } catch (e: Exception) {
             logLine(CoreLog.LevelWarn, FocusTag, "session focus of $id not saved", e)
         }

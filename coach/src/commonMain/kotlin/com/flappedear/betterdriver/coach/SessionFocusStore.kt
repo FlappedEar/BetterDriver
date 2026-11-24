@@ -106,6 +106,8 @@ data class SessionFocusRecord(
     val exercises: List<ExerciseProposal> = emptyList(),
     /** The driver's pick among [exercises], or skip; null until answered. */
     val exercisePick: ExercisePick? = null,
+    /** What came of the picked exercise in the next session it was worked on (FBBD-419). */
+    val exerciseOutcome: ExerciseOutcome? = null,
 ) {
     /** The targets as coach picks, the primary first. */
     fun picks(): List<CornerPick> = targets.sortedBy { !it.primary }.mapNotNull { it.pick(sessionId) }
@@ -176,9 +178,36 @@ class SessionFocusStore(private val dir: String) {
         val r = get(trackId, sessionId) ?: return null
         require(id == null || r.exercises.any { it.id == id }) { "no exercise $id in $sessionId" }
         val picked = r.copy(exercisePick = ExercisePick(id, atUtcMillis))
-        writeAtomically(fileFor(trackId, sessionId), json.encodeToString(SessionFocusRecord.serializer(), picked))
+        write(picked)
         return picked
     }
+
+    /**
+     * Keeps what came of session [sessionId]'s picked exercise at [trackId] (FBBD-419): [outcome],
+     * replacing an earlier one. The same driven session's answer is kept, as long as the question is
+     * still asked. Returns the record as saved; null when there is no record.
+     */
+    fun recordOutcome(trackId: String, sessionId: String, outcome: ExerciseOutcome): SessionFocusRecord? {
+        val r = get(trackId, sessionId) ?: return null
+        val old = r.exerciseOutcome?.takeIf { it.drivenSessionId == outcome.drivenSessionId && outcome.asked }
+        val kept = r.copy(exerciseOutcome = outcome.copy(answer = old?.answer))
+        if (kept != r) write(kept)
+        return kept
+    }
+
+    /**
+     * Keeps the answer to the question after session [sessionId]'s exercise result at [trackId]
+     * (FBBD-419): one of [ExerciseAnswers], or null to clear it. Returns the record as saved; null
+     * when there is no record or no question was asked.
+     */
+    fun answerQuestion(trackId: String, sessionId: String, answer: String?): SessionFocusRecord? {
+        val r = get(trackId, sessionId)
+        val outcome = r?.exerciseOutcome?.takeIf { it.asked } ?: return null
+        return r.copy(exerciseOutcome = outcome.copy(answer = answer)).also(::write)
+    }
+
+    private fun write(r: SessionFocusRecord) =
+        writeAtomically(fileFor(r.trackId, r.sessionId), json.encodeToString(SessionFocusRecord.serializer(), r))
 
     /** Deletes session [sessionId]'s record at every track, with the session; returns whether none is left. */
     fun deleteSession(sessionId: String): Boolean {
@@ -198,7 +227,9 @@ class SessionFocusStore(private val dir: String) {
         // Analysed again, a session keeps the exercise answered and its proposals as they were then (FBBD-418).
         val old = read(f)?.takeIf { it.exercisePick != null && record.exercisePick == null }
         @Suppress("NAME_SHADOWING")
-        val record = old?.let { record.copy(exercises = it.exercises, exercisePick = it.exercisePick) } ?: record
+        val record = old?.let {
+            record.copy(exercises = it.exercises, exercisePick = it.exercisePick, exerciseOutcome = it.exerciseOutcome)
+        } ?: record
         // One record per session: analysed again at another track, it leaves the old track (FBBD-20).
         val name = checkedSessionId(record.sessionId) + Suffix
         val elsewhere = trackDirs().filter { it != CoreFiles.join(dir, record.trackId) }

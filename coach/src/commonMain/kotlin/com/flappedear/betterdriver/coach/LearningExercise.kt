@@ -1,7 +1,8 @@
 package com.flappedear.betterdriver.coach
 
-import com.flappedear.betterdriver.analysis.learning.BrakeToThrottleGaps
+import com.flappedear.betterdriver.analysis.learning.CornerSection
 import com.flappedear.betterdriver.analysis.learning.GapObservation
+import com.flappedear.betterdriver.analysis.learning.SessionLearning
 import com.flappedear.betterdriver.format.fixed
 import kotlinx.serialization.Serializable
 import kotlin.math.ceil
@@ -37,6 +38,13 @@ data class ExerciseBaseline(
     /** The gap the detector counts (FBBD-417 `gapSeconds`); null for a focus exercise. */
     val gapSeconds: Double? = null,
     val validated: Boolean = false,
+    /**
+     * The median time through the corner and its exit straight over the session's counted laps
+     * ([sectionLaps] of them), and of the segment after it (FBBD-419); null when not timed.
+     */
+    val sectionSeconds: Double? = null,
+    val downstreamSeconds: Double? = null,
+    val sectionLaps: Int = 0,
 )
 
 /**
@@ -72,6 +80,9 @@ data class ExerciseProposal(
         CornerPick(where, lats, lons, sessionId, cornerId, identityRevision)
     }
 
+    /** The corner as the next session finds it: its CornerId, else the analysis's segment id. */
+    val corner: String get() = cornerId ?: segmentId
+
     /** What the coach says at the corner: the exercise itself, or for a focus exercise its usual advice. */
     val advice: Advice? get() = Advice.BrakeToThrottle().takeIf { kind == ExerciseBrakeToThrottle }
 }
@@ -85,34 +96,64 @@ data class ExercisePick(val id: String?, val atUtcMillis: Long)
 
 /**
  * Up to [MaxExercises] exercises after a session (FBBD-418): first each corner where the brake-to-throttle
- * gap was observed ([gaps], FBBD-417), longest first, then the session focus [targets] at other corners,
- * primary first. Only corners with a line in [corners] (by segment id) or [targets] can be coached, so
- * only those are proposed.
+ * gap was observed ([learning]'s gaps, FBBD-417), longest first, then the session focus [targets] at other
+ * corners, primary first. Only corners with a line in [corners] (by segment id) or [targets] can be
+ * coached, so only those are proposed. A gap the driver said was on purpose, or came from the car moving,
+ * after the last exercise there ([earlier] records, FBBD-419) is not proposed again.
  */
+@Suppress("LongParameterList") // The session, what it found, and what came before at the track.
 fun exerciseProposals(
     sessionId: String,
-    gaps: BrakeToThrottleGaps?,
+    learning: SessionLearning?,
     targets: List<FocusTarget>,
     corners: Map<String, CornerPick>,
     identityRevision: Int? = null,
+    earlier: List<SessionFocusRecord> = emptyList(),
 ): List<ExerciseProposal> {
+    val gaps = learning?.gaps
+    val explained = explainedGaps(earlier)
     val fromGaps = gaps?.observations.orEmpty().sortedByDescending { it.medianSeconds }.mapNotNull { o ->
         val line = corners[o.segmentId] ?: targets.firstOrNull { it.segmentId == o.segmentId }?.pick(sessionId)
-        line?.let { gapExercise(sessionId, o, it, gaps!!, identityRevision) }
+        line?.takeIf { (it.cornerId ?: o.segmentId) !in explained }
+            ?.let { gapExercise(sessionId, o, it, learning!!, identityRevision) }
     }
     val fromFocus = targets.sortedBy { !it.primary }
         .filter { t -> t.lats.isNotEmpty() && fromGaps.none { it.segmentId == t.segmentId } }
-        .map { focusExercise(sessionId, it) }
+        .map { focusExercise(sessionId, it, learning) }
     return (fromGaps + fromFocus).take(MaxExercises)
 }
+
+/**
+ * The corners whose brake-to-throttle gap the driver explained (FBBD-419): at each corner, the latest
+ * answer to the question after a brake-to-throttle exercise there, when it was "on purpose" or "the car
+ * was moving". A later "traffic", "not sure" or no answer brings the corner back.
+ */
+private fun explainedGaps(earlier: List<SessionFocusRecord>): Set<String> {
+    val latest = HashMap<String, String?>()
+    for (r in earlier.sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))) {
+        val outcome = r.exerciseOutcome ?: continue
+        val e = r.exercises.firstOrNull { it.id == outcome.exerciseId }?.takeIf { it.kind == ExerciseBrakeToThrottle }
+        if (e != null) latest[e.corner] = outcome.answer
+    }
+    return latest.filterValues { it == AnswerOnPurpose || it == AnswerCarMoving }.keys
+}
+
+/** The medians of [section]'s counted laps, for a frozen baseline. */
+private fun sectionBaseline(section: CornerSection?) = Triple(
+    section?.seconds?.values?.toList()?.takeIf { it.isNotEmpty() }?.let(::median),
+    section?.downstreamSeconds?.values?.toList()?.takeIf { it.isNotEmpty() }?.let(::median),
+    section?.seconds?.size ?: 0,
+)
 
 private fun gapExercise(
     sessionId: String,
     o: GapObservation,
     line: CornerPick,
-    gaps: BrakeToThrottleGaps,
+    learning: SessionLearning,
     identityRevision: Int?,
 ): ExerciseProposal {
+    val gaps = learning.gaps
+    val (section, downstream, laps) = sectionBaseline(learning.section(o.segmentId))
     // Better: as short as at his other corners, never asked below what the detector counts as a gap.
     val target = ceil(max(o.othersMedianSeconds, gaps.thresholds.gapSeconds) * Tenths) / Tenths
     return ExerciseProposal(
@@ -135,14 +176,18 @@ private fun gapExercise(
             targetSeconds = target,
             gapSeconds = gaps.thresholds.gapSeconds,
             validated = gaps.validated,
+            sectionSeconds = section,
+            downstreamSeconds = downstream,
+            sectionLaps = laps,
         ),
         lats = line.lats,
         lons = line.lons,
     )
 }
 
-private fun focusExercise(sessionId: String, t: FocusTarget): ExerciseProposal {
+private fun focusExercise(sessionId: String, t: FocusTarget, learning: SessionLearning?): ExerciseProposal {
     val left = t.timeAvailableSeconds
+    val (section, downstream, laps) = sectionBaseline(learning?.section(t.segmentId))
     return ExerciseProposal(
         id = idOf(sessionId, ExerciseFocus, t.segmentId),
         kind = ExerciseFocus,
@@ -157,7 +202,13 @@ private fun focusExercise(sessionId: String, t: FocusTarget): ExerciseProposal {
         } else {
             "A typical pass closer to your best."
         },
-        baseline = ExerciseBaseline(algorithm = ExerciseAlgorithm, medianSeconds = left),
+        baseline = ExerciseBaseline(
+            algorithm = ExerciseAlgorithm,
+            medianSeconds = left,
+            sectionSeconds = section,
+            downstreamSeconds = downstream,
+            sectionLaps = laps,
+        ),
         lats = t.lats,
         lons = t.lons,
     )

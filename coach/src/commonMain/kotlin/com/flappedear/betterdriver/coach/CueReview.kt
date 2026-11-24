@@ -73,7 +73,7 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
          * The cue number of a "late seq=…", "no voice seq=…" or "cut off seq=…" (FBBD-416) problem; null
          * for any other problem.
          */
-        private fun unsaidSeq(text: String): Int? {
+        internal fun unsaidSeq(text: String): Int? {
             val rest = UnsaidPrefixes.firstOrNull { text.startsWith(it) }?.let { text.removePrefix(it) }
             return rest?.substringBefore(' ')?.removePrefix("seq=")?.toIntOrNull()
         }
