@@ -13,6 +13,11 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.37.0
+
+- Coach: a corner cue asks for what your usual pass at that corner needs, not what one odd lap did, and does not ask again for a change you already made on the last lap.
+- Learning coach (first steps, no screen yet): the app measures the brake-to-throttle gap at every corner and can propose exercises and measure their result; nothing changes in what the coach says until an exercise can be picked.
+
 ## 1.36.0
 
 - Coach: a corner after a straight too short for any cue now gets its cue one straight earlier, in its shortest form, when the corner before it has nothing to say.
