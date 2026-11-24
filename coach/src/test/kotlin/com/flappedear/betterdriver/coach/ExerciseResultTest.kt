@@ -129,6 +129,12 @@ class ExerciseResultTest {
         assertEquals(OutcomeNotEnoughData, untimed.outcome)
         assertEquals(ResultSectionNotTimed, untimed.reason)
         assertEquals(0.5, untimed.medianSeconds)
+        // The section after it not timed: "no slower" is not assumed.
+        val noNext = driven({ 0.5 }, { 9.8 })
+        val untimedNext = noNext.copy(sections = noNext.sections.map { it.copy(downstreamSeconds = emptyMap()) })
+        val r = exerciseOutcome(exercise, worked(listOf(1)), "s2", untimedNext)
+        assertEquals(OutcomeNotEnoughData, r.outcome)
+        assertEquals(ResultSectionNotTimed, r.reason)
     }
 
     @Test
@@ -143,13 +149,16 @@ class ExerciseResultTest {
             RecorderEvent(1, CoachEvents.EXERCISE, CoachEvents.exerciseText("s1", exercise)),
             cue(1, 3, 10), cue(2, 5, 20), RecorderEvent(21, CoachEvents.PROBLEM, CoachEvents.cutOffText(2, "error")),
             cue(3, 7, 30),
+            // Late, and refused by the voice: logged only as problems, with their laps.
+            RecorderEvent(40, CoachEvents.PROBLEM, CoachEvents.lateText(Cue(4, 40, 9, CueKind.Corner, "Turn 9"))),
+            RecorderEvent(50, CoachEvents.PROBLEM, CoachEvents.noVoiceText(Cue(5, 50, 11, CueKind.Corner, "Turn 9"))),
         )
         val w = assertNotNull(CoachEvents.exerciseWorked(events))
         assertEquals("s1", w.sourceSessionId)
         assertEquals(exercise.id, w.exerciseId)
         assertEquals("c9", w.corner)
         assertEquals(listOf(3, 7), w.playedLaps)
-        assertEquals(listOf(5), w.missedLaps)
+        assertEquals(listOf(5, 9, 11), w.missedLaps)
         assertEquals(w, CoachEvents.coachedSession(events).exercise)
         assertNull(CoachEvents.exerciseWorked(events.drop(1)))
     }

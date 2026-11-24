@@ -81,7 +81,7 @@ data class ExerciseOutcome(
  * first lap with an exercise cue heard to its end (FBBD-416); typical passes (medians) are compared,
  * never best against best.
  */
-@Suppress("ReturnCount") // Each early return is a reason there is not enough to say.
+@Suppress("ReturnCount", "CyclomaticComplexMethod") // Each early return is a reason there is not enough to say.
 fun exerciseOutcome(
     exercise: ExerciseProposal,
     worked: CoachedExercise,
@@ -119,8 +119,14 @@ fun exerciseOutcome(
             "The corner and its exit straight were not timed on enough laps to compare.")
     }
     val delta = median(after) - sectionBefore
+    // With a segment after the section, it must be timed too: "no slower" is never assumed.
     val downstreamAfter = section.downstreamSeconds.filterKeys { it >= first }.values.toList()
-    val downstreamDelta = exercise.baseline.downstreamSeconds?.takeIf { downstreamAfter.isNotEmpty() }
+    val downstreamBefore = exercise.baseline.downstreamSeconds
+    if (section.downstreamId != null && (downstreamBefore == null || downstreamAfter.size < t.minPasses)) {
+        return notEnough(ResultSectionNotTimed, passes.size, laps).copy(medianSeconds = now, text = gap + " " +
+            "The section after the corner was not timed on enough laps to compare.")
+    }
+    val downstreamDelta = downstreamBefore?.takeIf { downstreamAfter.isNotEmpty() }
         ?.let { median(downstreamAfter) - it }
     val faster = delta <= -t.gainSeconds && (downstreamDelta == null || downstreamDelta <= t.downstreamSeconds)
     return ExerciseOutcome(
